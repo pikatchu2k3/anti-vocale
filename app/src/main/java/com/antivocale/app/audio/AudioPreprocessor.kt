@@ -279,7 +279,7 @@ class AudioPreprocessor @Inject constructor() {
         val decoderThread = Thread {
             val extractor = MediaExtractor()
             try {
-                extractor.setDataSource(inputPath)
+                openAudioSource(extractor, inputPath)
                 val audioTrackIndex = findAudioTrack(extractor)
                 val inputFormat = extractor.getTrackFormat(audioTrackIndex)
                 extractor.selectTrack(audioTrackIndex)
@@ -452,7 +452,7 @@ class AudioPreprocessor @Inject constructor() {
         val extractor = MediaExtractor()
 
         try {
-            extractor.setDataSource(inputPath)
+            openAudioSource(extractor, inputPath)
 
             val audioTrackIndex = findAudioTrack(extractor)
             val inputFormat = extractor.getTrackFormat(audioTrackIndex)
@@ -630,6 +630,32 @@ class AudioPreprocessor @Inject constructor() {
         return merged
     }
 
+    /**
+     * Opens [extractor]'s data source, accepting both plain absolute paths
+     * (e.g. /storage/emulated/0/... from Tasker-style broadcast file_path
+     * automation) and content:// URIs.
+     *
+     * Plain paths are opened directly by path — that requires the media read
+     * grant (READ_MEDIA_AUDIO on Android 13+, READ_EXTERNAL_STORAGE before),
+     * which MainActivity requests at first launch. content:// keeps the
+     * historical string-overload behavior unchanged: share flows resolve URIs
+     * to cached real files upstream, so raw content:// strings effectively
+     * never reach this class.
+     *
+     * Only the source open lives here — detection and decoding logic untouched.
+     */
+    private fun openAudioSource(extractor: MediaExtractor, inputPath: String) {
+        if (inputPath.startsWith("content://")) {
+            extractor.setDataSource(inputPath)
+            return
+        }
+        // Plain filesystem path: fail fast with a clear error instead of the
+        // cryptic native "Failed to instantiate extractor" when the file is
+        // absent or unreadable.
+        if (!File(inputPath).exists()) throw PreprocessingError.FileNotFound
+        extractor.setDataSource(inputPath)
+    }
+
     private fun validateInputFile(inputPath: String) {
         val inputFile = File(inputPath)
         if (!inputFile.exists()) throw PreprocessingError.FileNotFound
@@ -802,7 +828,7 @@ class AudioPreprocessor @Inject constructor() {
     fun getAudioDuration(inputPath: String): Double {
         try {
             val extractor = MediaExtractor()
-            extractor.setDataSource(inputPath)
+            openAudioSource(extractor, inputPath)
 
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
@@ -834,7 +860,7 @@ class AudioPreprocessor @Inject constructor() {
     fun getAudioInfo(inputPath: String): String {
         try {
             val extractor = MediaExtractor()
-            extractor.setDataSource(inputPath)
+            openAudioSource(extractor, inputPath)
 
             val info = StringBuilder()
             info.append("Tracks: ${extractor.trackCount}\n")

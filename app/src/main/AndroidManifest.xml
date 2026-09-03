@@ -2,9 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- No storage permissions: model import, audio share, and audio picker all use
-         the Storage Access Framework (OpenDocument) or share-intent content URIs,
-         which grant their own read access. See TASK-301. -->
+    <!-- Storage access for voice-note automation (local fork):
+         READ_MEDIA_AUDIO (Android 13+) / READ_EXTERNAL_STORAGE (legacy) lets the app
+         read audio from an absolute /storage/... path (e.g. broadcast file_path=),
+         enabling auto-transcription of files dropped into /storage/emulated/0/Music/Signal
+         by signal-saver automation. Upstream deliberately omits storage permissions
+         (SAF / content-URI only, see TASK-301); this fork adds them on purpose. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
 
     <!-- Foreground service for inference -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

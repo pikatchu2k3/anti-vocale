@@ -554,23 +554,19 @@ class InferenceService : Service(), TranscriptionListener {
         failedChunkCount: Int
     ) {
         sendSuccessReply(taskId, resultText)
-        if (isShareRequest) {
-            // Track the notification job: processQueue()'s finally must NOT stopSelf
-            // while it is still pending. It used to be an untracked launch, and for
-            // fast single-chunk transcriptions the queue teardown (stopForeground +
-            // stopSelf -> onDestroy -> serviceScope.cancel) won the race, killing the
-            // result notification before it was ever posted. In the background that
-            // read as "the notification vanished and nothing arrived" (TASK-336).
-            pendingResultNotifications.add(serviceScope.launch {
-                try {
-                    val copied = autoCopyIfEnabled(resultText, sourcePackage)
-                    saveTranscriptToFileIfEnabled(resultText, sourcePackage)
-                    showResultNotification(resultText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied)
-                } finally {
-                    pendingResultNotifications.remove(coroutineContext[Job])
-                }
-            })
-        }
+        // Always surface the result notification (share AND automation/broadcast
+        // paths). Previously gated behind isShareRequest, so Tasker/broadcast
+        // transcriptions never produced a visible status-bar result. The race
+        // protection in pendingResultNotifications still applies.
+        pendingResultNotifications.add(serviceScope.launch {
+            try {
+                val copied = autoCopyIfEnabled(resultText, sourcePackage)
+                saveTranscriptToFileIfEnabled(resultText, sourcePackage)
+                showResultNotification(resultText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied)
+            } finally {
+                pendingResultNotifications.remove(coroutineContext[Job])
+            }
+        })
     }
 
     override fun onError(

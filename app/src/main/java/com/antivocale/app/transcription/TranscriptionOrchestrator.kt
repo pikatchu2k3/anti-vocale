@@ -638,6 +638,25 @@ class TranscriptionOrchestrator @Inject constructor(
         }
     }
 
+    /**
+     * Resolves a transcription input path to a file that actually exists.
+     * When [filePath] is missing/stale (e.g. a Tasker broadcast sent a path that
+     * Signal already renamed away, or a stale %evtprm1 binding), falls back to the
+     * newest `signal-*.aac` in the same directory.
+     */
+    private fun resolveExistingAudioPath(filePath: String): String {
+        val requested = File(filePath)
+        if (requested.isFile) return filePath
+        val dir = requested.parentFile ?: return filePath
+        if (!dir.isDirectory) return filePath
+        val fallback = dir.listFiles { f -> f.isFile }
+            ?.filter { it.name.startsWith("signal-") && it.name.endsWith(".aac") }
+            ?.maxByOrNull { it.lastModified() }
+            ?: return filePath
+        Log.i(TAG, "Requested audio '$filePath' not found; using newest signal-*.aac '${fallback.absolutePath}'")
+        return fallback.absolutePath
+    }
+
     private suspend fun processAudioRequest(
         taskId: String,
         filePath: String?,
@@ -652,6 +671,11 @@ class TranscriptionOrchestrator @Inject constructor(
         if (filePath.isNullOrEmpty()) {
             return Result.failure(IllegalArgumentException("No file path provided"))
         }
+
+        // Resolve a stale/missing path to the newest available signal audio in the
+        // same directory (robust against Signal's pending- -> signal- rename and
+        // unreliable Tasker %evtprm1 bindings).
+        val effectiveFilePath = resolveExistingAudioPath(filePath)
 
         val backend = backendManager.getActiveBackend()
             ?: return Result.failure(IllegalStateException("No active backend"))
@@ -707,7 +731,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 backend, promptPlan.finalPass,
                 processPipelinedAudio(
                     taskId = taskId,
-                    filePath = filePath,
+                    filePath = effectiveFilePath,
                     backend = backend,
                     maxChunkDurationSeconds = pipelineChunkSeconds,
                     context = context,
@@ -721,7 +745,7 @@ class TranscriptionOrchestrator @Inject constructor(
         val preprocessStartMs = System.currentTimeMillis()
         val preprocessingResult = try {
             audioPreprocessor.prepareAudioForMediaPipe(
-                inputPath = filePath,
+                inputPath = effectiveFilePath,
                 cacheDir = cacheDir,
                 // Tightened cap here too: the VAD merge limit derives from it
                 // (GH #50 "derived from the same limit"), and external models

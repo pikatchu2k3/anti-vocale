@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only German override so the fork builds show a distinct launcher label
+     on German-locale devices (the main values-de app_name would otherwise win
+     over the debug res override). -->
+<resources>
+    <string name="app_name">Anti-Vocale Storage</string>
+</resources>

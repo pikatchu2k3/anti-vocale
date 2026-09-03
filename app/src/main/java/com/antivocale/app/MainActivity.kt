@@ -58,6 +58,10 @@ class MainActivity : AppCompatActivity() {
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
 
+    /** Runtime request for audio storage access (local fork, voice-note automation). */
+    private val requestAudioPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
+
     /** Observable PiP mode state for Compose. */
     private val _isInPipMode = MutableStateFlow(false)
     val isInPipMode: kotlinx.coroutines.flow.StateFlow<Boolean> = _isInPipMode.asStateFlow()
@@ -111,6 +115,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         requestNotificationPermissionIfNeeded()
+        requestAudioPermissionIfNeeded()
         setContent {
             // Collect theme preference and convert to ThemeType
             val themeName by preferencesManager.themePreference.collectAsState(initial = PreferencesManager.DEFAULT_THEME)
@@ -213,6 +218,23 @@ class MainActivity : AppCompatActivity() {
             ) {
                 requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+
+    /**
+     * Requests the audio storage permission (local fork, voice-note automation).
+     * READ_MEDIA_AUDIO on Android 13+, READ_EXTERNAL_STORAGE on older. Idempotent:
+     * silently skips when already granted. The activity continues even if the user
+     * declines; the path-based broadcast path simply stays unavailable.
+     */
+    private fun requestAudioPermissionIfNeeded() {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+            requestAudioPermission.launch(permission)
         }
     }
 

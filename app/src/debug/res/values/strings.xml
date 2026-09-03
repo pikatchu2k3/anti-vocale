@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug-only overrides: distinguish the debug app from the marketplace build
      in the launcher and the share sheet (two "Anti-Vocale" entries would be
-     ambiguous when testing share intents). -->
+     ambiguous when testing share intents). The fork adds READ_MEDIA_AUDIO so the
+     app can read /storage/... paths (broadcast file_path automation); name it
+     clearly so the user knows which launcher icon to open. -->
 <resources>
-    <string name="app_name">Anti-Vocale (Debug)</string>
+    <string name="app_name">Anti-Vocale Storage</string>
 </resources>

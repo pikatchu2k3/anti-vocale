@@ -32,8 +32,12 @@ android {
         applicationId = "com.antivocale.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 39
-        versionName = "1.11.1"
+        // Fork: release pipeline exports VERSION_NAME/VERSION_CODE (date-based tag,
+        // e.g. v2026.09.06) so Obtainium sees the baked versionName == release tag.
+        // Fallback is the upstream version. Without this the tag never matches the
+        // embedded versionName and Obtainium offers the same update forever.
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 39
+        versionName = System.getenv("VERSION_NAME") ?: "1.11.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
