@@ -6,6 +6,7 @@ import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.LlmTranscriptionBackend
+import com.antivocale.app.transcription.PunctuationPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
@@ -64,7 +65,11 @@ internal class TestSpiOps(
         return JSONObject()
             .put("op", OP_GET)
             .put("vadEnabled", preferences.vadEnabled.first())
+            .put("progressiveEnabled", preferences.progressiveTranscription.first())
+            .put("punctuationMode", preferences.punctuationMode.first())
+            .put("punctuationPrompt", preferences.punctuationPrompt.first())
             .put("threadCount", preferences.threadCount.first())
+            .put("keepAliveTimeoutMinutes", preferences.keepAliveTimeout.first())
             .put("inferenceProvider", preferences.inferenceProvider.first())
             .put("transcriptionLanguage", preferences.transcriptionLanguage.first())
             .put("transcriptionBackend", backend)
@@ -93,6 +98,34 @@ internal class TestSpiOps(
                 val enabled = value.toBooleanStrictOrNull()
                     ?: return setError("vad expects true or false, got '$value'")
                 preferences.saveVadEnabled(enabled)
+            }
+            // Same strict boolean as vad: this toggle gates the interim
+            // chunk notifications and the chunk nav.
+            "progressive" -> {
+                val enabled = value.toBooleanStrictOrNull()
+                    ?: return setError("progressive expects true or false, got '$value'")
+                preferences.saveProgressiveTranscription(enabled)
+            }
+            // TASK-276: the punctuation pass mode matches the settings
+            // dropdown's exact set; anything else would silently run as AUTO.
+            "punctuation" -> {
+                if (value !in PUNCTUATION_MODES) {
+                    return setError("punctuation expects one of ${PUNCTUATION_MODES.joinToString(", ")}, got '$value'")
+                }
+                preferences.savePunctuationMode(value)
+            }
+            "punctuation_prompt" -> preferences.savePunctuationPrompt(value)
+            // TASK-451: strictly positive; non-positive silently falls back to
+            // the default in NativeKeepAlive.setTimeout while get would report
+            // the stored value. Values outside the dropdown
+            // (SettingsViewModel.timeoutOptions) are accepted on purpose: any
+            // positive int is honored downstream, and a timing test may want 3.
+            "keep_alive" -> {
+                val minutes = value.toIntOrNull()
+                if (minutes == null || minutes <= 0) {
+                    return setError("keep_alive expects a positive integer (minutes), got '$value'")
+                }
+                preferences.saveKeepAliveTimeout(minutes)
             }
             "threads" -> {
                 val threads = value.toIntOrNull()
@@ -197,6 +230,9 @@ internal class TestSpiOps(
         const val OP_HELP = "help"
 
         /** Every key accepted by `op=set`, in help order. */
-        val SET_KEYS = listOf("vad", "threads", "provider", "backend", "language", "model_path", "sherpa_path")
+        val SET_KEYS = listOf("vad", "progressive", "punctuation", "punctuation_prompt", "keep_alive", "threads", "provider", "backend", "language", "model_path", "sherpa_path")
+
+        /** TASK-276: the single source is PunctuationPolicy.MODE_PREFS; the SPI only adds write-time strictness. */
+        val PUNCTUATION_MODES = PunctuationPolicy.MODE_PREFS
     }
 }

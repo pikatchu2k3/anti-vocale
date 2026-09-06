@@ -15,13 +15,17 @@ There is no app-level limit. Each model has its own **per-segment** limit, and t
 | Parakeet TDT | 1:00 app-side chunking (the model's own hard cap is 6:40) | chunked by the app ([#50](https://github.com/RisorseArtificiali/anti-vocale/issues/50)), chunk length sized to free RAM ([#44](https://github.com/RisorseArtificiali/anti-vocale/issues/44)) |
 | Gemma (LLM) | 30 s | currently one segment |
 | Nemotron 3.5 (streaming) | no known limit (streams) | n/a |
-| GigaAM v3 | no known limit | n/a |
+| GigaAM v3 | 0:30 app-side chunking (the model's own crash cap is 3:20, but quality degrades well before that) | chunked by the app, any length |
 
 The Parakeet limit is not arbitrary: the model's attention has a hard 5000-frame cap baked into NVIDIA's checkpoint, and 5000 frames at 12.5 frames/s is exactly 400 seconds. Inputs beyond it fail natively; the app-side chunking that removes this limitation landed in [#50](https://github.com/RisorseArtificiali/anti-vocale/issues/50). Since [#44](https://github.com/RisorseArtificiali/anti-vocale/issues/44) the app chunks Parakeet at 1 minute rather than just under the native cap: attention memory grows with the square of the chunk length, and a single 6-minute pass peaks at over 5GB of RAM, enough to starve an 8GB phone. The chunk length also tightens automatically on devices with little free memory.
 
 Every "any length" in the table above means *the app does the splitting for you in software*: no model itself handles arbitrary length in one pass. The two "no known limit" rows are models with no measured cap and no app-side splitting.
 
 The absolute ceilings ([#73](https://github.com/RisorseArtificiali/anti-vocale/issues/73)): 2 hours for the streaming decode path, and files above 2GB are refused. With VAD enabled the whole audio is decoded into memory at once, so the maximum length depends on your device's memory (typically 10 to 25 minutes); the error message tells you the exact limit on your device. Turn VAD off for long recordings, or use a model the app chunks automatically.
+
+### Why does the app say "Audio exceeds 11 minute limit on this path"?
+
+The number is your phone's, not a fixed app limit. The message appears on the **Strip Silence (VAD)** path: with VAD enabled the whole recording is decoded into memory at once, so the maximum length is derived from how much memory your device has (typically 10 to 25 minutes, and the message always states your exact limit). For models the app chunks, this switch now happens automatically: a recording longer than the VAD limit is streamed instead, and the result notification notes "Without silence stripping" when it happened. The message still appears for recordings above 2 hours, and for models that need the VAD. To keep silence stripping on long recordings with those models, turn off **Settings → Strip Silence (VAD)**. If you remember an old fixed "10 minute limit", that limit no longer exists; this message is its honest, per-device replacement.
 
 ### Why did my transcription stop while the app was in the background?
 

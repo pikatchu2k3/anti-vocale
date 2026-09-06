@@ -239,7 +239,22 @@ class TranscriptionOrchestrator @Inject constructor(
 
             val duration = System.currentTimeMillis() - startTime
 
-            result.fold(
+            // TASK-276: the punctuation pass maps the RESULT before the fold, so
+            // the returned value, the log row and the notification all carry the
+            // same final text. It runs exactly once at this single funnel for
+            // every decode path (pipeline, parallel, VAD-progressive); text
+            // requests are the LLM's own output and take no pass.
+            val delivered: Result<TranscriptionResult> =
+                if (requestType == "audio" && result.isSuccess) {
+                    // Captured once here (not re-read inside the pass): the
+                    // backend that produced this result. The queue is serial,
+                    // so nothing else has swapped it since the ASR finished.
+                    val asrBackendId = backendManager.getActiveBackend()?.id
+                    if (asrBackendId == null) result
+                    else result.map { applyPunctuationPass(context, asrBackendId, it, listener) }
+                } else result
+
+            delivered.fold(
                 onSuccess = { transcriptionResult ->
                     logSuccess(
                         taskId,
@@ -252,7 +267,8 @@ class TranscriptionOrchestrator @Inject constructor(
                         confidence = transcriptionResult.confidence,
                         detectedLanguage = transcriptionResult.detectedLanguage,
                         isPartial = transcriptionResult.isPartial,
-                        failedChunkCount = transcriptionResult.failedChunkCount
+                        failedChunkCount = transcriptionResult.failedChunkCount,
+                        streamedWithoutVad = transcriptionResult.streamedWithoutVad
                     )
                 },
                 onFailure = { error ->
@@ -264,7 +280,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 }
             )
 
-            return result.map { it.text }
+            return delivered.map { it.text }
 
         } catch (e: CancellationException) {
             val duration = System.currentTimeMillis() - startTime
@@ -366,6 +382,73 @@ class TranscriptionOrchestrator @Inject constructor(
     }
 
     // ---- Backend Loading ----
+
+    /**
+     * TASK-276: the punctuation pass. Chains Gemma after a non-punctuating ASR
+     * model (GigaAM today): the transcript is complete in hand, so loading the
+     * LLM through the normal backend swap unloads the ASR model first and the
+     * two are never resident together. Every skip path (mode, per-model flag,
+     * the text's own punctuation, context limit, no Gemma configured) avoids
+     * the swap entirely, and any failure degrades to the raw transcript: an
+     * optional polish may never fail a completed transcription. The backend
+     * that produced the text is the manager's active one at fold time (the
+     * queue is serial, so nothing else has loaded since).
+     */
+    private suspend fun applyPunctuationPass(
+        context: Context,
+        asrBackendId: String,
+        result: TranscriptionResult,
+        listener: TranscriptionListener,
+    ): TranscriptionResult {
+        // The LLM's own ASR output is covered by the custom-prompt final pass
+        // (ChunkPromptPolicy.plan); polishing it here would double-pass.
+        if (asrBackendId == LlmTranscriptionBackend.BACKEND_ID) return result
+        // Everything from here runs under runCatching: a preference read, a
+        // backend swap, or a generation failure in an OPTIONAL polish must
+        // never break the delivery of a finished transcript.
+        return runCatching {
+            val mode = PunctuationPolicy.modeFromPref(preferencesManager.punctuationMode.first())
+            val modelPunctuates = backendRegistry.byBackendId(asrBackendId)?.punctuatesOutput ?: true
+            if (!PunctuationPolicy.shouldRun(mode, modelPunctuates, result.text)) return@runCatching result
+            if (!PunctuationPolicy.withinContextLimit(result.text)) {
+                Log.i(TAG, "Punctuation pass skipped: ${result.text.length} chars exceeds the Gemma context guard")
+                return@runCatching result
+            }
+            if (preferencesManager.modelPath.first().isNullOrBlank()) {
+                Log.i(TAG, "Punctuation pass skipped: no Gemma model configured (delivering raw transcript)")
+                return@runCatching result
+            }
+            listener.onStatusUpdate(context.getString(R.string.punctuation_status))
+            ensureBackendLoaded(context, LlmTranscriptionBackend.BACKEND_ID).getOrThrow()
+            val llm = backendManager.getActiveBackend() ?: error("LLM backend not active after load")
+            val prompt = ChunkPromptPolicy.finalPrompt(
+                PunctuationPolicy.effectivePrompt(
+                    preferencesManager.punctuationPrompt.first(),
+                    context.getString(R.string.punctuation_default_prompt)),
+                result.text)
+            val polished = llm.generateText(prompt).getOrThrow().trim()
+            if (!PunctuationPolicy.acceptablePolish(polished, result.text)) {
+                error("punctuation pass collapsed the transcript " +
+                    "(${polished.length} vs ${result.text.length} chars); keeping the original")
+            }
+            result.copy(text = polished.ifBlank { result.text })
+        }.fold(
+            onSuccess = { polished ->
+                if (polished !== result) {
+                    Log.i(TAG, "Punctuation pass applied (${result.text.length} -> ${polished.text.length} chars)")
+                }
+                polished
+            },
+            onFailure = { e ->
+                // A cancellation (user cancel, queue teardown) is not a polish
+                // failure: rethrow so processRequest's dedicated
+                // CancellationException handling keeps its contract.
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Punctuation pass failed; delivering the raw transcript", e)
+                result
+            },
+        )
+    }
 
     private suspend fun ensureBackendLoaded(
         context: Context,
@@ -722,7 +805,27 @@ class TranscriptionOrchestrator @Inject constructor(
         }
         // streamingChunkSeconds is the single source of the usePipeline rule:
         // the chunk cap when this request streams, null when it decodes whole-file.
-        val pipelineChunkSeconds = AudioDurationPolicy.streamingChunkSeconds(vadEnabled, maxChunkDuration)
+        // TASK-450: when the VAD preference routes a file the whole-file path
+        // would refuse for this device's memory ceiling, and the backend can
+        // stream, run this request on the streaming path instead of failing:
+        // the user keeps the transcription and loses only silence stripping
+        // on this file (the result notification says so). The two capability
+        // guards sit BEFORE the duration probe so VAD-off and forced-VAD
+        // requests (Gemma, Canary) never pay the metadata open.
+        val canStreamWithoutVad = !backend.requiresVadAlignedChunking && maxChunkDuration != null
+        val fellBackFromVad = vadEnabled && canStreamWithoutVad &&
+            AudioDurationPolicy.shouldFallBackToStreaming(
+                audioPreprocessor.getAudioDuration(filePath),
+                AudioDurationPolicy.ceilingSeconds(
+                    AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM,
+                    MemoryReadings.availableRamBytes(context),
+                    MemoryReadings.maxHeapBytes()),
+            )
+        if (fellBackFromVad) {
+            Log.i(TAG, "TASK-450: file exceeds this device's VAD-path ceiling; streaming without silence stripping (backend=${backend.id})")
+        }
+        val effectiveVad = vadEnabled && !fellBackFromVad
+        val pipelineChunkSeconds = AudioDurationPolicy.streamingChunkSeconds(effectiveVad, maxChunkDuration)
 
         val totalStartMs = System.currentTimeMillis()
 
@@ -734,6 +837,7 @@ class TranscriptionOrchestrator @Inject constructor(
                     filePath = effectiveFilePath,
                     backend = backend,
                     maxChunkDurationSeconds = pipelineChunkSeconds,
+                    streamedWithoutVad = fellBackFromVad,
                     context = context,
                     coroutineScope = coroutineScope,
                     listener = listener,
@@ -753,7 +857,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 // as much as the pipeline path does.
                 maxChunkDurationSeconds = maxChunkDuration,
                 context = context,
-                enableVad = vadEnabled,
+                enableVad = effectiveVad,
                 vadNumThreads = threadCount,
                 vadProvider = resolvedProvider,
                 availableRamBytes = MemoryReadings.availableRamBytes(context),
@@ -1103,6 +1207,8 @@ class TranscriptionOrchestrator @Inject constructor(
         filePath: String,
         backend: TranscriptionBackend,
         maxChunkDurationSeconds: Int,
+        /** TASK-450: set when the request fell back from the refused VAD path. */
+        streamedWithoutVad: Boolean,
         context: Context,
         coroutineScope: CoroutineScope,
         listener: TranscriptionListener,
@@ -1115,7 +1221,12 @@ class TranscriptionOrchestrator @Inject constructor(
         val chunkProcessingStartTime = System.currentTimeMillis()
         val accumulatedText = StringBuilder()
         var totalDurationSeconds = 0.0
+        // Actual decoded duration: replaces the header's metadata-derived value
+        // at the summary sites, repairing the metadata-less-container case (0s
+        // Logs row, silently dropped calibration sample; code review 2026-09-04 F6).
+        var decodedSeconds = 0.0
         var expectedChunkCount = 0
+        var processedChunks = 0
         var firstChunkDecodeMs = 0L
         var firstChunkInferStartMs = 0L
         var failedChunks = 0
@@ -1136,10 +1247,15 @@ class TranscriptionOrchestrator @Inject constructor(
                         totalDurationSeconds = event.header.totalDurationSeconds
                         expectedChunkCount = event.header.expectedChunkCount
                         updateAudioDuration(taskId, event.header.totalDurationSeconds)
-                        Log.i(TAG, "Pipeline: expecting ${event.header.expectedChunkCount} chunks, ${event.header.totalDurationSeconds}s")
+                        Log.i(TAG, if (expectedChunkCount > 0)
+                            "Pipeline: expecting $expectedChunkCount chunks, ${event.header.totalDurationSeconds}s"
+                        else
+                            "Pipeline: unknown chunk count (no duration metadata), ${event.header.totalDurationSeconds}s")
                     }
                     is AudioPreprocessor.StreamEvent.Chunk -> {
                         val chunk = event.chunk
+                        processedChunks++
+                        decodedSeconds += chunk.samples.size.toDouble() / chunk.sampleRate
                         val chunkReceiveMs = System.currentTimeMillis() - pipelineStartMs
                         if (chunk.chunkIndex == 0) {
                             firstChunkDecodeMs = chunkReceiveMs
@@ -1147,6 +1263,10 @@ class TranscriptionOrchestrator @Inject constructor(
                             Log.i(TAG, "PERF: pipeline first chunk decoded in ${firstChunkDecodeMs}ms")
                         }
                         Log.d(TAG, "Pipeline: transcribing chunk ${chunk.chunkIndex} (${chunk.samples.size} samples)")
+                        // One label for both the success and retry emissions; the
+                        // suffix helper hides the total once the decoded stream
+                        // passes the metadata-derived estimate (TASK-449).
+                        val chunkLabel = "Chunk ${chunk.chunkIndex + 1}${AudioPreprocessor.chunkTotalSuffix(expectedChunkCount, chunk.chunkIndex)}"
 
                         val chunkResult = backend.transcribeAudio(
                             samples = chunk.samples,
@@ -1164,7 +1284,7 @@ class TranscriptionOrchestrator @Inject constructor(
                                         listener.onInterimResult(
                                             contentText = trimmed,
                                             bigText = trimmed,
-                                            subText = "Chunk ${chunk.chunkIndex + 1}/$expectedChunkCount",
+                                            subText = chunkLabel,
                                             chunkIndex = chunk.chunkIndex,
                                             chunkText = trimmed,
                                             totalChunks = expectedChunkCount
@@ -1189,7 +1309,7 @@ class TranscriptionOrchestrator @Inject constructor(
                                                 listener.onInterimResult(
                                                     contentText = trimmed,
                                                     bigText = trimmed,
-                                                    subText = "Chunk ${chunk.chunkIndex + 1}/$expectedChunkCount (retry)",
+                                                    subText = "$chunkLabel (retry)",
                                                     chunkIndex = chunk.chunkIndex,
                                                     chunkText = trimmed,
                                                     totalChunks = expectedChunkCount
@@ -1218,29 +1338,42 @@ class TranscriptionOrchestrator @Inject constructor(
                 }
             }
         } catch (e: PreprocessingError) {
+            // Same decoded-duration repair as the success path: a mid-stream
+            // failure must not leave the ERROR row at the metadata value (0.0
+            // for metadata-less containers).
+            if (decodedSeconds > 0.0) updateAudioDuration(taskId, decodedSeconds)
             return Result.failure(e)
         } catch (e: Exception) {
+            if (decodedSeconds > 0.0) updateAudioDuration(taskId, decodedSeconds)
             return Result.failure(IllegalStateException("Pipeline failed: ${e.message}"))
         }
 
         val combinedResult = accumulatedText.toString()
+        // The decoded length beats the metadata value at the summary sites: it
+        // is the ground truth (also when the container's duration tag lies or
+        // is absent, where totalDurationSeconds is 0.0).
+        if (decodedSeconds > 0.0) {
+            totalDurationSeconds = decodedSeconds
+            updateAudioDuration(taskId, decodedSeconds)
+        }
         recordCalibration(backend, totalDurationSeconds.toInt(), chunkProcessingStartTime)
 
         val totalMs = System.currentTimeMillis() - pipelineStartMs
-        Log.i(TAG, "PERF: pipeline total ${totalMs}ms for ${totalDurationSeconds}s audio, ${expectedChunkCount} chunks, backend=${backend.id}, ttft_decode=${firstChunkDecodeMs}ms")
+        Log.i(TAG, "PERF: pipeline total ${totalMs}ms for ${totalDurationSeconds}s audio, $processedChunks chunks (expected $expectedChunkCount), backend=${backend.id}, ttft_decode=${firstChunkDecodeMs}ms")
 
         return if (combinedResult.isBlank()) {
             Result.failure(TranscriptionException.NoTranscriptionProduced())
         } else {
             if (failedChunks > 0) {
-                Log.w(TAG, "Pipeline completed with $failedChunks/$expectedChunkCount failed chunks")
+                Log.w(TAG, "Pipeline completed with $failedChunks/$processedChunks failed chunks")
             }
             Result.success(TranscriptionResult(
                 text = combinedResult,
                 confidence = minConfidence,
                 detectedLanguage = detectedLang,
                 isPartial = failedChunks > 0,
-                failedChunkCount = failedChunks
+                failedChunkCount = failedChunks,
+                streamedWithoutVad = streamedWithoutVad
             ))
         }
     }

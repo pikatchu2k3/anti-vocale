@@ -111,6 +111,39 @@ class TestSpiOpsTest {
     }
 
     @Test
+    fun `set progressive writes through and parses booleans strictly`() = runTest {
+        // 2026-09-04 device session: the only state the SPI could not reach,
+        // six UI taps to flip. Same strict-boolean contract as vad.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_SET, key = "progressive", value = "false"))
+        assertEquals("progressive", json.getString("key"))
+        assertFalse(fake._progressiveTranscription.value)
+
+        // "True" (not "1"): toBooleanOrNull would also reject "1", so the
+        // case variant is what pins the STRICT parser against a silent
+        // relaxation; the vad test's "yes" cannot discriminate.
+        assertTrue(
+            JSONObject(ops.handle(TestSpiOps.OP_SET, key = "progressive", value = "True"))
+                .getString("error").contains("progressive"))
+    }
+
+    @Test
+    fun `set keep_alive writes through and rejects non-positive values`() = runTest {
+        // TASK-451: the keep-alive pref gates the LLM idle timer; zero or
+        // negative minutes would fall back to the default silently, so the
+        // SPI rejects them at write time.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_SET, key = "keep_alive", value = "1"))
+        assertEquals("keep_alive", json.getString("key"))
+        assertEquals(1, fake._keepAliveTimeout.value)
+
+        assertTrue(
+            JSONObject(ops.handle(TestSpiOps.OP_SET, key = "keep_alive", value = "0"))
+                .getString("error").contains("keep_alive"))
+        assertTrue(
+            JSONObject(ops.handle(TestSpiOps.OP_SET, key = "keep_alive", value = "soon"))
+                .getString("error").contains("keep_alive"))
+    }
+
+    @Test
     fun `set threads writes through and parses integers`() = runTest {
         JSONObject(ops.handle(TestSpiOps.OP_SET, key = "threads", value = "4"))
         assertEquals(4, fake._threadCount.value)
