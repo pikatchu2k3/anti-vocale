@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.inject.Inject
@@ -30,6 +31,23 @@ class AudioPreprocessor @Inject constructor() {
 
     companion object {
         private const val TAG = "AudioPreprocessor"
+
+        /** Ogg page header size: capture pattern through the lacing-table length byte. */
+        internal const val OGG_PAGE_HEADER_SIZE = 27
+
+        /** Offset of the lacing-table entry count inside an Ogg page header. */
+        internal const val OGG_SEGMENT_COUNT_OFFSET = 26
+
+        /** Offset of the 8-byte little-endian granule position inside an Ogg page header. */
+        internal const val OGG_GRANULE_OFFSET = 6
+
+        /** Opus granule positions always run at 48 kHz, fixed by RFC 7845. */
+        internal const val OPUS_CLOCK_HZ = 48000
+
+        /** Sanity bound for the granule read: durations past one day are
+         *  garbage (capture-pattern false positive, corrupt page); the app's
+         *  own ceilings top out at two hours. */
+        internal const val MAX_SANE_GRANULE_SECONDS = 86400.0
 
         /**
          * VAD segments are merged up to the model's per-segment limit minus a 2s
@@ -325,13 +343,21 @@ class AudioPreprocessor @Inject constructor() {
                 val inputChannels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                 val mime = inputFormat.getString(MediaFormat.KEY_MIME)!!
 
-                // getLong returns 0 when KEY_DURATION is absent.
+                // getLong returns 0 when KEY_DURATION is absent, and the tag
+                // itself can under-report Opus-in-Ogg (GH #91): the granule
+                // read is the value validateDuration already trusts for the
+                // same file, so the header must agree with it or the interim
+                // count contradicts what was validated.
+                val granuleSeconds = getOggGranuleDuration(inputPath)
                 val durationUs = inputFormat.getLong(MediaFormat.KEY_DURATION)
-                val totalDurationSeconds = durationUs / 1_000_000.0
+                val totalDurationSeconds = when {
+                    granuleSeconds > 0 -> granuleSeconds
+                    else -> durationUs / 1_000_000.0
+                }
 
                 val expectedChunks = when {
                     maxChunkDurationSeconds == null -> 1
-                    durationUs <= 0 -> 0
+                    totalDurationSeconds <= 0 -> 0
                     else -> expectedChunkCount(totalDurationSeconds, maxChunkDurationSeconds)
                 }
 
@@ -871,10 +897,114 @@ class AudioPreprocessor @Inject constructor() {
     }
 
     /**
-     * Gets audio duration using MediaExtractor.
+     * Gets audio duration. For Ogg Opus files, the last page's granule
+     * position is the definitive source: Telegram voice messages can carry a
+     * wrong or partial KEY_DURATION in the track format, and the same number
+     * feeds the long-audio safeguards (GH #91). Falls back to MediaExtractor
+     * for non-Opus files or unreadable granules.
      */
     fun getAudioDuration(inputPath: String): Double {
-        try {
+        val oggDuration = getOggGranuleDuration(inputPath)
+        if (oggDuration > 0) return oggDuration
+        return getMediaExtractorDuration(inputPath)
+    }
+
+    /**
+     * Reads the last Ogg page's granule position and converts to seconds at
+     * the Opus sample rate (48 kHz, fixed by the spec), minus the OpusHead
+     * pre-skip per RFC 7845 4.2. Returns 0 for non-Opus files or any parse
+     * failure (caller falls back to MediaExtractor).
+     */
+    internal fun getOggGranuleDuration(inputPath: String): Double {
+        return try {
+            val file = File(inputPath)
+            if (!file.isFile || file.length() < OGG_PAGE_HEADER_SIZE) return 0.0
+            RandomAccessFile(file, "r").use { raf ->
+                // Opus gate: the 48kHz granule division is only valid for Opus
+                // (RFC 7845). Vorbis granules are at the file's own sample
+                // rate; returning 0 lets MediaExtractor handle those correctly.
+                val opusHead = readOpusHead(raf) ?: return 0.0
+                // The last page carries the total sample count in its granule
+                // position. Search from the end for the capture pattern; the
+                // last ~64KB is always enough (max Ogg page is ~65307 bytes).
+                val tailSize = minOf(65536L, file.length()).toInt()
+                val tail = ByteArray(tailSize)
+                raf.seek(file.length() - tailSize)
+                raf.readFully(tail)
+                var lastPage = -1
+                var i = tailSize - 5
+                while (i >= 0) {
+                    if (matchesOggCapturePattern(tail, i)) {
+                        lastPage = i
+                        break
+                    }
+                    i--
+                }
+                if (lastPage < 0 || lastPage + OGG_GRANULE_OFFSET + 8 > tailSize) return 0.0
+                var granuleValue = 0L
+                for (b in 7 downTo 0) {
+                    granuleValue = (granuleValue shl 8) or
+                        (tail[lastPage + OGG_GRANULE_OFFSET + b].toLong() and 0xFF)
+                }
+                if (granuleValue <= opusHead.preSkipSamples) return 0.0
+                val duration = (granuleValue - opusHead.preSkipSamples) / OPUS_CLOCK_HZ.toDouble()
+                // Sanity clamp: a payload false-positive of the capture
+                // pattern, or a corrupt last page, can assemble a huge
+                // granule that would hard-refuse a transcribable file via the
+                // duration ceilings. Anything past a day is garbage; a
+                // bitrate-plausibility bound would be wrong for VBR silence,
+                // which Opus encodes far under 6 kbps.
+                if (duration > MAX_SANE_GRANULE_SECONDS) return 0.0
+                duration
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Ogg granule read failed for $inputPath: ${e.message}")
+            0.0
+        }
+    }
+
+    /** The OpusHead sniff result: null when the file is not Ogg Opus. */
+    private class OpusHeadInfo(val preSkipSamples: Int)
+
+    /**
+     * Reads the first Ogg page's OpusHead. The payload starts AFTER the page
+     * header AND its lacing table (27 + page_segments bytes): for real Opus
+     * files the first page has one segment, so the magic sits at offset 28,
+     * not 27. Checking a fixed 27 made this gate reject every real file
+     * (GH #91 regression found 2026-09-11), silently disabling the granule
+     * reader in favor of the buggy tag path. RFC 7845 puts OpusHead first in
+     * the stream, but does not cap the first page's segment count, so the
+     * window holds the header, the full 255-entry lacing table, and the
+     * OpusHead fields up to pre-skip (packet bytes 10-11).
+     */
+    private fun readOpusHead(raf: RandomAccessFile): OpusHeadInfo? {
+        raf.seek(0)
+        val header = ByteArray(OGG_PAGE_HEADER_SIZE + 255 + 12)
+        val read = raf.read(header)
+        if (!matchesOggCapturePattern(header, 0)) return null
+        val payloadStart = OGG_PAGE_HEADER_SIZE +
+            (header[OGG_SEGMENT_COUNT_OFFSET].toInt() and 0xFF)
+        if (payloadStart + 12 > read) return null
+        if (String(header, payloadStart, 8, Charsets.US_ASCII) != "OpusHead") return null
+        val preSkip = (header[payloadStart + 10].toInt() and 0xFF) or
+            ((header[payloadStart + 11].toInt() and 0xFF) shl 8)
+        return OpusHeadInfo(preSkip)
+    }
+
+    /** The Ogg capture pattern at [offset]: "OggS" plus the always-zero version byte. */
+    private fun matchesOggCapturePattern(bytes: ByteArray, offset: Int): Boolean =
+        offset >= 0 && bytes.size >= offset + 5 &&
+            bytes[offset] == 'O'.code.toByte() && bytes[offset + 1] == 'g'.code.toByte() &&
+            bytes[offset + 2] == 'g'.code.toByte() && bytes[offset + 3] == 'S'.code.toByte() &&
+            bytes[offset + 4] == 0.toByte()
+
+    /**
+     * MediaExtractor's KEY_DURATION from the audio track format. Can be wrong
+     * for Opus-in-Ogg (GH #91), which is why [getAudioDuration] tries the
+     * granule position first.
+     */
+    internal fun getMediaExtractorDuration(inputPath: String): Double {
+        return try {
             val extractor = MediaExtractor()
             openAudioSource(extractor, inputPath)
 
@@ -888,10 +1018,10 @@ class AudioPreprocessor @Inject constructor() {
             }
 
             extractor.release()
-            return 0.0
+            0.0
         } catch (e: Exception) {
             Log.e(TAG, "Error getting audio duration", e)
-            return 0.0
+            0.0
         }
     }
 

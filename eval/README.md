@@ -126,6 +126,29 @@ python eval/run_baseline.py --backends distil_it,parakeet,nemotron
 #    eval/results/summary_<timestamp>.md     (mean WER/CER per backend, loop rates)
 ```
 
+## Scoring the punctuation pass (`postprocess_score.py`)
+
+TASK-278: scores the app's LLM punctuation pass (TASK-276) on transcript
+text with the app's exact prompt composition and guards. Per sample and
+aggregate: WER raw vs polished vs reference, punctuation mark F1
+(difflib-aligned mark tokens, comma/terminal classes), and a
+content-preservation ratio (flagged below 0.98). Backend is pluggable:
+an OpenAI-compatible `--endpoint`/`--model` (default: the Mac's oMLX gemma)
+or `--mock` for a network-free pipeline check.
+
+```bash
+# References from audio (parakeet, ASR pseudo-references; document provenance):
+.venv/bin/python postprocess_score.py --transcribe
+# Real run (greedy, then the chat sampler the app's pass actually uses):
+set -a; . ~/.config/litellm/zai-router.env; set +a   # OMLX_API_KEY
+.venv/bin/python postprocess_score.py --temperature 0.0 --top-p 1.0
+.venv/bin/python postprocess_score.py --temperature 0.8 --top-p 0.95
+```
+
+Baseline report: `docs/research/2026-09-06_punctuation-pass-eval.md`.
+Scoring functions are importable with no side effects (stdlib only at
+import; sherpa/soundfile load lazily for `--transcribe`).
+
 ## Limitations (be honest when reading results)
 
 - **Desktop CPU ≠ device latency.** WER/CER/loops are comparable across models;
@@ -135,7 +158,7 @@ python eval/run_baseline.py --backends distil_it,parakeet,nemotron
   difference between models on 40 clips is *suggestive*, not conclusive. Report with
   per-clip spread, not just means.
 - **Recognizer configs mirror the app but sherpa-onnx Python API nesting can vary
-  by version.** The script is pinned to `sherpa-onnx==1.13.3` to match the shipped
+  by version.** The script is pinned to `sherpa-onnx==1.13.5` to match the shipped
   AAR. If a backend fails to construct, the config field shape is the first thing
   to check against the installed version's `OfflineRecognizerConfig` / `OnlineRecognizerConfig`.
 - **This measures current models.** The payoff: once a Whisper LoRA fine-tune

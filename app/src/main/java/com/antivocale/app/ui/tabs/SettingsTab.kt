@@ -10,10 +10,14 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,11 +31,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.antivocale.app.BuildConfig
 import com.antivocale.app.R
+import com.antivocale.app.ui.TestNavigation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +64,7 @@ import com.antivocale.app.ui.components.TokenInputField
 import com.antivocale.app.ui.components.ToggleSettingCard
 import com.antivocale.app.ui.components.UnloadModelButton
 import com.antivocale.app.ui.dialogs.PerformanceStatsDialog
+import com.antivocale.app.ui.screens.LauncherIconScreen
 import com.antivocale.app.ui.screens.PerAppSettingsScreen
 import com.antivocale.app.ui.screens.PromptSettingsScreen
 import com.antivocale.app.ui.theme.ThemeType
@@ -63,12 +72,15 @@ import com.antivocale.app.util.FeedbackHelper
 import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.ui.viewmodel.LanguageOption
+import com.antivocale.app.ui.components.EditablePromptCard
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTab(
-    onNavigateToModelTab: () -> Unit = {}
+    onNavigateToModelTab: () -> Unit = {},
+    navRequest: TestNavigation.NavRequest? = null,
+    onNavConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -85,6 +97,7 @@ fun SettingsTab(
     val autoDetectedThreads = viewModel.autoDetectedThreadCount
     val currentLanguage by viewModel.currentLanguage.collectAsState()
     val currentTranscriptionLanguage by viewModel.currentTranscriptionLanguage.collectAsState()
+    val transcriptionPicker by viewModel.transcriptionLanguagePicker.collectAsState()
     val currentTheme by viewModel.currentTheme.collectAsState()
     val swipeActionMode by viewModel.swipeActionMode.collectAsState()
     val groupLogsByConversation by viewModel.groupLogsByConversation.collectAsState()
@@ -92,7 +105,6 @@ fun SettingsTab(
     val showRetranscribeButton by viewModel.showRetranscribeButton.collectAsState()
     val forceModelLoad by viewModel.forceModelLoad.collectAsState()
     val compactResultActions by viewModel.compactResultActions.collectAsState()
-    val showTaskDetails by viewModel.showTaskDetails.collectAsState()
     val tokenState by viewModel.tokenState.collectAsState()
     val tokenInput by viewModel.tokenInput.collectAsState()
     val oauthState by viewModel.oauthState.collectAsState()
@@ -105,6 +117,57 @@ fun SettingsTab(
     var perfStatsProfiles by remember { mutableStateOf<List<CalibrationProfile>>(emptyList()) }
     val perfStatsScope = rememberCoroutineScope()
     var showPromptSettings by remember { mutableStateOf(false) }
+    var showIconSettings by remember { mutableStateOf(false) }
+
+    // TASK-486: TEST_SPI navigation. Sub-pages flip their flag; a section
+    // destination bumps that section's expand counter and scrolls to it via
+    // the offsets captured by each section's onGloballyPositioned.
+    // Offsets are layout-thread writes read only inside the nav effect: a
+    // plain map (no snapshot bookkeeping). Root-space Y of each section minus
+    // the scroll container's own root Y gives the content-space target
+    // animateScrollTo expects.
+    val sectionOffsets = remember { mutableStateMapOf<String, Int>() }
+    var scrollContentRootY by remember { mutableStateOf(0) }
+    val expandCounters = remember { mutableStateMapOf<String, Int>() }
+    val navScope = rememberCoroutineScope()
+    LaunchedEffect(navRequest) {
+        // Debug-only tooling: constant-folded out of release by R8.
+        if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
+        val request = navRequest ?: return@LaunchedEffect
+        // Consume FIRST at the source: a tab re-entry then sees null instead
+        // of replaying (a guard remembered here would die with the tab).
+        onNavConsumed()
+        when (val dest = request.destination) {
+            is TestNavigation.Destination.SettingsSubPage -> {
+                // Exactly one sub-page wins the if/else-if chain: clear the
+                // siblings, or the currently-open screen silently keeps it.
+                showIconSettings = dest.key == "icon_picker"
+                showPromptSettings = dest.key == "prompt"
+                showPerAppSettings = dest.key == "per_app"
+            }
+            is TestNavigation.Destination.SettingsSection -> {
+                // A section target needs the main Column composed: back out
+                // of any open sub-page first or the scroll anchor never lays
+                // out and the expand lands on a hidden screen.
+                showIconSettings = false
+                showPromptSettings = false
+                showPerAppSettings = false
+                expandCounters[dest.key] = (expandCounters[dest.key] ?: 0) + 1
+                // First composition may run before layout delivers offsets:
+                // wait one frame, then scroll if the anchor appeared.
+                var target = sectionOffsets[dest.key]
+                if (target == null) {
+                    withFrameNanos { }
+                    target = sectionOffsets[dest.key]
+                }
+                target?.let { rootY ->
+                    val contentY = rootY - scrollContentRootY
+                    navScope.launch { scrollState.animateScrollTo(maxOf(0, contentY - 32)) }
+                }
+            }
+            else -> Unit
+        }
+    }
 
     // OAuth launcher
     val oauthLauncher = rememberLauncherForActivityResult(
@@ -147,6 +210,11 @@ fun SettingsTab(
             preferencesManager = viewModel.perAppPreferencesManager,
             onBack = { showPerAppSettings = false }
         )
+    } else if (showIconSettings) {
+        LauncherIconScreen(
+            viewModel = viewModel,
+            onBack = { showIconSettings = false }
+        )
     } else if (showPromptSettings) {
         PromptSettingsScreen(
             viewModel = viewModel,
@@ -158,12 +226,17 @@ fun SettingsTab(
             .fillMaxSize()
             .navigationBarsPadding()
             .verticalScroll(scrollState)
+            .onGloballyPositioned { scrollContentRootY = it.positionInRoot().y.toInt() }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         CollapsibleSection(
             title = stringResource(R.string.settings_section_transcription),
             icon = Icons.Default.Mic,
+            expandSignal = expandCounters["transcription"] ?: 0,
+            modifier = Modifier.onGloballyPositioned {
+                sectionOffsets["transcription"] = it.positionInRoot().y.toInt()
+            },
             initiallyExpanded = true
         ) {
             // Model Status Card (only show for LLM backend)
@@ -302,6 +375,9 @@ fun SettingsTab(
             }
 
             // Transcription Language Setting
+            val transcriptionPinState = TranscriptionLanguagePolicy.pinState(
+                currentTranscriptionLanguage, transcriptionPicker.offeredCodes
+            )
             Card(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -325,40 +401,50 @@ fun SettingsTab(
                         )
                     }
 
-                    Text(
-                        text = stringResource(R.string.transcription_language_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                    // Transcription language dropdown
+                    // TASK-458: the dropdown offers what the ACTIVE model conditions
+                    // on; backends without language conditioning render it disabled.
                     SettingsDropdown(
                         currentValue = currentTranscriptionLanguage,
-                        options = viewModel.transcriptionLanguageOptions.map { it.code },
+                        options = transcriptionPicker.codes,
                         currentValueDisplay = languageOptionLabel(
                             currentTranscriptionLanguage,
                             transcriptionSentinelLabels,
-                            viewModel.transcriptionLanguageOptions
+                            transcriptionPicker.optionByCode
                         ),
                         optionDisplay = { code ->
                             languageOptionLabel(
                                 code,
                                 transcriptionSentinelLabels,
-                                viewModel.transcriptionLanguageOptions
+                                transcriptionPicker.optionByCode
                             )
                         },
                         onOptionSelected = { viewModel.saveTranscriptionLanguage(it) },
                         label = stringResource(R.string.transcription_language_title),
-                        enabled = !uiState.isSaving
+                        enabled = transcriptionPicker.conditioningAvailable && !uiState.isSaving
                     )
 
-                    Text(
-                        text = stringResource(R.string.transcription_language_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // TASK-458: one explanatory line per the state of the active
+                    // model vs the stored preference (mutually exclusive by design:
+                    // a model that ignores the setting entirely shows only the
+                    // no-conditioning explanation, never the pin notes).
+                    val hintRes = when {
+                        !transcriptionPicker.conditioningAvailable ->
+                            R.string.transcription_language_no_conditioning
+                        transcriptionPinState == TranscriptionLanguagePolicy.PinState.SUPPORTED_PIN ->
+                            R.string.transcription_language_forced_hint
+                        transcriptionPinState == TranscriptionLanguagePolicy.PinState.UNSUPPORTED_PIN ->
+                            R.string.transcription_language_unsupported_pin
+                        else -> null
+                    }
+                    hintRes?.let {
+                        Text(
+                            text = stringResource(it),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -422,6 +508,26 @@ fun SettingsTab(
                 PunctuationPromptCard(
                     prompt = viewModel.currentPunctuationPrompt.collectAsState().value,
                     onSave = { viewModel.savePunctuationPrompt(it) }
+                )
+            }
+
+            // TASK-121.4: smart-summary toggle. Always shown: with no Gemma model
+            // configured the pass silently skips at runtime (same graceful branch
+            // as the punctuation pass), so the setting does not hide itself.
+            val summarizeOn by viewModel.summarizeEnabled.collectAsState()
+            ToggleSettingCard(
+                icon = Icons.Default.Notes,
+                title = stringResource(R.string.summarize_title),
+                description = stringResource(R.string.summarize_description),
+                checked = summarizeOn,
+                onCheckedChange = { enabled ->
+                    viewModel.saveSummarizeEnabled(enabled)
+                }
+            )
+            if (summarizeOn) {
+                SummaryPromptCard(
+                    prompt = viewModel.currentSummaryPrompt.collectAsState().value,
+                    onSave = { viewModel.saveSummaryPrompt(it) }
                 )
             }
 
@@ -581,6 +687,10 @@ fun SettingsTab(
         CollapsibleSection(
             title = stringResource(R.string.settings_section_appearance),
             icon = Icons.Default.Palette,
+            expandSignal = expandCounters["appearance"] ?: 0,
+            modifier = Modifier.onGloballyPositioned {
+                sectionOffsets["appearance"] = it.positionInRoot().y.toInt()
+            },
             initiallyExpanded = true
         ) {
             // Theme Setting
@@ -652,6 +762,46 @@ fun SettingsTab(
                 }
             }
 
+            // App icon variants (TASK-392, TASK-473): selection moved to a
+            // dedicated sub-page (maintainer decision 2026-09-09); the row
+            // shows the active variant and opens the picker grid.
+            val currentLauncherIcon by viewModel.currentLauncherIcon.collectAsState()
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(role = Role.Button) { showIconSettings = true }
+                        .padding(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Apps,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.app_icon_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(currentLauncherIcon.nameRes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Language Setting (App Language)
             Card(
                 modifier = Modifier.fillMaxWidth()
@@ -685,19 +835,20 @@ fun SettingsTab(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     // Language dropdown
+                    val appOptionsByCode = viewModel.languageOptions.associateBy { option -> option.code }
                     SettingsDropdown(
                         currentValue = currentLanguage,
                         options = viewModel.languageOptions.map { it.code },
                         currentValueDisplay = languageOptionLabel(
                             currentLanguage,
                             appLanguageSentinelLabels,
-                            viewModel.languageOptions
+                            appOptionsByCode
                         ),
                         optionDisplay = { code ->
                             languageOptionLabel(
                                 code,
                                 appLanguageSentinelLabels,
-                                viewModel.languageOptions
+                                appOptionsByCode
                             )
                         },
                         onOptionSelected = { viewModel.saveLanguagePreference(it) },
@@ -740,19 +891,9 @@ fun SettingsTab(
 
                     SettingsDropdown(
                         currentValue = swipeActionMode,
-                        options = listOf("REVEAL", "IMMEDIATE_DELETE"),
-                        currentValueDisplay = when (swipeActionMode) {
-                            "REVEAL" -> stringResource(R.string.swipe_action_reveal)
-                            "IMMEDIATE_DELETE" -> stringResource(R.string.swipe_action_immediate_delete)
-                            else -> swipeActionMode
-                        },
-                        optionDisplay = { mode ->
-                            when (mode) {
-                                "REVEAL" -> stringResource(R.string.swipe_action_reveal)
-                                "IMMEDIATE_DELETE" -> stringResource(R.string.swipe_action_immediate_delete)
-                                else -> mode
-                            }
-                        },
+                        options = PreferencesManager.SWIPE_ACTION_MODES,
+                        currentValueDisplay = swipeActionMode.swipeActionLabel(),
+                        optionDisplay = { mode -> mode.swipeActionLabel() },
                         onOptionSelected = { viewModel.saveSwipeActionMode(it) },
                         label = stringResource(R.string.swipe_action_title),
                         enabled = !uiState.isSaving
@@ -782,21 +923,15 @@ fun SettingsTab(
                 }
             )
 
-            // GH #45 follow-up: opt-in task-id detail line on log entries
-            ToggleSettingCard(
-                icon = Icons.Default.Tag,
-                title = stringResource(R.string.show_task_details_title),
-                description = stringResource(R.string.show_task_details_description),
-                checked = showTaskDetails,
-                onCheckedChange = { enabled ->
-                    viewModel.saveShowTaskDetails(enabled)
-                }
-            )
         }
 
         CollapsibleSection(
             title = stringResource(R.string.settings_section_advanced),
             icon = Icons.Default.Settings,
+            expandSignal = expandCounters["advanced"] ?: 0,
+            modifier = Modifier.onGloballyPositioned {
+                sectionOffsets["advanced"] = it.positionInRoot().y.toInt()
+            },
             initiallyExpanded = false
         ) {
             // TASK-336: offer the battery-optimization exemption after a detected
@@ -1482,13 +1617,23 @@ fun SettingsTab(
             }
         }
 
+        // TASK-491: replay the first-install tour on demand (the only
+        // reset path besides a fresh install).
+        OutlinedButton(
+            onClick = { viewModel.replayOnboardingTour() },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.settings_replay_tour))
+        }
+
         // Feedback & About section (issue #34 / TASK-341)
         FeedbackSection(
+            expandSignal = expandCounters["feedback"] ?: 0,
+            onPositioned = { sectionOffsets["feedback"] = it },
             activeBackendId = uiState.transcriptionBackend,
             activeModelName = uiState.currentModelName,
             currentLanguage = currentLanguage
         )
-
 
         // Performance Stats Dialog
         if (showPerfStatsDialog) {
@@ -1521,7 +1666,9 @@ fun SettingsTab(
 private fun FeedbackSection(
     activeBackendId: String,
     activeModelName: String?,
-    currentLanguage: String
+    currentLanguage: String,
+    expandSignal: Int = 0,
+    onPositioned: (Int) -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -1558,6 +1705,8 @@ private fun FeedbackSection(
     CollapsibleSection(
         title = stringResource(R.string.settings_section_feedback),
         icon = Icons.Default.Mail,
+        expandSignal = expandSignal,
+        modifier = Modifier.onGloballyPositioned { onPositioned(it.positionInRoot().y.toInt()) },
         initiallyExpanded = false
     ) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -1689,36 +1838,20 @@ private fun FeedbackSection(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 // License row (informational, no action)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_feedback_license_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    // Locale-safe: weighted value wraps under a longer title instead
-                    // of overflowing the row (TASK-345)
-                    Text(
-                        text = stringResource(R.string.settings_feedback_license_value),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                InfoRow(
+                    icon = Icons.Default.Description,
+                    title = stringResource(R.string.settings_feedback_license_title),
+                    value = stringResource(R.string.settings_feedback_license_value)
+                )
+
+                // Version row (TASK-459): lets users tell which build they run;
+                // the versionCode identifies the exact per-ABI build (F-Droid
+                // can serve an older version for days after a release)
+                InfoRow(
+                    icon = Icons.Default.Info,
+                    title = stringResource(R.string.settings_feedback_version_title),
+                    value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+                )
 
                 // Privacy note
                 Text(
@@ -1728,6 +1861,46 @@ private fun FeedbackSection(
                 )
             }
         }
+    }
+}
+
+/**
+ * Informational (non-clickable) row of the Feedback & About section: icon +
+ * bold title on the leading edge, value on the trailing edge. Shared by the
+ * license and version rows (TASK-459 extraction; the clickable rows above
+ * have a different shape and stay inline).
+ */
+@Composable
+private fun InfoRow(icon: ImageVector, title: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        // Locale-safe: weighted value wraps under a longer title instead
+        // of overflowing the row (TASK-345)
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -1821,10 +1994,10 @@ private fun OutputFolderSettingCard(
 private fun languageOptionLabel(
     code: String,
     sentinelLabels: Map<String, Int>,
-    options: List<LanguageOption>,
+    options: Map<String, LanguageOption>,
 ): String {
     sentinelLabels[code]?.let { return stringResource(it) }
-    return options.find { it.code == code }?.displayName
+    return options[code]?.displayName
         ?: LanguageNames.nativeLanguageName(code)
 }
 
@@ -1832,13 +2005,30 @@ private fun languageOptionLabel(
 private val appLanguageSentinelLabels = mapOf("system" to R.string.language_system)
 
 /**
- * Transcription-language dropdown sentinels (TASK-434): "system" is the
- * untouched default (follow the app locale where the variant supports it),
- * "auto" the explicit model-side detection choice.
+ * Transcription-language dropdown sentinel (TASK-457): "auto" is the
+ * model-side detection choice. A stored "system" (the pre-457 untouched
+ * default) resolves identically now that the app-locale pinning is gone, so
+ * it renders with the same label instead of a second sentinel entry.
  */
 private val transcriptionSentinelLabels = mapOf(
-    TranscriptionLanguagePolicy.PREF_SYSTEM to R.string.transcription_language_system,
     TranscriptionLanguagePolicy.PREF_AUTO to R.string.transcription_language_auto,
+)
+
+/**
+ * TASK-483: editable override of the summary-pass prompt. Same contract as
+ * the punctuation prompt card: blank means the built-in two-to-three-sentence
+ * default, commits on focus loss, 500-char cap.
+ */
+@Composable
+private fun SummaryPromptCard(
+    prompt: String,
+    onSave: (String) -> Unit,
+) = EditablePromptCard(
+    prompt = prompt,
+    onSave = onSave,
+    titleRes = R.string.summary_prompt_title,
+    descriptionRes = R.string.summary_prompt_description,
+    placeholderRes = R.string.summary_default_prompt,
 )
 
 /**
@@ -1850,39 +2040,13 @@ private val transcriptionSentinelLabels = mapOf(
 private fun PunctuationPromptCard(
     prompt: String,
     onSave: (String) -> Unit,
-) {
-    var text by remember(prompt) { mutableStateOf(prompt) }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.punctuation_prompt_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = stringResource(R.string.punctuation_prompt_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(500) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focused ->
-                        if (!focused.isFocused && text != prompt) onSave(text)
-                    },
-                placeholder = { Text(stringResource(R.string.punctuation_prompt_placeholder)) },
-                minLines = 2,
-                supportingText = {
-                    Text(stringResource(R.string.default_prompt_chars, text.length))
-                }
-            )
-        }
-    }
-}
-
+) = EditablePromptCard(
+    prompt = prompt,
+    onSave = onSave,
+    titleRes = R.string.punctuation_prompt_title,
+    descriptionRes = R.string.punctuation_prompt_description,
+    placeholderRes = R.string.punctuation_prompt_placeholder,
+)
 
 /** TASK-276: pref value -> localized label, one fallback for unknown values. */
 @Composable

@@ -24,6 +24,7 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -36,10 +37,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.antivocale.app.MainActivity
 import com.antivocale.app.R
+import com.svenjacobs.reveal.revealable
+import com.antivocale.app.transcription.SummaryPolicy
 import com.antivocale.app.util.AppInfoUtils
 import com.antivocale.app.util.SharedAudioHandler
+import com.antivocale.app.util.formatProcessingTime
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.service.InferenceService
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -53,6 +59,7 @@ import com.antivocale.app.ui.components.rememberSwipeToRevealState
 import com.antivocale.app.util.ToastCompat
 import com.antivocale.app.util.FeedbackHelper
 import com.antivocale.app.ui.viewmodel.LogEntry
+import com.antivocale.app.ui.onboarding.TourStep
 import com.antivocale.app.ui.viewmodel.LogsViewModel
 import androidx.compose.runtime.produceState
 import com.antivocale.app.ui.dialogs.LongAudioWarningDialog
@@ -106,10 +113,14 @@ private fun reportTranscription(context: Context, log: LogEntry) {
 /**
  * Copies transcription text to clipboard and shows a toast.
  */
-private fun copyTranscriptionToClipboard(context: Context, text: String) {
+private fun copyTranscriptionToClipboard(
+    context: Context,
+    text: String,
+    labelRes: Int = R.string.clipboard_label_transcription,
+) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
             as android.content.ClipboardManager
-    val clip = ClipData.newPlainText(context.getString(R.string.clipboard_label_transcription), text)
+    val clip = ClipData.newPlainText(context.getString(labelRes), text)
     clipboard.setPrimaryClip(clip)
     ToastCompat.show(context, context.getString(R.string.copied_to_clipboard))
 }
@@ -268,7 +279,8 @@ private fun buildSwipeActions(
 @Composable
 fun LogsTab(
     viewModel: LogsViewModel = hiltViewModel(),
-    highlightTaskId: String? = null
+    highlightTaskId: String? = null,
+    tourRevealState: com.svenjacobs.reveal.RevealState,
 ) {
     val logs by viewModel.logs.collectAsState()
     val filteredLogs by viewModel.filteredLogs.collectAsState()
@@ -276,7 +288,6 @@ fun LogsTab(
     val context = LocalContext.current
     val swipeActionMode by viewModel.swipeActionMode
         .collectAsState(initial = PreferencesManager.DEFAULT_SWIPE_ACTION_MODE)
-    val showTaskDetails by viewModel.showTaskDetails.collectAsState()
     val showVadAdvisory by viewModel.showVadAdvisory.collectAsState()
     val groupByConversation by viewModel.groupLogsByConversation.collectAsState()
 
@@ -370,10 +381,41 @@ fun LogsTab(
         )
     }
 
+    // TASK-500: browse-audio FAB. The system document picker returns a
+    // content URI with a transient read grant; the ViewModel copies it
+    // through the same shared-audio path as the share receiver and enqueues
+    // transcription, so no storage permission is needed.
+    val browseLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.transcribeLocalFile(context, uri)
+    }
+    LaunchedEffect(Unit) {
+        viewModel.browseError.collect {
+            snackbarHostState.showSnackbar(it)
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { browseLauncher.launch(arrayOf("audio/*", "video/*")) },
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .revealable(
+                        key = TourStep.BrowseFab.key,
+                        state = tourRevealState,
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = stringResource(R.string.browse_audio_content_description),
+                )
+            }
+        },
     ) { padding ->
         // Scaffold insets are zeroed above (edge-to-edge list); consume the param
         // explicitly so lint does not flag it as an ignored safety contract.
@@ -512,7 +554,9 @@ fun LogsTab(
                     state = listState,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(
-                        bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                        // TASK-500: FAB clearance so the floating button never
+                        // sits on the last row's action buttons at list end.
+                        bottom = 96.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                     )
                 ) {
                     item(key = "header") {
@@ -608,7 +652,6 @@ fun LogsTab(
                                         searchQuery = searchQuery,
                                         isExpanded = log.taskId in expandedTaskIds,
                                         swipeActionMode = swipeActionMode,
-                                        showTaskDetails = showTaskDetails,
                                         revealedLogId = revealedLogId,
                                         onRevealedLogIdChange = { revealedLogId = it },
                                         onExpandChange = { expanded ->
@@ -646,7 +689,6 @@ fun LogsTab(
                                     searchQuery = searchQuery,
                                     isExpanded = log.taskId in expandedTaskIds,
                                     swipeActionMode = swipeActionMode,
-                                    showTaskDetails = showTaskDetails,
                                     revealedLogId = revealedLogId,
                                     onRevealedLogIdChange = { revealedLogId = it },
                                     onExpandChange = { expanded ->
@@ -812,13 +854,12 @@ private fun PartialTranscriptionBanner(failedChunkCount: Int) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun LogEntryItem(
     log: LogEntry,
     searchQuery: String = "",
     expanded: Boolean = false,
-    showTaskDetails: Boolean = false,
     onExpandChange: (Boolean) -> Unit = {},
     onRetranscribe: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
@@ -1065,11 +1106,55 @@ fun LogEntryItem(
                                 .padding(8.dp)
                         )
 
-                        // Metadata row
+                        // TASK-121.4: the AI summary of a long transcript, when the
+                        // pass produced one. Metadata only: the result box above stays
+                        // the delivered transcript. Shown above the original block
+                        // (summary before provenance).
+                        log.summary?.let { summary ->
+                            LabeledTranscriptBlock(
+                                label = stringResource(R.string.logs_summary_label),
+                                copyLabelRes = R.string.copy_summary,
+                                text = summary,
+                                searchQuery = searchQuery,
+                            )
+                        }
+
+                        // TASK-494: an attended summary attempt that produced
+                        // nothing. Silence read as "the app forgot my
+                        // summary"; the caption names the real cause. One
+                        // mapping for every token, so new reasons cannot
+                        // bypass the caption silently.
+                        summarySkipCaptionRes(log.summarySkipReason)?.let { captionRes ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(captionRes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.transcriptBlockSurface()
+                            )
+                        }
+
+                        // TASK-276 AC3: the pre-punctuation original, when the pass
+                        // changed the text. Always visible in the expanded card
+                        // (the raw ASR output is what the model actually heard).
+                        log.rawTranscript?.let { original ->
+                            LabeledTranscriptBlock(
+                                label = stringResource(R.string.logs_original_label),
+                                copyLabelRes = R.string.copy_original,
+                                text = original,
+                                searchQuery = searchQuery,
+                            )
+                        }
+
+                        // Metadata row. FlowRow, not Row: the model name is
+                        // unbounded, so at large font scales the block wraps
+                        // to new lines instead of collapsing the name to a
+                        // zero-width sliver after the fixed siblings.
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             // Timestamp
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1103,26 +1188,16 @@ fun LogEntryItem(
                                     )
                                 }
                             }
-                            // Model that produced the transcription (GH #45); null on pre-v4 rows
+                            // Model that produced the transcription (GH #45); null on pre-v4
+                            // rows. Long external-import names wrap (TASK-495) instead of
+                            // ellipsizing their tail.
                             log.modelName?.let { name ->
                                 Text(
                                     text = stringResource(R.string.logs_model_label, name),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-
-                        // Task ID: opt-in detail (GH #45 follow-up, default off)
-                        if (showTaskDetails) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.logs_task_id, log.taskId.take(8)),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
 
                         // Action buttons: compact icon-only actions tucked into the
@@ -1291,15 +1366,6 @@ private fun formatFullTimestamp(timestamp: Long, context: Context): String {
     }
 }
 
-// Format processing time: 2300ms -> "2.3s", 500ms -> "0.5s"
-private fun formatProcessingTime(durationMs: Long): String {
-    return if (durationMs >= 1000) {
-        String.format("%.1fs", durationMs / 1000.0)
-    } else {
-        "${durationMs}ms"
-    }
-}
-
 // Get preview text with ellipsis
 private fun getPreviewText(text: String, maxLength: Int = 50): String {
     if (text.length <= maxLength) return text
@@ -1350,7 +1416,6 @@ private fun LogEntryWithSwipe(
     searchQuery: String,
     isExpanded: Boolean,
     swipeActionMode: String,
-    showTaskDetails: Boolean,
     revealedLogId: String?,
     onRevealedLogIdChange: (String?) -> Unit,
     onExpandChange: (Boolean) -> Unit,
@@ -1362,7 +1427,7 @@ private fun LogEntryWithSwipe(
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS
 ) {
     val context = LocalContext.current
-    if (swipeActionMode == "REVEAL") {
+    if (SwipeActionMode.from(swipeActionMode) == SwipeActionMode.REVEAL) {
         val revealState = rememberSwipeToRevealState()
 
         LaunchedEffect(log.id, revealState.isRevealed) {
@@ -1400,7 +1465,6 @@ private fun LogEntryWithSwipe(
                 log = log,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
-                showTaskDetails = showTaskDetails,
                 onExpandChange = { expanded ->
                     if (revealState.isRevealed) {
                         revealState.reset()
@@ -1454,7 +1518,6 @@ private fun LogEntryWithSwipe(
                 log = log,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
-                showTaskDetails = showTaskDetails,
                 onExpandChange = onExpandChange,
                 onRetranscribe = onRetranscribe,
                 onCancel = { cancelTask(context, log.taskId) },
@@ -1546,4 +1609,67 @@ private fun groupLogsByConversation(
             )
         }
         .sortedByDescending { it.logs.first().timestamp }
+}
+
+/** The shared surface of the expanded card's secondary blocks, so the
+ *  transcript blocks and the skip-note caption cannot drift apart. */
+@Composable
+private fun Modifier.transcriptBlockSurface(
+    color: Color = MaterialTheme.colorScheme.surfaceVariant,
+): Modifier = this
+    .fillMaxWidth()
+    .background(color.copy(alpha = 0.3f), shape = MaterialTheme.shapes.small)
+    .padding(8.dp)
+
+/** The single skip-reason-token to caption mapping (TASK-494); unknown or
+ *  null tokens render nothing, pre-v7 rows stay silent. */
+private fun summarySkipCaptionRes(reason: String?): Int? = when (reason) {
+    SummaryPolicy.SKIP_REASON_GUARDS -> R.string.summary_skipped_guard
+    SummaryPolicy.SKIP_REASON_CONTEXT -> R.string.summary_skipped_context
+    SummaryPolicy.SKIP_REASON_NO_MODEL -> R.string.summary_skipped_no_model
+    SummaryPolicy.SKIP_REASON_FAILED -> R.string.summary_skipped_failed
+    else -> null
+}
+
+/**
+ * A labeled secondary transcript block of the expanded log card (summary,
+ * pre-punctuation original): labelSmall caption, highlighted body on the
+ * subdued surfaceVariant background, and a copy affordance so the block's
+ * own text is reachable without re-selecting it by hand (GH #72: the
+ * summary is the end result of the two-model pipeline, it must be
+ * copyable). Shared so the two blocks cannot drift.
+ */
+@Composable
+private fun LabeledTranscriptBlock(
+    label: String,
+    @StringRes copyLabelRes: Int,
+    text: String,
+    searchQuery: String,
+) {
+    val context = LocalContext.current
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        // The compact action recipe (48dp target, 18dp icon, localized
+        // description): reuse it so the card's other copy buttons and this
+        // one cannot drift apart.
+        ResultActionButton(
+            compact = true,
+            onClick = { copyTranscriptionToClipboard(context, text, labelRes = copyLabelRes) },
+            icon = Icons.Default.ContentCopy,
+            labelRes = copyLabelRes,
+        )
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = highlightText(text, searchQuery, MaterialTheme.colorScheme.tertiary),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.transcriptBlockSurface()
+    )
 }

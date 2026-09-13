@@ -19,6 +19,7 @@ import com.antivocale.app.R
 import com.antivocale.app.MainActivity
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.local.LogDao
 import com.antivocale.app.receiver.TaskerRequestReceiver
@@ -27,6 +28,7 @@ import com.antivocale.app.transcription.TranscriptionOrchestrator
 import com.antivocale.app.util.CrashReporter
 import com.antivocale.app.util.ProgressThrottler
 import com.antivocale.app.util.TranscriptFileSaver
+import com.antivocale.app.util.formatProcessingTime
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +53,7 @@ class InferenceService : Service(), TranscriptionListener {
     @Inject lateinit var perAppPreferencesManager: PerAppPreferencesManager
     @Inject lateinit var orchestrator: TranscriptionOrchestrator
     @Inject lateinit var logDao: LogDao
+    @Inject lateinit var shareShortcutManager: ShareShortcutManager
 
     companion object {
         const val TAG = "InferenceService"
@@ -67,6 +70,9 @@ class InferenceService : Service(), TranscriptionListener {
         const val EXTRA_SOURCE = "source"
         const val EXTRA_SOURCE_PACKAGE = "source_package"
         const val SOURCE_SHARE = "share"
+
+        /** TASK-500: the History browse FAB; not a share request. */
+        const val SOURCE_BROWSE = "browse"
 
         const val EXTRA_SHARED_URI = "shared_uri"
         const val EXTRA_MIME_TYPE = "mime_type"
@@ -456,7 +462,7 @@ class InferenceService : Service(), TranscriptionListener {
 
     private fun formatTimingText(etaText: String, durationSeconds: Int): String = when {
         etaText.isNotEmpty() -> etaText
-        durationSeconds > 0 -> formatDuration(durationSeconds)
+        durationSeconds > 0 -> formatProcessingTime(durationSeconds * 1000L)
         else -> ""
     }
 
@@ -555,6 +561,10 @@ class InferenceService : Service(), TranscriptionListener {
         streamedWithoutVad: Boolean
     ) {
         sendSuccessReply(taskId, resultText)
+        // Every completed task moves the model-recency source: re-derive the
+        // launcher's dynamic share shortcuts. Metadata-only side effect on the
+        // service scope (IO), must never reach the result path.
+        serviceScope.launch { shareShortcutManager.refresh() }
         // Always surface the result notification (share AND automation/broadcast
         // paths). Previously gated behind isShareRequest, so Tasker/broadcast
         // transcriptions never produced a visible status-bar result. The race
@@ -706,7 +716,7 @@ class InferenceService : Service(), TranscriptionListener {
         if (subText != null) {
             builder.setSubText(subText)
         } else if (durationSeconds > 0) {
-            builder.setSubText(formatDuration(durationSeconds))
+            builder.setSubText(formatProcessingTime(durationSeconds * 1000L))
         }
 
         return builder.build()
@@ -895,17 +905,6 @@ class InferenceService : Service(), TranscriptionListener {
             this, requestCode, openIntent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    private fun formatDuration(seconds: Int): String {
-        val hours = seconds / 3600
-        val minutes = (seconds % 3600) / 60
-        val secs = seconds % 60
-        return if (hours > 0) {
-            String.format("%d:%02d:%02d", hours, minutes, secs)
-        } else {
-            String.format("%d:%02d", minutes, secs)
-        }
     }
 
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }

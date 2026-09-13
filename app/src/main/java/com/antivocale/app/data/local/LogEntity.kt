@@ -28,6 +28,18 @@ data class LogEntity(
     val failedChunkCount: Int = 0,
     /** Display name of the model that produced this transcription (GH #45; null on pre-v4 rows). */
     val modelName: String? = null,
+    /** TASK-276 AC3: the raw ASR text before the punctuation pass, kept when the
+     *  pass changed the words' presentation (null when it never fired or made
+     *  no change; null on pre-v5 rows). */
+    val rawTranscript: String? = null,
+    /** TASK-121.4: the AI summary of a long transcript, attached as metadata
+     *  (null when the pass never fired or degraded; null on pre-v6 rows). */
+    val summary: String? = null,
+    /** TASK-494: stable token for why an attended summary attempt produced
+     *  none: guards, context limit, no model, or generation failure. Null on
+     *  pre-v7 rows, on every clean skip (toggle, short transcript), and on
+     *  success. */
+    val summarySkipReason: String? = null,
 )
 
 fun LogEntity.toLogEntry(): LogEntry = LogEntry(
@@ -48,7 +60,10 @@ fun LogEntity.toLogEntry(): LogEntry = LogEntry(
     sourcePackageName = sourcePackageName,
     isPartial = isPartial,
     failedChunkCount = failedChunkCount,
-    modelName = modelName
+    modelName = modelName,
+    rawTranscript = rawTranscript,
+    summary = summary,
+    summarySkipReason = summarySkipReason
 )
 
 fun LogEntry.toEntity(): LogEntity = LogEntity(
@@ -66,5 +81,8 @@ fun LogEntry.toEntity(): LogEntity = LogEntity(
     sourcePackageName = sourcePackageName,
     isPartial = isPartial,
     failedChunkCount = failedChunkCount,
-    modelName = modelName
+    modelName = modelName,
+    rawTranscript = rawTranscript,
+    summary = summary,
+    summarySkipReason = summarySkipReason
 )

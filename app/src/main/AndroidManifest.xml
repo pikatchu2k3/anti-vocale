@@ -15,6 +15,7 @@
     <!-- Foreground service for inference -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Package visibility (Android 11+): see every app that can share audio with us,
          so AppInfoUtils can resolve real app labels for the Logs grouping even after
@@ -75,11 +76,111 @@
             android:supportsPictureInPicture="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:theme="@style/Theme.AntiVocale">
+        </activity>
+
+        <!-- Launcher icon variants: the MAIN/LAUNCHER filter lives on these
+             aliases, not on MainActivity. Exactly one is enabled:
+             LauncherDefault ships enabled, LauncherIconManager switches the
+             set via setComponentEnabledSetting (component state persists
+             across app updates, so an update keeps the user's choice; a
+             retired alias is healed back to Default at
+             startup by LauncherIconManager). Labels stay the app name on purpose: the icon is the
+             differentiator. Explicit starts of MainActivity (notifications,
+             Tasker) are class intents and do not need the filter. Alias
+             names are a pinned contract: LauncherIconManager +
+             LauncherIconManifestTest. -->
+        <activity-alias
+            android:name=".LauncherDefault"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- derei's icon concepts (GH #61, TASK-473): raster foreground layers
+             over the shared gradient, one alias per concept. -->
+        <activity-alias
+            android:name=".LauncherWavecut"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_wavecut"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherCrossed"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_crossed"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherTextblock"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_textblock"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherMonogram"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_monogram"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherCapsule"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_capsule"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherMutebar"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_derei_mutebar"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- BroadcastReceiver for Tasker requests -->
         <receiver
@@ -484,6 +585,17 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+    <!--
+        WorkManager 2.10 SystemForegroundService on Android 14+ requires the
+        dataSync foreground service type to be explicitly declared. The
+        library manifest should carry it, but some OEM skins strip it during
+        merge; this override guarantees it (GH: WorkManager expedited work).
+    -->
+    <service
+        android:name="androidx.work.impl.foreground.SystemForegroundService"
+        android:foregroundServiceType="dataSync"
+        tools:node="merge" />
 
     </application>
 

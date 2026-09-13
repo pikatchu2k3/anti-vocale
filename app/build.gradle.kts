@@ -32,12 +32,12 @@ android {
         applicationId = "com.antivocale.app"
         minSdk = 26
         targetSdk = 36
-        // Fork: release pipeline exports VERSION_NAME/VERSION_CODE (date-based tag,
+// Fork: release pipeline exports VERSION_NAME/VERSION_CODE (date-based tag,
         // e.g. v2026.09.06) so Obtainium sees the baked versionName == release tag.
         // Fallback is the upstream version. Without this the tag never matches the
         // embedded versionName and Obtainium offers the same update forever.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 39
-        versionName = System.getenv("VERSION_NAME") ?: "1.11.1"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 41
+        versionName = System.getenv("VERSION_NAME") ?: "1.12.0-SNAPSHOT"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -129,7 +129,7 @@ android {
             }
             if (abiCode > 0) {
                 (output as com.android.build.api.variant.impl.VariantOutputImpl).versionCode
-                    .set((defaultConfig.versionCode ?: 39) * 10 + abiCode)
+                    .set((defaultConfig.versionCode ?: 41) * 10 + abiCode)
             }
         }
     }
@@ -228,6 +228,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // TASK-491: coach-mark overlays for the first-install welcome tour.
+    // v3.2.x is the line built against OUR compose-bom (2025.01.00); v3.3+
+    // needs a BOM bump (see the task notes before upgrading).
+    implementation("com.svenjacobs.reveal:reveal-core:3.2.2")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")

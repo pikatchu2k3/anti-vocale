@@ -39,6 +39,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.antivocale.app.R
+import com.antivocale.app.ui.TestNavigation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.ModelDownloader
@@ -52,6 +53,8 @@ import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.transcription.CatalogVariantUi
 import com.antivocale.app.transcription.Language
+import androidx.compose.ui.graphics.Color
+import com.antivocale.app.util.DeviceCompatibility
 import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.ModelFamilySupport
@@ -74,6 +77,7 @@ import com.antivocale.app.ui.components.DeleteConfirmationDialog
 import com.antivocale.app.ui.components.DownloadConfirmationDialog
 import com.antivocale.app.ui.components.ModelInfoOverlay
 import com.antivocale.app.benchmark.BenchmarkState
+import com.antivocale.app.ui.viewmodel.BenchmarkViewModel
 import com.antivocale.app.ui.viewmodel.ModelViewModel
 
 private fun <T> filterVariants(
@@ -89,7 +93,10 @@ private fun <T> filterVariants(
 @Composable
 fun ModelTab(
     viewModel: ModelViewModel = hiltViewModel(),
-    onNavigateToSettings: () -> Unit = {}
+    benchmarkViewModel: BenchmarkViewModel = hiltViewModel(),
+    onNavigateToSettings: () -> Unit = {},
+    navRequest: TestNavigation.NavRequest? = null,
+    onNavConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -218,12 +225,16 @@ fun ModelTab(
         )
     }
 
-    // Gemma download confirmation dialog
+    // Gemma download confirmation dialog. TASK-427: the same pre-download
+    // fit hint as the catalog, on the heaviest models in the app.
     if (downloadUiState.showDownloadDialog) {
         val variant = downloadUiState.selectedVariant
+        val (gemmaHintRes, gemmaHintColor) = variantFitHint(context, variant?.estimatedSizeMB ?: 0L)
         DownloadConfirmationDialog(
             title = stringResource(R.string.gemma_download_confirm_title, variant?.displayName ?: "Gemma"),
             message = stringResource(R.string.gemma_download_confirm_message, variant?.estimatedSizeMB?.toInt() ?: 0),
+            fitHintRes = gemmaHintRes,
+            fitHintColor = gemmaHintColor,
             onConfirm = { viewModel.confirmDownload() },
             onDismiss = { viewModel.dismissDownloadDialog() }
         )
@@ -234,10 +245,13 @@ fun ModelTab(
     // MTP_SPECULATIVE_DECODING_ENABLED build flag is on (see ModelDownloadSection).
     if (downloadUiState.modelToUpdate != null) {
         val variant = downloadUiState.modelToUpdate
+        val (updateHintRes, updateHintColor) = variantFitHint(context, variant?.estimatedSizeMB ?: 0L)
         DownloadConfirmationDialog(
             title = stringResource(R.string.gemma_update_confirm_title, variant?.displayName ?: "Gemma"),
             message = stringResource(R.string.gemma_update_confirm_message, variant?.estimatedSizeMB?.toInt() ?: 0),
             confirmButtonText = stringResource(R.string.model_update_button),
+            fitHintRes = updateHintRes,
+            fitHintColor = updateHintColor,
             onConfirm = { viewModel.confirmUpdateModel() },
             onDismiss = { viewModel.dismissUpdateDialog() }
         )
@@ -388,16 +402,16 @@ fun ModelTab(
     }
 
     // Benchmark dialog
-    val benchmarkState by viewModel.benchmarkState.collectAsState()
-    val benchmarkTargetName by viewModel.benchmarkTargetName.collectAsState()
+    val benchmarkState by benchmarkViewModel.benchmarkState.collectAsState()
+    val benchmarkTargetName by benchmarkViewModel.benchmarkTargetName.collectAsState()
     if (benchmarkState !is BenchmarkState.Idle || benchmarkTargetName.isNotEmpty()) {
         BenchmarkDialog(
             modelName = benchmarkTargetName,
             state = benchmarkState,
-            onDismiss = { viewModel.dismissBenchmark() },
-            onCancel = { viewModel.cancelBenchmark() },
+            onDismiss = { benchmarkViewModel.dismissBenchmark() },
+            onCancel = { benchmarkViewModel.cancelBenchmark() },
             onRerun = {
-                viewModel.rerunBenchmark()
+                benchmarkViewModel.rerunBenchmark()
             }
         )
     }
@@ -455,6 +469,7 @@ fun ModelTab(
             if (visibleVariants.isNotEmpty()) {
                 CatalogModelSection(
                     viewModel = viewModel,
+                    benchmarkViewModel = benchmarkViewModel,
                     entry = entry,
                     state = catalogStates[entry.id] ?: ModelViewModel.ModelEntryUiState(),
                     activeBackendId = activeBackendId,
@@ -484,6 +499,19 @@ fun ModelTab(
         // Advanced section: manual model imports, collapsed by default to hide
         // complexity from users who just want the curated backends above.
         var advancedExpanded by remember { mutableStateOf(false) }
+        // TASK-486: models:import must compose the import UI first: the
+        // Advanced section renders its content only when expanded, so this
+        // effect expands it and the section's own effect opens the catalog
+        // dialog once it exists. Consumption is one-shot at the source (the
+        // request is nulled by the FIRST consumer): a tab re-entry sees null
+        // and cannot replay. Both levels act on the same request on purpose.
+        LaunchedEffect(navRequest) {
+            if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
+            val request = navRequest ?: return@LaunchedEffect
+            if (request.destination is TestNavigation.Destination.ModelTarget) {
+                advancedExpanded = true
+            }
+        }
         Column(modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = { advancedExpanded = !advancedExpanded },
@@ -579,6 +607,8 @@ fun ModelTab(
                 // ONNX (sherpa): the section Card carries the header; no
                 // separate label needed here.
                 ExternalModelsSection(
+            navRequest = navRequest,
+            onNavConsumed = onNavConsumed,
                     viewModel = viewModel,
                     activeBackendId = activeBackendId,
                     folderPicker = { externalFolderPicker.launch(null) },
@@ -781,6 +811,7 @@ private fun ModelDownloadSection(
 @Composable
 private fun CatalogModelSection(
     viewModel: ModelViewModel,
+    benchmarkViewModel: BenchmarkViewModel,
     entry: CatalogEntry,
     state: ModelViewModel.ModelEntryUiState,
     activeBackendId: String,
@@ -925,7 +956,7 @@ private fun CatalogModelSection(
                     onBenchmarkClick = {
                         val path = SherpaModelDownloader.of(entry.id).getModelPath(context, variant.variantName)
                         if (path != null) {
-                            viewModel.startBenchmark(
+                            benchmarkViewModel.startBenchmark(
                                 entry.id,
                                 path,
                                 context.getString(variant.titleResId)
@@ -946,6 +977,15 @@ private fun CatalogModelSection(
             ?: stringResource(entryTitleResId)
         val isExtract = state.selectedVariant != null && state.variantsNeedingExtraction.contains(state.selectedVariant)
         val sizeMb = state.selectedVariant?.let { CatalogVariantUi.of(entry.id, it).estimatedSizeMB.toInt() } ?: 0
+        // TASK-427: advise before the download, from the same budget the
+        // selection gate uses. Fits renders nothing; unreadable RAM too.
+        // The extract branch would show it as well were that flow live
+        // (it is currently disabled); a compressed tar underestimates the
+        // resident model, same proxy the gate itself uses.
+        // No remember: the dialog recomposes rarely and the underlying
+        // ActivityManager read is one cheap binder call (keying a cache on
+        // sizeMb would just add a staleness trap).
+        val (fitHintRes, fitHintColor) = variantFitHint(context, sizeMb.toLong())
         DownloadConfirmationDialog(
             title = stringResource(
                 if (isExtract) R.string.catalog_extract_confirm_title else R.string.catalog_download_confirm_title,
@@ -956,6 +996,8 @@ private fun CatalogModelSection(
                 sizeMb
             ),
             confirmButtonText = stringResource(if (isExtract) R.string.extract_model else R.string.download),
+            fitHintRes = fitHintRes,
+            fitHintColor = fitHintColor,
             onConfirm = { viewModel.confirmDownload(entry.id) },
             onDismiss = { viewModel.dismissDownloadDialog(entry.id) }
         )
@@ -979,6 +1021,20 @@ private fun CatalogModelSection(
     if (showSpeedComparison) {
         SpeedComparisonDialog(onDismiss = { showSpeedComparison = false })
     }
+}
+
+/** TASK-427: verdict to (hint string, color) for the download dialogs; a
+ *  plain Fits (or unreadable RAM) renders nothing. */
+@Composable
+private fun variantFitHint(
+    context: android.content.Context,
+    sizeMB: Long,
+): Pair<Int?, Color?> = when (DeviceCompatibility.modelFit(context, sizeMB)) {
+    DeviceCompatibility.ModelFit.Tight ->
+        R.string.model_fit_tight to MaterialTheme.colorScheme.onSurfaceVariant
+    DeviceCompatibility.ModelFit.DoesNotFit ->
+        R.string.model_fit_no_fit to MaterialTheme.colorScheme.error
+    else -> null to null
 }
 
 // ==================== External models section (v2a) ====================
@@ -1144,6 +1200,8 @@ private fun LanguageEndonymDropdown(
 @Composable
 private fun ExternalModelsSection(
     viewModel: ModelViewModel,
+    navRequest: TestNavigation.NavRequest? = null,
+    onNavConsumed: () -> Unit = {},
     activeBackendId: String,
     folderPicker: () -> Unit,
     selection: ExternalImportUiState,
@@ -1153,6 +1211,18 @@ private fun ExternalModelsSection(
     val records by viewModel.externalModels.collectAsState()
     val importState by viewModel.externalImportState.collectAsState()
     var urlDialogOpen by remember { mutableStateOf(false) }
+    // TASK-486: op=nav models:import opens the catalog dialog directly.
+    // This effect OWNS consumption (the ModelTab-level effect only expands
+    // the section and must stay re-fire-free); consuming here means a later
+    // manual collapse/re-expand of Advanced cannot resurrect the request.
+    LaunchedEffect(navRequest) {
+        if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
+        val request = navRequest ?: return@LaunchedEffect
+        onNavConsumed()
+        if (request.destination is TestNavigation.Destination.ModelTarget) {
+            urlDialogOpen = true
+        }
+    }
     var dropdownExpanded by remember { mutableStateOf(false) }
     var ctcExpanded by remember { mutableStateOf(false) }
 

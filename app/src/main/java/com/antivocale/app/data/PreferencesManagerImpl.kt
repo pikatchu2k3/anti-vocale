@@ -64,18 +64,20 @@ class PreferencesManagerImpl(
         private val DEFAULT_PROMPT = stringPreferencesKey("default_prompt")
         private val PUNCTUATION_MODE = stringPreferencesKey("punctuation_mode")
         private val PUNCTUATION_PROMPT = stringPreferencesKey("punctuation_prompt")
+        private val SUMMARIZE_ENABLED = booleanPreferencesKey("summarize_enabled")
+        private val SUMMARY_PROMPT = stringPreferencesKey("summary_prompt")
         private val THREAD_COUNT = intPreferencesKey("thread_count")
         private val INFERENCE_PROVIDER = stringPreferencesKey("inference_provider")
         private val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
         private val SWIPE_ACTION_MODE = stringPreferencesKey("swipe_action_mode")
         private val BENCHMARK_RESULTS = stringPreferencesKey("benchmark_results")
         private val VAD_ADVISORY_DISMISSED = booleanPreferencesKey("vad_advisory_dismissed")
+        private val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         private val GROUP_LOGS_BY_CONVERSATION = booleanPreferencesKey("group_logs_by_conversation")
         private val ADVANCED_SHARING_ENABLED = booleanPreferencesKey("advanced_sharing_enabled")
         private val SHOW_RETRANSCRIBE_BUTTON = booleanPreferencesKey("show_retranscribe_button")
         private val FORCE_MODEL_LOAD = booleanPreferencesKey("force_model_load")
         private val COMPACT_RESULT_ACTIONS = booleanPreferencesKey("compact_result_actions")
-        private val SHOW_TASK_DETAILS = booleanPreferencesKey("show_task_details")
         private val PARTIAL_TRANSCRIPTION_TEXT = stringPreferencesKey("partial_transcription_text")
         private val PARTIAL_TRANSCRIPTION_TIMESTAMP = longPreferencesKey("partial_transcription_timestamp")
         private val EXTERNAL_MODELS_JSON = stringPreferencesKey("external_models_json")
@@ -102,17 +104,19 @@ class PreferencesManagerImpl(
         val defaultPrompt: String = PreferencesManager.DEFAULT_PROMPT_VALUE,
         val punctuationMode: String = PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         val punctuationPrompt: String = "",
+        val summaryPrompt: String = "",
+        val summarizeEnabled: Boolean = PreferencesManager.DEFAULT_SUMMARIZE_ENABLED,
         val threadCount: Int = PreferencesManager.DEFAULT_THREAD_COUNT,
         val inferenceProvider: String = PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
         val transcriptionLanguage: String = PreferencesManager.DEFAULT_TRANSCRIPTION_LANGUAGE,
         val swipeActionMode: String = PreferencesManager.DEFAULT_SWIPE_ACTION_MODE,
         val vadAdvisoryDismissed: Boolean = false,
+        val onboardingCompleted: Boolean = false,
         val groupLogsByConversation: Boolean = PreferencesManager.DEFAULT_GROUP_LOGS_BY_CONVERSATION,
         val advancedSharingEnabled: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         val forceModelLoad: Boolean = PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
-        val showTaskDetails: Boolean = PreferencesManager.DEFAULT_SHOW_TASK_DETAILS,
         val externalModelsJson: String? = null
     )
 
@@ -140,17 +144,19 @@ class PreferencesManagerImpl(
         defaultPrompt = this[DEFAULT_PROMPT] ?: PreferencesManager.DEFAULT_PROMPT_VALUE,
         punctuationMode = this[PUNCTUATION_MODE] ?: PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         punctuationPrompt = this[PUNCTUATION_PROMPT] ?: "",
+        summaryPrompt = this[SUMMARY_PROMPT] ?: "",
+        summarizeEnabled = this[SUMMARIZE_ENABLED] ?: PreferencesManager.DEFAULT_SUMMARIZE_ENABLED,
         threadCount = this[THREAD_COUNT] ?: PreferencesManager.DEFAULT_THREAD_COUNT,
         inferenceProvider = this[INFERENCE_PROVIDER] ?: PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
         transcriptionLanguage = this[TRANSCRIPTION_LANGUAGE] ?: PreferencesManager.DEFAULT_TRANSCRIPTION_LANGUAGE,
         swipeActionMode = this[SWIPE_ACTION_MODE] ?: PreferencesManager.DEFAULT_SWIPE_ACTION_MODE,
         vadAdvisoryDismissed = this[VAD_ADVISORY_DISMISSED] ?: false,
+        onboardingCompleted = this[ONBOARDING_COMPLETED] ?: false,
         groupLogsByConversation = this[GROUP_LOGS_BY_CONVERSATION] ?: PreferencesManager.DEFAULT_GROUP_LOGS_BY_CONVERSATION,
         advancedSharingEnabled = this[ADVANCED_SHARING_ENABLED] ?: PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         forceModelLoad = this[FORCE_MODEL_LOAD] ?: PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
-        showTaskDetails = this[SHOW_TASK_DETAILS] ?: PreferencesManager.DEFAULT_SHOW_TASK_DETAILS,
         externalModelsJson = this[EXTERNAL_MODELS_JSON]
     )
 
@@ -340,6 +346,16 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(vadAdvisoryDismissed = dismissed) }
     }
 
+    override val onboardingCompleted: Flow<Boolean> = dataStore.data.map { it[ONBOARDING_COMPLETED] ?: false }
+        .onStart { emit(cache.get().onboardingCompleted) }
+
+    override suspend fun saveOnboardingCompleted(completed: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[ONBOARDING_COMPLETED] = completed
+        }
+        cache.updateAndGet { it.copy(onboardingCompleted = completed) }
+    }
+
     override val progressiveTranscription: Flow<Boolean> = dataStore.data.map { it[PROGRESSIVE_TRANSCRIPTION] ?: PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION }
         .onStart { emit(cache.get().progressiveTranscription) }
 
@@ -354,7 +370,7 @@ class PreferencesManagerImpl(
         .onStart { emit(cache.get().defaultPrompt) }
 
     override suspend fun saveDefaultPrompt(prompt: String) {
-        val truncated = prompt.take(500)
+        val truncated = prompt.take(PreferencesManager.PROMPT_CAP)
         dataStore.edit { preferences ->
             preferences[DEFAULT_PROMPT] = truncated
         }
@@ -374,14 +390,35 @@ class PreferencesManagerImpl(
     override val punctuationPrompt: Flow<String> = dataStore.data.map { it[PUNCTUATION_PROMPT] ?: "" }
         .onStart { emit(cache.get().punctuationPrompt) }
 
+    override val summaryPrompt: Flow<String> = dataStore.data.map { it[SUMMARY_PROMPT] ?: "" }
+        .onStart { emit(cache.get().summaryPrompt) }
+
     override suspend fun savePunctuationPrompt(prompt: String) {
         // Same 500-char cap as the default transcription prompt: one
         // instruction paragraph, not an essay (TASK-276).
-        val truncated = prompt.take(500)
+        val truncated = prompt.take(PreferencesManager.PROMPT_CAP)
         dataStore.edit { preferences ->
             preferences[PUNCTUATION_PROMPT] = truncated
         }
         cache.updateAndGet { it.copy(punctuationPrompt = truncated) }
+    }
+
+    override val summarizeEnabled: Flow<Boolean> = dataStore.data.map { it[SUMMARIZE_ENABLED] ?: PreferencesManager.DEFAULT_SUMMARIZE_ENABLED }
+        .onStart { emit(cache.get().summarizeEnabled) }
+
+    override suspend fun saveSummaryPrompt(prompt: String) {
+        val truncated = prompt.take(PreferencesManager.PROMPT_CAP)
+        dataStore.edit { preferences ->
+            preferences[SUMMARY_PROMPT] = truncated
+        }
+        cache.updateAndGet { it.copy(summaryPrompt = truncated) }
+    }
+
+    override suspend fun saveSummarizeEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SUMMARIZE_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(summarizeEnabled = enabled) }
     }
 
     override val threadCount: Flow<Int> = dataStore.data.map { it[THREAD_COUNT] ?: PreferencesManager.DEFAULT_THREAD_COUNT }
@@ -521,15 +558,6 @@ class PreferencesManagerImpl(
 
     override val compactResultActions: Flow<Boolean> = dataStore.data.map { it[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS }
         .onStart { emit(cache.get().compactResultActions) }
-    override val showTaskDetails: Flow<Boolean> = dataStore.data.map { it[SHOW_TASK_DETAILS] ?: PreferencesManager.DEFAULT_SHOW_TASK_DETAILS }
-        .onStart { emit(cache.get().showTaskDetails) }
-
-    override suspend fun saveShowTaskDetails(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[SHOW_TASK_DETAILS] = enabled
-        }
-        cache.updateAndGet { it.copy(showTaskDetails = enabled) }
-    }
     override suspend fun saveCompactResultActions(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[COMPACT_RESULT_ACTIONS] = enabled

@@ -82,17 +82,37 @@
     <string name="logs_prompt_label">Prompt:</string>
     <string name="logs_result_label">Result:</string>
     <string name="logs_error_label">Error:</string>
-    <string name="logs_task_id">Task ID: %1$s</string>
     <string name="logs_unknown_error">Unknown error</string>
     <string name="logs_status_queued">Queued</string>
     <string name="logs_status_success">Success</string>
     <string name="logs_status_error">Error</string>
     <string name="logs_status_processing">Processing</string>
+    <string name="logs_original_label">Original (before punctuation):</string>
+    <string name="logs_summary_label">Summary:</string>
+    <string name="summary_skipped_context">Summary skipped: the transcript exceeds the length the summary pass can handle.</string>
+    <string name="summary_skipped_no_model">Summary skipped: no Gemma model configured. Download it from the Models tab to enable summaries.</string>
+    <string name="summary_skipped_failed">Summary failed while generating; the transcript is intact.</string>
+    <string name="summary_skipped_guard">Summary skipped: the generated summary fell outside the length limits (too short or too long to be a summary).</string>
+    <string name="copy_summary">Copy summary</string>
+    <string name="copy_original">Copy original</string>
     <string name="logs_model_label">Model: %1$s</string>
     <string name="logs_transcription_cancelled">Transcription cancelled</string>
     <string name="logs_search_placeholder">Search entries…</string>
     <string name="logs_search_no_results">No matching entries</string>
     <string name="logs_search_no_results_hint">Try a different search term</string>
+    <string name="browse_audio_content_description">Pick an audio file to transcribe</string>
+    <string name="settings_replay_tour">Replay welcome tour</string>
+    <string name="tour_done">Got it</string>
+    <string name="tour_skip">Skip</string>
+    <string name="tour_next">Next</string>
+    <string name="tour_body_browse">No voice message at hand? Pick any audio file from your storage with this button.</string>
+    <string name="tour_title_browse">Or pick a file</string>
+    <string name="tour_body_history">Share a voice message from any messenger. The transcript appears here, with a notification when it\'s ready.</string>
+    <string name="tour_title_history">Send a voice message</string>
+    <string name="tour_body_models">Download a transcription model from the Models tab first. Parakeet is the recommended default.</string>
+    <string name="tour_title_models">Get a model</string>
+    <string name="tour_body_welcome">Transcription runs entirely on this phone; your audio never leaves it. Three quick pointers before you start.</string>
+    <string name="tour_title_welcome">Welcome to Anti-Vocale</string>
     <string name="voice_message_duration">voice message</string>
     <string name="source_was_video">Source: video file</string>
     <string name="processed_in">Processed in %1$s</string>
@@ -175,6 +195,8 @@
     <string name="catalog_model_deleted">%1$s deleted</string>
     <string name="catalog_download_confirm_title">Download %1$s?</string>
     <string name="catalog_download_confirm_message">This will download ~%1$dMB.</string>
+    <string name="model_fit_no_fit">This model likely will not run on this device: its RAM is below what the model needs.</string>
+    <string name="model_fit_tight">Heads-up: this model is a tight fit for this device\'s RAM; it may fail under memory pressure.</string>
     <string name="catalog_extract_confirm_title">Extract %1$s?</string>
     <string name="catalog_extract_confirm_message">The model file is already downloaded. This will extract it for use.</string>
 
@@ -217,6 +239,7 @@
     <string name="transcription_partial_chip">Incomplete</string>
     <string name="transcription_failed">Transcription failed</string>
     <string name="error_model_load">The model file may be corrupt or the wrong format. Try re-downloading it from the Model tab.</string>
+    <string name="error_model_corrupt_healed">Some model files were corrupt, so the app removed them. Open the Models tab and download the model again.</string>
     <string name="error_native">An internal error occurred during transcription. If this persists, try a different model.</string>
     <string name="error_not_initialized">No model is loaded. Open the Model tab to download or select one.</string>
     <string name="error_model_unavailable">The selected model is no longer available. Open the Model tab and select another one.</string>
@@ -241,6 +264,7 @@
     <string name="native_crash_title">App closed unexpectedly</string>
     <string name="native_crash_go_to_model">Go to Model tab</string>
     <string name="model_load_low_memory">Not enough free memory for this model (%1$s available, about %2$s needed). Close other apps or use a smaller model. Forced loading is available in Settings.</string>
+    <string name="transcribe_low_memory">Not enough free memory to transcribe with this model (about %1$s free, %2$s needed). Close other apps and try again, or enable Force model load in Settings.</string>
     <string name="force_model_load">Force model load</string>
     <string name="force_model_load_desc">Load the model even when memory seems insufficient. May close the app on devices with little RAM.</string>
     <string name="copy">Copy</string>
@@ -330,6 +354,7 @@
     <string name="settings_feedback_source_title">Source code</string>
     <string name="settings_feedback_license_title">License</string>
     <string name="settings_feedback_license_value">Apache 2.0</string>
+    <string name="settings_feedback_version_title">Version</string>
     <string name="settings_feedback_privacy_note">Nothing is sent without your action; your mail app sends this email.</string>
     <string name="settings_feedback_address_copied">No mail app found. Address copied to clipboard: %1$s</string>
     <string name="settings_feedback_body_version">App version</string>
@@ -440,7 +465,14 @@
     <string name="punctuation_prompt_title">Punctuation Prompt</string>
     <string name="punctuation_prompt_description">Instruction for the punctuation pass. Leave empty to use the built-in prompt.</string>
     <string name="punctuation_prompt_placeholder">Built-in prompt</string>
+    <string name="summary_prompt_title">Summary prompt</string>
+    <string name="summary_prompt_description">Override the AI summary instruction. Blank uses the built-in two-to-three-sentence prompt.</string>
     <string name="punctuation_default_prompt">Add punctuation and capitalization to this transcript. Keep every word exactly as written; do not fix, translate, add, or remove anything. Output only the corrected transcript.</string>
+    <!-- Settings Tab - Smart Summary (TASK-121.4) -->
+    <string name="summarize_title">Summarize Long Transcriptions</string>
+    <string name="summarize_description">Add a short AI summary to long transcriptions with the Gemma model (needs Gemma downloaded).</string>
+    <string name="summarize_status">Summarizing with AI…</string>
+    <string name="summary_default_prompt">Summarize this transcription in 2-3 sentences, in the language of the transcript. Keep names and numbers. Output only the summary.</string>
     <string name="vad_title">Strip Silence (VAD)</string>
     <string name="vad_description">Remove silent portions from voice messages before transcription. Reduces processing time and improves accuracy.</string>
     <string name="progressive_title">Progressive Display</string>
@@ -478,10 +510,10 @@
 
     <!-- Settings Tab - Transcription Language -->
     <string name="transcription_language_title">Transcription Language</string>
-    <string name="transcription_language_system">Follow app language</string>
     <string name="transcription_language_auto">Auto-detect</string>
-    <string name="transcription_language_description">Audio language for transcription. Selecting a specific language skips detection and speeds up processing.</string>
-    <string name="transcription_language_note">By default your app language is used on Whisper Small (auto-detect when the model does not support it). Only applies to Whisper models. The Distil Italian model always uses Italian. Other backends (Gemma, Parakeet, Qwen3-ASR) auto-detect.</string>
+    <string name="transcription_language_no_conditioning">The active model detects the language automatically. This setting applies to Whisper models and the streaming model.</string>
+    <string name="transcription_language_unsupported_pin">The active model does not support this language. Choose a supported language or Auto-detect; your choice is kept until you change it.</string>
+    <string name="transcription_language_forced_hint">Forces this language: audio in another language can come out degraded or translated. Prefer Auto-detect unless detection misfires.</string>
 
     <!-- Settings Tab - Theme -->
     <string name="theme_title">Theme</string>
@@ -491,6 +523,17 @@
     <string name="theme_default">Default (Indigo)</string>
     <string name="theme_whatsapp">WhatsApp</string>
     <string name="theme_telegram">Telegram</string>
+
+    <!-- Settings Tab - App icon (TASK-392) -->
+    <string name="app_icon_title">App icon</string>
+    <string name="app_icon_note">Switching may briefly hide the icon on some launchers; the store listing keeps the default icon.</string>
+    <string name="app_icon_variant_default">Default</string>
+    <string name="app_icon_variant_wavecut">Interrupted Waveform</string>
+    <string name="app_icon_variant_crossed">Crossed Waveform</string>
+    <string name="app_icon_variant_textblock">Waveform to Text</string>
+    <string name="app_icon_variant_monogram">AV Monogram</string>
+    <string name="app_icon_variant_capsule">Broken Voice Note</string>
+    <string name="app_icon_variant_mutebar">Mute Bar</string>
 
     <!-- Per-App Settings -->
     <string name="per_app_settings_title">Per-App Settings</string>
@@ -741,7 +784,7 @@
     <string name="benchmark_cancel">Cancel</string>
     <string name="benchmark_rerun">Run Again</string>
     <string name="benchmark_retry">Retry</string>
-    <string name="benchmark_speed_label">Speed</string>
+    <string name="benchmark_speed_label">Time per audio minute</string>
     <string name="benchmark_speed_value">%1$.1f s/min audio</string>
     <string name="benchmark_time_label">Inference time</string>
     <string name="benchmark_time_value">%1$d ms</string>
@@ -823,6 +866,7 @@
     <string name="share_target_nemotron">Anti-Vocale (Nemotron)</string>
     <string name="share_target_gigaam">Anti-Vocale (GigaAM)</string>
     <string name="share_target_external">Anti-Vocale (External)</string>
+    <string name="share_shortcut_transcribe_with">Transcribe with %1$s</string>
     <string name="external_none_imported">No external models imported</string>
     <string name="external_section_title">External models</string>
     <string name="model_advanced_section">Advanced</string>
@@ -856,7 +900,7 @@
     <string name="external_decode_language">Decode language</string>
     <string name="external_decode_auto">Auto-detect (no fixed language)</string>
     <string name="external_family">Model family</string>
-    <string name="external_family_transducer">Transducer (NeMo/Zipformer)</string>
+    <string name="external_family_transducer">Transducer (offline NeMo/Zipformer)</string>
     <string name="external_family_transducer_help">Expects encoder + decoder + joiner + tokens files</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Expects encoder + decoder + tokens files</string>
@@ -882,8 +926,6 @@
     <!-- Conversation Grouping -->
     <string name="conversation_grouping_title">Group by Conversation</string>
     <string name="compact_result_actions_title">Compact action buttons</string>
-    <string name="show_task_details_title">Show task details</string>
-    <string name="show_task_details_description">Show the task ID on entries. Useful when contacting support; off by default.</string>
     <string name="compact_result_actions_description">Show transcription actions as icons only, tucked into the corner of the result card. Turn off for labeled buttons.</string>
     <string name="conversation_grouping_description">Group transcriptions by source app (WhatsApp, Telegram, etc.) into collapsible sections.</string>
     <plurals name="conversation_group_count">
@@ -905,7 +947,7 @@
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Subtitles found</string>
-    <string name="subtitles_found_text">Use the embedded subtitles (%1$s), or transcribe the audio?</string>
+    <string name="subtitles_found_text">Use the embedded subtitles (%1$s) or transcribe the audio? If you do not choose, transcription starts after %2$s.</string>
     <string name="subtitles_language_unknown">unknown</string>
     <string name="action_use_subtitles">Use subtitles</string>
     <string name="action_transcribe_audio">Transcribe audio</string>

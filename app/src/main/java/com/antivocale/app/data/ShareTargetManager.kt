@@ -1,11 +1,9 @@
 package com.antivocale.app.data
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
-import android.util.Log
 import com.antivocale.app.transcription.BackendDescriptor
 import com.antivocale.app.transcription.BackendRegistry
+import com.antivocale.app.util.ComponentAliasSync
 import kotlinx.coroutines.flow.first
 
 /**
@@ -50,23 +48,7 @@ class ShareTargetManager(
     private fun setComponentEnabled(target: BackendDescriptor, enabled: Boolean) {
         // Sideload-only and external backends have no manifest activity-alias; skip them.
         if (target.shareAlias.isBlank()) return
-        setClassNameEnabled(target.shareAlias, enabled)
-    }
-
-    private fun setClassNameEnabled(className: String, enabled: Boolean) {
-        val state = if (enabled)
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-        else
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-        try {
-            context.packageManager.setComponentEnabledSetting(
-                ComponentName(context, className),
-                state,
-                PackageManager.DONT_KILL_APP
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to sync $className", e)
-        }
+        ComponentAliasSync.setEnabled(context, target.shareAlias, enabled, TAG)
     }
 
     private suspend fun externalRecordsPresent(): Boolean =
@@ -74,7 +56,7 @@ class ShareTargetManager(
 
     /** Family-level sync for the external-models share target: enabled iff advanced sharing AND a valid record. */
     private suspend fun syncExternalFamily(advancedEnabled: Boolean) {
-        setClassNameEnabled(EXTERNAL_FAMILY_ALIAS, advancedEnabled && externalRecordsPresent())
+        ComponentAliasSync.setEnabled(context, EXTERNAL_FAMILY_ALIAS, advancedEnabled && externalRecordsPresent(), TAG)
     }
 
     suspend fun syncAll() {
@@ -112,7 +94,7 @@ class ShareTargetManager(
             syncAll()
         } else {
             backendRegistry.backends.forEach { setComponentEnabled(it, false) }
-            setClassNameEnabled(EXTERNAL_FAMILY_ALIAS, false)
+            ComponentAliasSync.setEnabled(context, EXTERNAL_FAMILY_ALIAS, false, TAG)
         }
     }
 }

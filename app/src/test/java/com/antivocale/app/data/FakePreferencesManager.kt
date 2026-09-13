@@ -23,6 +23,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _themePreference = MutableStateFlow("DEFAULT")
     val _themeMode = MutableStateFlow("SYSTEM")
     val _transcriptionBackend = MutableStateFlow(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
+    val _externalCatalogUrl = MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL)
     private val _sherpaModelPaths = mutableMapOf<String, MutableStateFlow<String?>>()
 
     /** Backing flow for a catalog entry's saved model path (mirrors the keyed accessor). */
@@ -39,6 +40,8 @@ internal class FakePreferencesManager : PreferencesManager {
     val _progressiveTranscription = MutableStateFlow(true)
     val _punctuationMode = MutableStateFlow(PreferencesManager.DEFAULT_PUNCTUATION_MODE)
     val _punctuationPrompt = MutableStateFlow("")
+    val _summarizeEnabled = MutableStateFlow(PreferencesManager.DEFAULT_SUMMARIZE_ENABLED)
+    val _summaryPrompt = MutableStateFlow("")
     val _defaultPrompt = MutableStateFlow("")
     val _threadCount = MutableStateFlow(PreferencesManager.DEFAULT_THREAD_COUNT)
     val _inferenceProvider = MutableStateFlow("auto")
@@ -49,7 +52,6 @@ internal class FakePreferencesManager : PreferencesManager {
     val _showRetranscribeButton = MutableStateFlow(true)
     val _forceModelLoad = MutableStateFlow(false)
     val _compactResultActions = MutableStateFlow(PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
-    val _showTaskDetails = MutableStateFlow(PreferencesManager.DEFAULT_SHOW_TASK_DETAILS)
     val _externalModelsJson = MutableStateFlow<String?>(null)
     val _partialTranscriptionText = MutableStateFlow<String?>(null)
     val _partialTranscriptionTimestamp = MutableStateFlow<Long?>(null)
@@ -61,9 +63,8 @@ internal class FakePreferencesManager : PreferencesManager {
     override val themeMode: Flow<String> get() = _themeMode
     override val transcriptionBackend: Flow<String> get() = _transcriptionBackend
     override fun sherpaModelPath(entryId: String): Flow<String?> = _sherpaModelPath(entryId)
-    override val externalCatalogUrl: kotlinx.coroutines.flow.Flow<String> =
-        kotlinx.coroutines.flow.MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL)
-    override suspend fun saveExternalCatalogUrl(url: String) {}
+    override val externalCatalogUrl: Flow<String> get() = _externalCatalogUrl
+    override suspend fun saveExternalCatalogUrl(url: String) { _externalCatalogUrl.value = url }
 
     override val externalMigrationDone: Flow<Boolean> get() = _externalMigrationDone
     override val customTransducerModelPath: Flow<String?> get() = _customTransducerModelPath
@@ -73,9 +74,14 @@ internal class FakePreferencesManager : PreferencesManager {
     override val outputFolderUri: Flow<String?> get() = _outputFolderUri
     override val vadEnabled: Flow<Boolean> get() = _vadEnabled
     override val vadAdvisoryDismissed: Flow<Boolean> get() = _vadAdvisoryDismissed
+    private val _onboardingCompleted = MutableStateFlow(false)
+    override val onboardingCompleted = _onboardingCompleted
     override val progressiveTranscription: Flow<Boolean> get() = _progressiveTranscription
     override val punctuationMode: Flow<String> get() = _punctuationMode
     override val punctuationPrompt: Flow<String> get() = _punctuationPrompt
+    override val summarizeEnabled: Flow<Boolean> get() = _summarizeEnabled
+    override val summaryPrompt: Flow<String> get() = _summaryPrompt
+    override suspend fun saveSummaryPrompt(prompt: String) { _summaryPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override val defaultPrompt: Flow<String> get() = _defaultPrompt
     override val threadCount: Flow<Int> get() = _threadCount
     override val inferenceProvider: Flow<String> get() = _inferenceProvider
@@ -86,7 +92,6 @@ internal class FakePreferencesManager : PreferencesManager {
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
     override val forceModelLoad: Flow<Boolean> get() = _forceModelLoad
     override val compactResultActions: Flow<Boolean> get() = _compactResultActions
-    override val showTaskDetails: Flow<Boolean> get() = _showTaskDetails
     override val externalModelsJson: Flow<String?> get() = _externalModelsJson
     override val partialTranscriptionText: Flow<String?> get() = _partialTranscriptionText
     override val partialTranscriptionTimestamp: Flow<Long?> get() = _partialTranscriptionTimestamp
@@ -107,10 +112,12 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveOutputFolderUri(uri: String?) { _outputFolderUri.value = uri }
     override suspend fun saveVadEnabled(enabled: Boolean) { _vadEnabled.value = enabled }
     override suspend fun saveVadAdvisoryDismissed(dismissed: Boolean) { _vadAdvisoryDismissed.value = dismissed }
+    override suspend fun saveOnboardingCompleted(completed: Boolean) { _onboardingCompleted.value = completed }
     override suspend fun saveProgressiveTranscription(enabled: Boolean) { _progressiveTranscription.value = enabled }
     override suspend fun savePunctuationMode(mode: String) { _punctuationMode.value = mode }
-    override suspend fun savePunctuationPrompt(prompt: String) { _punctuationPrompt.value = prompt }
-    override suspend fun saveDefaultPrompt(prompt: String) { _defaultPrompt.value = prompt }
+    override suspend fun savePunctuationPrompt(prompt: String) { _punctuationPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
+    override suspend fun saveSummarizeEnabled(enabled: Boolean) { _summarizeEnabled.value = enabled }
+    override suspend fun saveDefaultPrompt(prompt: String) { _defaultPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveThreadCount(threads: Int) { _threadCount.value = threads }
     override suspend fun saveInferenceProvider(provider: String) { _inferenceProvider.value = provider }
     override suspend fun saveTranscriptionLanguage(language: String) { _transcriptionLanguage.value = language }
@@ -120,10 +127,15 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
     override suspend fun saveForceModelLoad(enabled: Boolean) { _forceModelLoad.value = enabled }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
-    override suspend fun saveShowTaskDetails(enabled: Boolean) { _showTaskDetails.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }
-    override suspend fun savePartialTranscriptionState(text: String) { _partialTranscriptionText.value = text }
-    override suspend fun clearPartialTranscriptionState() { _partialTranscriptionText.value = null }
+    override suspend fun savePartialTranscriptionState(text: String) {
+        _partialTranscriptionText.value = text
+        _partialTranscriptionTimestamp.value = System.currentTimeMillis()
+    }
+    override suspend fun clearPartialTranscriptionState() {
+        _partialTranscriptionText.value = null
+        _partialTranscriptionTimestamp.value = null
+    }
     override suspend fun getLegacyLanguagePreference(): String = "en"
 
     override suspend fun saveBenchmarkResult(modelId: String, jsonResult: String) {

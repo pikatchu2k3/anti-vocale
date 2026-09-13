@@ -13,6 +13,7 @@ import com.antivocale.app.BuildConfig
 import com.antivocale.app.data.ModelDownloader
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.di.ApplicationScope
+import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelRecord
@@ -28,7 +29,6 @@ import com.antivocale.app.transcription.CatalogVariantUi
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.SherpaModelDownloader
 import com.antivocale.app.transcription.SherpaModelManager
-import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.transcription.cleanOrphanedModelDirs
 import com.antivocale.app.R
 import com.antivocale.app.data.catalog.BundledCatalog
@@ -39,12 +39,7 @@ import com.antivocale.app.data.download.ResumeDownloadHelper
 import com.antivocale.app.manager.LlmManager
 import com.antivocale.app.service.ExtractionService
 import com.antivocale.app.transcription.TranscriptionBackendManager
-import com.antivocale.app.transcription.BackendConfig
-import com.antivocale.app.transcription.InferenceProvider
-import com.antivocale.app.benchmark.BenchmarkManager
-import com.antivocale.app.benchmark.BenchmarkState
 import com.antivocale.app.util.DeviceCompatibility
-import com.antivocale.app.util.LocaleManager
 import com.antivocale.app.util.formatFileSize
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -72,10 +67,10 @@ class ModelViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val activeModelRepository: ActiveModelRepository,
     private val tokenManager: HuggingFaceTokenManager,
-    private val benchmarkManager: BenchmarkManager,
     private val backendManager: TranscriptionBackendManager,
     private val llmManager: LlmManager,
     private val shareTargetManager: ShareTargetManager,
+    private val shareShortcutManager: ShareShortcutManager,
     @ApplicationContext private val ctx: Context,
     private val backendRegistry: BackendRegistry,
     private val externalModelStore: ExternalModelStore,
@@ -418,7 +413,10 @@ class ModelViewModel @Inject constructor(
                     variantsNeedingExtraction = it.variantsNeedingExtraction - (variantName ?: ""),
                     orphanedVariants = it.orphanedVariants - (variantName ?: "")
                 ) }
-                applicationScope.launch { shareTargetManager.onModelDownloaded() }
+                applicationScope.launch {
+                    shareTargetManager.onModelDownloaded()
+                    shareShortcutManager.refresh()
+                }
                 if (variantName != null) {
                     // Persist the freshly downloaded variant as the saved preference.
                     viewModelScope.launch {
@@ -489,7 +487,10 @@ class ModelViewModel @Inject constructor(
                     )
                 }
                 refreshDownloadedModels()
-                applicationScope.launch { shareTargetManager.onModelDownloaded() }
+                applicationScope.launch {
+                    shareTargetManager.onModelDownloaded()
+                    shareShortcutManager.refresh()
+                }
                 if (_uiState.value.modelName.isBlank()) setDownloadedModel(file)
             },
             onCancelled = {
@@ -1139,6 +1140,7 @@ class ModelViewModel @Inject constructor(
                 if (_uiState.value.modelPath.contains(variant.fileName)) {
                     preferencesManager.saveModelPath("")
                     shareTargetManager.onModelDeleted(LlmTranscriptionBackend.BACKEND_ID)
+                    shareShortcutManager.refresh()
                     _uiState.update { it.copy(
                         modelPath = "",
                         modelName = "",
@@ -1395,6 +1397,7 @@ class ModelViewModel @Inject constructor(
                         preferencesManager.clearSherpaModelPath(entryId)
                         _uiState.update { it.copy(modelPath = "", modelName = "") }
                         shareTargetManager.onModelDeleted(entryId)
+                        shareShortcutManager.refresh()
                     }
                 }
                 updateEntry(entryId) { it.copy(modelPath = activePath) }
@@ -1636,99 +1639,8 @@ class ModelViewModel @Inject constructor(
         }
     }
 
-    // ==================== Benchmark ====================
-
-    private data class BenchmarkTarget(
-        val backendId: String,
-        val modelPath: String,
-        val displayName: String
-    )
-
-    private val _benchmarkState = MutableStateFlow<BenchmarkState>(BenchmarkState.Idle)
-    val benchmarkState: StateFlow<BenchmarkState> = _benchmarkState.asStateFlow()
-
-    private val _benchmarkTargetName = MutableStateFlow("")
-    val benchmarkTargetName: StateFlow<String> = _benchmarkTargetName.asStateFlow()
-
-    private var benchmarkJob: kotlinx.coroutines.Job? = null
-    private var lastBenchmarkTarget: BenchmarkTarget? = null
-
-    fun startBenchmark(backendId: String, modelPath: String, displayName: String) {
-        benchmarkJob?.cancel()
-        lastBenchmarkTarget = BenchmarkTarget(backendId, modelPath, displayName)
-        _benchmarkTargetName.value = displayName
-        _benchmarkState.value = BenchmarkState.Idle
-
-        val backend = backendManager.getBackend(backendId) ?: run {
-            _benchmarkState.value = BenchmarkState.Error("Unknown backend: $backendId")
-            return
-        }
-
-        benchmarkJob = viewModelScope.launch(Dispatchers.IO) {
-            val threadCount = preferencesManager.threadCount.first()
-            val providerPref = preferencesManager.inferenceProvider.first()
-            val resolvedProvider = InferenceProvider.resolve(providerPref)
-
-            val config = when {
-                backendId == "gemma4_gguf" -> BackendConfig.GgufConfig(
-                    modelPath = modelPath,
-                    threadCount = threadCount
-                )
-                BundledCatalog.byId(backendId) != null -> {
-                    val entry = BundledCatalog.byId(backendId)!!
-                    val lang = preferencesManager.transcriptionLanguage.first()
-                    // Same variant + language resolution as the orchestrator's load path
-                    // (TASK-434): the benchmark must measure what transcription would
-                    // actually run with, and the "system" default must never reach the
-                    // recognizer as a literal language code.
-                    val variant = entry.variantForDirName(File(modelPath).name)
-                    BackendConfig.SherpaOnnxConfig(
-                        modelDir = modelPath,
-                        numThreads = threadCount,
-                        language = TranscriptionLanguagePolicy.resolveForEntry(
-                            entry = entry,
-                            variant = variant,
-                            preference = lang,
-                            uiLocale = LocaleManager.effectiveLocale(),
-                        ),
-                        provider = resolvedProvider
-                    )
-                }
-                else -> {
-                    _benchmarkState.value = BenchmarkState.Error("Unsupported backend for benchmark")
-                    return@launch
-                }
-            }
-
-            val result = benchmarkManager.runBenchmark(backend, config) { progress ->
-                _benchmarkState.value = BenchmarkState.Running(progress)
-            }
-            _benchmarkState.value = result.fold(
-                onSuccess = { BenchmarkState.Complete(it) },
-                onFailure = { BenchmarkState.Error(it.message ?: "Benchmark failed") }
-            )
-        }
-    }
-
-    fun rerunBenchmark() {
-        val target = lastBenchmarkTarget ?: return
-        startBenchmark(target.backendId, target.modelPath, target.displayName)
-    }
-
-    fun cancelBenchmark() {
-        benchmarkJob?.cancel()
-        benchmarkJob = null
-        _benchmarkState.value = BenchmarkState.Idle
-    }
-
-    fun dismissBenchmark() {
-        _benchmarkState.value = BenchmarkState.Idle
-        _benchmarkTargetName.value = ""
-    }
-
     override fun onCleared() {
         super.onCleared()
-        benchmarkJob?.cancel()
         llmManager.setOnAutoUnloadCallback(null)
         llmManager.setOnExternalLoadCallback(null)
     }

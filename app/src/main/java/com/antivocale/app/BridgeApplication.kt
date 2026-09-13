@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.work.Configuration
 import com.antivocale.app.audio.MemoryReadings
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.di.ApplicationScope
 import com.antivocale.app.util.CrashReporter
@@ -21,6 +22,8 @@ class BridgeApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var preferencesManager: PreferencesManager
     @Inject lateinit var shareTargetManager: ShareTargetManager
+    @Inject lateinit var shareShortcutManager: ShareShortcutManager
+    @Inject lateinit var launcherIconManager: com.antivocale.app.ui.appearance.LauncherIconManager
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var externalModelStore: com.antivocale.app.data.ExternalModelStore
     @Inject lateinit var logDao: com.antivocale.app.data.local.LogDao
@@ -123,7 +126,20 @@ class BridgeApplication : Application(), Configuration.Provider {
         // model is downloaded or deleted.
         // Explicit Default: preserves the pre-TASK-438 private scope's built-in
         // dispatcher; the shared scope carries none.
-        applicationScope.launch(Dispatchers.Default) { shareTargetManager.syncAll() }
+        // TASK-472b: silent-death telemetry OUTSIDE the launched sync, so an
+        // OEM/LMK kill ending the process mid-sync still left its record.
+        com.antivocale.app.util.NativeCrashDetector.reportUnreportedDeaths(this)
+        applicationScope.launch(Dispatchers.Default) {
+            // Launcher-alias heal BEFORE the shortcut refresh: a user coming
+            // from a retired icon variant (TASK-473) has every alias disabled,
+            // and the shortcuts must anchor to the healed, enabled Default.
+            launcherIconManager.healIfNoAliasEnabled()
+            shareTargetManager.syncAll()
+            // Dynamic long-press share shortcuts (TASK-393): same startup slot,
+            // after the alias sync so the components the shortcut intents launch
+            // are already in their persisted state.
+            shareShortcutManager.refresh()
+        }
         migrateLanguagePreference()
         installGlobalExceptionHandler()
     }

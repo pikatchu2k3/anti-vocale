@@ -43,7 +43,9 @@ Also, Gemma is not just another transcriber: it is a full LLM, the only model in
 
 ### Whisper Small answered in the wrong language, or repeated the same phrase forever. What happened?
 
-That is a documented Whisper failure class (a repetition-loop hallucination under greedy decoding, made likelier when the language token is guessed wrong), and Small is the model most prone to it: its language auto-detection is the least reliable in the catalog. Since this release the app no longer leaves that guess to chance: if you have not set a **Transcription Language**, Whisper Small transcribes in your app language whenever the model supports it, and only auto-detects otherwise. If you explicitly select **Auto-detect**, the model detects the language itself, exactly as before. Pinning a concrete language in **Settings → Transcription → Transcription Language** removes the guess entirely and is the strongest fix; for Italian, Distil Italian or Parakeet are the better models anyway.
+That is a documented Whisper failure class (a repetition-loop hallucination under greedy decoding, made likelier when the language token is guessed wrong), and Small is the model most prone to it: its language auto-detection is the least reliable in the catalog. Pinning a concrete language in **Settings → Transcription → Transcription Language** removes the guess entirely and is the strongest fix; for Italian, Distil Italian or Parakeet are the better models anyway.
+
+With **Auto-detect**, Whisper detects the language of the audio itself, and that is the right default. Setting a language explicitly forces it: audio in a different language can then come out degraded, or even translated into the language you set. Leave Auto-detect unless the detection misfires.
 
 ## Queue and concurrent requests
 
@@ -66,11 +68,17 @@ The Logs tab *is* the list: every transcription appears there with a status (pen
 
 ### Where do I see which model was used and how long it took?
 
-In the **Logs** tab: each entry shows "Processed in Xs" under the transcript, along with the timestamp and the audio duration. The model name is being added there, and a settings toggle will optionally surface a details row (model, time, task id) on result entries as well ([#45](https://github.com/RisorseArtificiali/anti-vocale/issues/45)).
+In the **Logs** tab: expand an entry and the metadata row under the transcript shows the timestamp, the processing time, and the model name that produced it ([#45](https://github.com/RisorseArtificiali/anti-vocale/issues/45); the optional task-id line that toggle used to reveal was removed, since the task id now travels in the feedback email when you report an entry).
 
 ### How do I delete or manage log entries?
 
 Swipe an entry to delete it. A standard long-press context menu is being added alongside the gesture ([#52](https://github.com/RisorseArtificiali/anti-vocale/issues/52)), with options like delete, re-transcribe, and copy.
+
+## Nightly builds
+
+### What is the nightly build, and can I install it over my store copy?
+
+Every build from `main` is published as a rolling pre-release on the [nightly tag](https://github.com/RisorseArtificiali/anti-vocale/releases/tag/nightly): the newest code, compiled but otherwise untested, meant for testers. It is signed with the project's own release key, so it installs as a plain update over another nightly (or over a sideloaded release APK signed with the same key). It is NOT signed like a store copy: Google re-signs Play deliveries and F-Droid signs its own builds, so moving to a nightly from the Play Store or from F-Droid requires uninstalling the app first, and uninstalling erases every downloaded transcription model. The release notes tell you two more things before you jump: the exact commit you would be running, and whether that build requires re-downloading models compared to the last stable release.
 
 ## The project
 

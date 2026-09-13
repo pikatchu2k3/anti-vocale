@@ -39,6 +39,12 @@ import java.io.File
  * Kotlin defaults, no @ColumnInfo) is correct; this test guards that it runs, the row survives,
  * and Room opens at v3.
  */
+/** Every migration in order: the chain each test walks grows with each release. */
+private val ALL_MIGRATIONS = arrayOf(
+    AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4,
+    AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
+)
+
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
 class AppDatabaseMigrationTest {
@@ -69,7 +75,7 @@ class AppDatabaseMigrationTest {
         seedV2Database()
 
         db = Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(*ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 
@@ -93,13 +99,85 @@ class AppDatabaseMigrationTest {
         // Seed a v3 database by running the 2->3 chain first, then 3->4 on top.
         seedV2Database()
         db = Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(*ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 
         val row = runBlocking { db!!.logDao().getByTaskId("task-1") }
         assertNotNull(row)
         assertNull("modelName must be null after the v4 migration for old rows", row!!.modelName)
+    }
+
+    /** MIGRATION_4_5 (TASK-276 AC3) must run and preserve rows. */
+    @Test
+    fun migrate_4_to_5_preservesRowAndPassesSchemaValidation() {
+        // Seed a v2 database, then run the full chain 1->5 on top.
+        seedV2Database()
+        db = Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
+            .addMigrations(*ALL_MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+
+        val row = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertNotNull(row)
+        assertNull("rawTranscript must be null after the v5 migration for old rows", row!!.rawTranscript)
+
+        // Round-trip: a row carrying the new column survives write + read.
+        // The entity is built directly: the seeded legacy type 'TRANSCRIPTION'
+        // predates the TEXT/AUDIO enum and does not round-trip toLogEntry().
+        runBlocking {
+            db!!.logDao().update(row.copy(
+                rawTranscript = "привет как дела", result = "Привет, как дела?"))
+        }
+        val updated = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertEquals("привет как дела", updated!!.rawTranscript)
+        assertEquals("Привет, как дела?", updated.result)
+    }
+
+    /** MIGRATION_5_6 (TASK-121.4) must run and preserve rows. */
+    @Test
+    fun migrate_5_to_6_preservesRowAndPassesSchemaValidation() {
+        // Seed a v2 database, then run the full chain 1->6 on top.
+        seedV2Database()
+        db = Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
+            .addMigrations(*ALL_MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+
+        val row = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertNotNull(row)
+        assertNull("summary must be null after the v6 migration for old rows", row!!.summary)
+
+        // Round-trip: a row carrying the new column survives write + read
+        // (same direct-entity note as the 4->5 test above).
+        runBlocking {
+            db!!.logDao().update(row.copy(
+                result = "lunghissima trascrizione", summary = "Riassunto breve."))
+        }
+        val updated = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertEquals("Riassunto breve.", updated!!.summary)
+        assertEquals("lunghissima trascrizione", updated.result)
+    }
+
+    /** MIGRATION_6_7 (TASK-494) must run, preserve rows, and default null. */
+    @Test
+    fun migrate_6_to_7_preservesRowAndPassesSchemaValidation() {
+        seedV2Database()
+        db = Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
+            .addMigrations(*ALL_MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+
+        val row = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertNotNull(row)
+        assertNull("skip reason must default null for pre-v7 rows", row!!.summarySkipReason)
+
+        runBlocking {
+            db!!.logDao().update(row.copy(
+                result = "trascrizione lunga", summarySkipReason = "guards"))
+        }
+        val updated = runBlocking { db!!.logDao().getByTaskId("task-1") }
+        assertEquals("guards", updated!!.summarySkipReason)
     }
 
     /** A fresh v3 DB (no migration) must also be internally consistent with the entity. */

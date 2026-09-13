@@ -2,6 +2,7 @@ package com.antivocale.app.transcription
 
 import com.antivocale.app.R
 import android.content.Context
+import androidx.annotation.ColorRes
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalModelRecordsProvider
 import com.antivocale.app.data.ExternalModelStore
@@ -83,10 +84,19 @@ data class BackendDescriptor(
     val rtfEstimate: Float = 1f,
 
     /**
-     * False for ASR models that emit unpunctuated text (GigaAM v3): the
-     * punctuation pass (TASK-276) keys on this in AUTO mode. Defaults true:
-     * every other bundled family punctuates, and external imports keep the
-     * default (SenseVoice and the encoder-decoder families do too).
+     * Per-family accent color (a [com.antivocale.app.R.color] resource) used by
+     * the dynamic share-shortcut icons (ShareShortcutIcons draws the model
+     * initial on it). Defaults to the primary tone (the LLM entry's color), the
+     * same fallback unknown ids had before the mapping moved into descriptors.
+     */
+    @ColorRes val accentColorRes: Int = R.color.share_shortcut_llm,
+
+    /**
+     * False only for ASR models that emit unpunctuated text; the punctuation
+     * pass (TASK-276) keys on this in AUTO mode. True for every bundled and
+     * external family today: the e2e GigaAM variant punctuates natively too
+     * (verified 2026-09-06, two 30s lecture windows with 10+5 and 2+9 marks;
+     * the earlier false was an assumption from one truncated clip).
      */
     val punctuatesOutput: Boolean = true,
 
@@ -191,6 +201,22 @@ class BackendRegistry @Inject constructor(
     private val recordsProvider: ExternalModelRecordsProvider,
 ) {
 
+    private companion object {
+        /**
+         * Static-backend accent colors for [BackendDescriptor.accentColorRes]
+         * (the dynamic share-shortcut icon backgrounds). Keyed on
+         * [BuiltInBackendIds], so the mapping cannot drift from the registered
+         * id space; ids missing here (none today) keep the descriptor default.
+         */
+        private val accentColorByBackendId = mapOf(
+            BuiltInBackendIds.PARAKEET to R.color.share_shortcut_parakeet,
+            BuiltInBackendIds.WHISPER to R.color.share_shortcut_whisper,
+            BuiltInBackendIds.QWEN3_ASR to R.color.share_shortcut_qwen3,
+            BuiltInBackendIds.NEMOTRON to R.color.share_shortcut_nemotron,
+            BuiltInBackendIds.GIGAAM to R.color.share_shortcut_gigaam,
+        )
+    }
+
     /** The six enabled static backends in canonical order (default backend first). */
     private val staticBackends: List<BackendDescriptor> by lazy {
         buildList {
@@ -223,15 +249,12 @@ class BackendRegistry @Inject constructor(
         // the other offline sherpa families cluster around 4x. Calibrator samples
         // replace these after two runs on the actual device.
         val rtf = if (entry.id == BuiltInBackendIds.PARAKEET) 15f else 4f
-        // TASK-276: GigaAM v3 emits unpunctuated Russian; every other bundled
-        // family punctuates. The punctuation pass trusts this in AUTO mode.
-        val punctuates = entry.id != BuiltInBackendIds.GIGAAM
         return BackendDescriptor(
             backendId = entry.id,
             shareAlias = entry.shareAlias,
             isStreaming = entry.isStreaming,
             rtfEstimate = rtf,
-            punctuatesOutput = punctuates,
+            accentColorRes = accentColorByBackendId[entry.id] ?: R.color.share_shortcut_llm,
             displayNameResId = when {
                 entry.hasExplicitDisplay && entry.display is CatalogDisplay.Resource ->
                     CatalogStringKeys.resolve(entry.display.key)
@@ -261,6 +284,7 @@ class BackendRegistry @Inject constructor(
         modelPathFlow = { it.modelPath },
         saveModelPath = { prefs, path -> prefs.saveModelPath(path) },
         clearModelPath = { it.clearModelPath() },
+        accentColorRes = R.color.share_shortcut_llm,
     )
 
     /** Static backends first (canonical order), then one descriptor per valid external record. */

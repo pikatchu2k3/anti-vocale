@@ -22,13 +22,11 @@ import com.antivocale.app.data.local.toLogEntry
 import com.antivocale.app.service.ExtractionService
 import com.antivocale.app.service.TranscriptionListener
 import com.antivocale.app.ui.viewmodel.LogEntry
-import com.antivocale.app.util.LocaleManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import java.io.File
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -80,7 +78,14 @@ class TranscriptionOrchestrator @Inject constructor(
         internal fun userFacingErrorMessage(context: Context, error: Throwable): String {
             return when (error) {
                 is TranscriptionException.ModelLoadError ->
-                    context.getString(R.string.error_model_load)
+                    // The heal path (TASK-479) carries the actionable
+                    // "corrupt files removed, re-download" instruction;
+                    // every other load error keeps the generic string.
+                    if (error.message?.startsWith("corrupt model files") == true) {
+                        context.getString(R.string.error_model_corrupt_healed)
+                    } else {
+                        context.getString(R.string.error_model_load)
+                    }
                 is TranscriptionException.InsufficientMemory ->
                     // The exception already carries the localized low-memory message with the
                     // measured numbers; surface it directly instead of the generic model-load string.
@@ -126,14 +131,6 @@ class TranscriptionOrchestrator @Inject constructor(
     private val chunkSemaphore by lazy { Semaphore(maxConcurrentChunks) }
 
     /**
-     * Locale read ONLY for the locale-following transcription-language default
-     * (TASK-434): the app's per-app locale, system default as fallback. Injectable
-     * so the resolution is deterministic in unit tests (the JVM default locale
-     * varies by machine).
-     */
-    internal var uiLocaleProvider: () -> Locale = { LocaleManager.effectiveLocale() }
-
-    /**
      * Processes a single transcription request.
      * All Android-specific side effects are delegated to [listener].
      *
@@ -157,7 +154,7 @@ class TranscriptionOrchestrator @Inject constructor(
         listener: TranscriptionListener,
         coroutineScope: CoroutineScope
     ): Result<String> {
-        val isShareRequest = source == "share"
+        val isShareRequest = source == com.antivocale.app.service.InferenceService.SOURCE_SHARE
 
         // Log request start
         markProcessing(taskId)
@@ -244,6 +241,9 @@ class TranscriptionOrchestrator @Inject constructor(
             // same final text. It runs exactly once at this single funnel for
             // every decode path (pipeline, parallel, VAD-progressive); text
             // requests are the LLM's own output and take no pass.
+            // TASK-121.4: the summary pass chains AFTER it and only attaches
+            // metadata; the delivered text is whatever the punctuation pass
+            // left (or the raw transcript when it skipped).
             val delivered: Result<TranscriptionResult> =
                 if (requestType == "audio" && result.isSuccess) {
                     // Captured once here (not re-read inside the pass): the
@@ -251,7 +251,9 @@ class TranscriptionOrchestrator @Inject constructor(
                     // so nothing else has swapped it since the ASR finished.
                     val asrBackendId = backendManager.getActiveBackend()?.id
                     if (asrBackendId == null) result
-                    else result.map { applyPunctuationPass(context, asrBackendId, it, listener) }
+                    else result
+                        .map { applyPunctuationPass(context, asrBackendId, it, listener) }
+                        .map { applySummaryPass(context, it, listener) }
                 } else result
 
             delivered.fold(
@@ -261,7 +263,10 @@ class TranscriptionOrchestrator @Inject constructor(
                         transcriptionResult.text,
                         duration,
                         transcriptionResult.isPartial,
-                        transcriptionResult.failedChunkCount
+                        transcriptionResult.failedChunkCount,
+                        rawTranscript = transcriptionResult.rawTranscript,
+                        summary = transcriptionResult.summary,
+                        summarySkipReason = transcriptionResult.summarySkipReason
                     )
                     listener.onSuccess(taskId, transcriptionResult.text, isShareRequest, sourcePackage, duration,
                         confidence = transcriptionResult.confidence,
@@ -384,6 +389,19 @@ class TranscriptionOrchestrator @Inject constructor(
     // ---- Backend Loading ----
 
     /**
+     * The shared degrade path of the optional LLM passes (punctuation,
+     * summary): a cancellation is rethrown so processRequest's dedicated
+     * CancellationException handling keeps its contract; any other failure
+     * logs and delivers the untouched transcript. An optional extra may
+     * never fail a completed transcription.
+     */
+    private fun degradeTo(result: TranscriptionResult, passName: String, e: Throwable): TranscriptionResult {
+        if (e is CancellationException) throw e
+        Log.w(TAG, "$passName pass failed; delivering the transcript unchanged", e)
+        return result
+    }
+
+    /**
      * TASK-276: the punctuation pass. Chains Gemma after a non-punctuating ASR
      * model (GigaAM today): the transcript is complete in hand, so loading the
      * LLM through the normal backend swap unloads the ASR model first and the
@@ -431,7 +449,11 @@ class TranscriptionOrchestrator @Inject constructor(
                 error("punctuation pass collapsed the transcript " +
                     "(${polished.length} vs ${result.text.length} chars); keeping the original")
             }
-            result.copy(text = polished.ifBlank { result.text })
+            val effectiveText = polished.ifBlank { result.text }
+            result.copy(
+                text = effectiveText,
+                rawTranscript = if (effectiveText != result.text) result.text else null
+            )
         }.fold(
             onSuccess = { polished ->
                 if (polished !== result) {
@@ -440,12 +462,113 @@ class TranscriptionOrchestrator @Inject constructor(
                 polished
             },
             onFailure = { e ->
-                // A cancellation (user cancel, queue teardown) is not a polish
-                // failure: rethrow so processRequest's dedicated
-                // CancellationException handling keeps its contract.
-                if (e is CancellationException) throw e
-                Log.w(TAG, "Punctuation pass failed; delivering the raw transcript", e)
-                result
+                degradeTo(result, "Punctuation", e)
+            },
+        )
+    }
+
+    /**
+     * TASK-121.4: the summary pass. Chains Gemma after a long transcription
+     * (the punctuation pass, when it ran, has already left the LLM active)
+     * and attaches a short summary as METADATA: the delivered transcript is
+     * never replaced (content preservation is the app's prime directive).
+     * Opt-in and skipped for short transcripts; every skip path (toggle,
+     * length, context limit, no Gemma configured) avoids the swap entirely,
+     * and any failure degrades to no summary: an optional extra may never
+     * fail a completed transcription.
+     */
+    private suspend fun applySummaryPass(
+        context: Context,
+        result: TranscriptionResult,
+        listener: TranscriptionListener,
+    ): TranscriptionResult {
+        // Everything from here runs under runCatching: a preference read, a
+        // backend swap, or a generation failure in an OPTIONAL extra must
+        // never break the delivery of a finished transcript.
+        return runCatching {
+            if (!preferencesManager.summarizeEnabled.first()) return@runCatching result
+            if (!SummaryPolicy.needsSummary(result.text)) return@runCatching result
+            if (!SummaryPolicy.withinContextLimit(result.text)) {
+                Log.i(TAG, "Summary pass skipped: ${result.text.length} chars exceeds the Gemma context guard")
+                return@runCatching result.copy(summarySkipReason = SummaryPolicy.SKIP_REASON_CONTEXT)
+            }
+            if (preferencesManager.modelPath.first().isNullOrBlank()) {
+                Log.i(TAG, "Summary pass skipped: no Gemma model configured (delivering transcript without summary)")
+                return@runCatching result.copy(summarySkipReason = SummaryPolicy.SKIP_REASON_NO_MODEL)
+            }
+            listener.onStatusUpdate(context.getString(R.string.summarize_status))
+            // Same swap bracket as the punctuation pass: when it ran, the LLM
+            // is already active and this is a no-op; when it did not, the ASR
+            // model unloads first and the two are never resident together.
+            ensureBackendLoaded(context, LlmTranscriptionBackend.BACKEND_ID).getOrThrow()
+            val llm = backendManager.getActiveBackend() ?: error("LLM backend not active after load")
+            // Language-aware by instruction: the curated default tells the
+            // model to answer in the transcript's language (the app locale
+            // is deliberately not resolved into the prompt). TASK-483: a
+            // saved prompt overrides the built-in, same contract as the
+            // punctuation pass (blank = built-in).
+            val builtInInstruction = context.getString(R.string.summary_default_prompt)
+            val customInstruction = preferencesManager.summaryPrompt.first().trim()
+            // TASK-498: a custom-prompt attempt that fails (guard rejection
+            // or a thrown generation error) retries ONCE with the built-in
+            // instruction on the same loaded backend: the user still gets a
+            // real recap instead of a caption. With no custom prompt the
+            // built-in IS the first attempt and a failure stays one-shot.
+            val instructions = buildList {
+                add(SummaryPolicy.effectivePrompt(customInstruction, builtInInstruction))
+                // A saved prompt identical to the built-in text must not run
+                // the same generation twice.
+                if (customInstruction.isNotEmpty() && customInstruction != builtInInstruction) {
+                    add(builtInInstruction)
+                }
+            }
+            var summary: String? = null
+            var generationFailure: Throwable? = null
+            var lastCandidateChars = -1
+            for ((attempt, instruction) in instructions.withIndex()) {
+                if (attempt > 0) {
+                    Log.i(TAG, "Custom summary prompt did not produce an acceptable summary; retrying with the built-in prompt")
+                }
+                val generated = llm.generateText(
+                    ChunkPromptPolicy.finalPrompt(instruction, result.text)
+                ).map { it.trim() }
+                // Log every thrown attempt when it happens: the loop below
+                // overwrites generationFailure, and a first crash the retry
+                // rescued must not vanish from logcat.
+                generated.exceptionOrNull()?.let {
+                    Log.w(TAG, "Summary generation attempt ${attempt + 1} of ${instructions.size} failed", it)
+                }
+                val candidate = generated.getOrNull()
+                if (candidate != null) lastCandidateChars = candidate.length
+                if (candidate != null && SummaryPolicy.acceptableSummary(candidate, result.text)) {
+                    summary = candidate
+                    break
+                }
+                generationFailure = generated.exceptionOrNull()
+            }
+            if (summary != null) return@runCatching result.copy(summary = summary)
+            // A thrown generation error on the LAST attempt is a failed
+            // pass (the outer fold degrades with SKIP_REASON_FAILED); a
+            // completed-but-rejected output is the guards verdict.
+            generationFailure?.let { throw it }
+            // TASK-494: not an error; the reason rides the result instead
+            // of dying in logcat. The length detail separates a stutter-short
+            // rejection from a rewrite-long one during triage.
+            Log.w(TAG, "Summary rejected by the guards after ${instructions.size} attempt(s) " +
+                "(last candidate $lastCandidateChars chars vs transcript ${result.text.length}); delivering without, reason recorded")
+            return@runCatching result.copy(summarySkipReason = SummaryPolicy.SKIP_REASON_GUARDS)
+        }.fold(
+            onSuccess = { withSummary ->
+                if (withSummary.summary != null) {
+                    Log.i(TAG, "Summary pass applied (${result.text.length} chars -> ${withSummary.summary.length}-char summary)")
+                }
+                withSummary
+            },
+            onFailure = { e ->
+                // TASK-494: an attended attempt that died mid-generation is
+                // as invisible as a guard rejection; record it too, then
+                // degrade as before.
+                degradeTo(result.copy(summarySkipReason = SummaryPolicy.SKIP_REASON_FAILED), "Summary", e)
             },
         )
     }
@@ -531,21 +654,13 @@ class TranscriptionOrchestrator @Inject constructor(
         }
         // Language wiring is catalog data: languageOption (online Nemotron) passes "auto"
         // or a code per stream; passLanguage (offline Whisper) maps "auto" to "" so the
-        // model auto-detects and passes a concrete code through, while the untouched
-        // "system" default follows the app locale on variants flagged preferUiLanguage
-        // (TASK-434, Whisper Small: language misdetection feeds its repetition-loop
-        // hallucination); everything else gets "". Single-language variants (Distil-IT)
-        // are forced later in SherpaBackend, which keeps winning over this resolution.
+        // model auto-detects and passes a concrete code through; everything else gets "".
+        // Single-language variants (Distil-IT) are forced later in SherpaBackend, which
+        // keeps winning over this resolution.
         val languagePref = preferencesManager.transcriptionLanguage.first()
-        // The variant actually on disk decides the per-variant flags, so the
-        // locale-following default applies only to the flagged variant, never
-        // to the entry as a whole.
-        val variant = entry.variantForDirName(File(resolvedPath).name)
         val language = TranscriptionLanguagePolicy.resolveForEntry(
             entry = entry,
-            variant = variant,
             preference = languagePref,
-            uiLocale = uiLocaleProvider(),
         )
         val label = when (val d = entry.display) {
             is CatalogDisplay.Resource -> context.getString(CatalogStringKeys.resolve(d.key))
@@ -797,7 +912,49 @@ class TranscriptionOrchestrator @Inject constructor(
             val modelSize = if (availBytes <= 0) 0L
                 else modelPathForBackend(backend.id).takeIf { it.isNotBlank() }
                     ?.let { modelSizeBytes(File(it)) } ?: 0L
-            val effective = TranscriptionMemoryPolicy.effectiveChunkSeconds(availBytes, modelSize, cap)
+            // TASK-475: per-family overhead. The modelType signals the
+            // architecture: whisper's cross-attention needs ~2320 MiB vs a
+            // transducer's ~900 (both calibrated on device). Unknown types
+            // keep the conservative transducer value.
+            // Resolve from the BACKEND (not BundledCatalog: external imports
+            // carry external: ids absent from the built-in catalog). Built-in
+            // whisper backends are the known id; externals expose their family
+            // through the ExternalSherpaBackend's configured family.
+            val memoryFamily = when {
+                backend.id == "whisper" -> TranscriptionMemoryPolicy.Family.WHISPER
+                backend is ExternalSherpaBackend &&
+                    backend.memoryFamily == com.antivocale.app.data.ModelFamily.WHISPER ->
+                    TranscriptionMemoryPolicy.Family.WHISPER
+                else -> TranscriptionMemoryPolicy.Family.TRANSDUCER
+            }
+
+            // TASK-472a: refuse instead of floor-clamping. When free RAM cannot
+            // hold even the minimum-chunk baseline, the old path proceeded at
+            // the floor and the process walked into an LMK/OEM kill with no
+            // trace anywhere (the 4GB crash report, TASK-468). A clear error
+            // beats a silent death; forceModelLoad keeps the bypass, mirroring
+            // the load pre-flight. Returned (not thrown) so the refusal rides
+            // the same failure path as every other transcription refusal.
+            // avail is read POST-load (the model is resident), so the
+            // required figure is the decode-side bar only; the displayed
+            // number is exactly the compared number.
+            if (!preferencesManager.forceModelLoad.first() &&
+                TranscriptionMemoryPolicy.canServeMinimumChunk(availBytes, modelSize, memoryFamily) == false
+            ) {
+                // minimumDecodeBaselineBytes already carries the headroom:
+                // this IS the compared bar, byte for byte.
+                val requiredBytes = TranscriptionMemoryPolicy.minimumDecodeBaselineBytes(memoryFamily, modelSize)
+                Log.w(
+                    TAG,
+                    "Refusing ${backend.id}: post-load avail=${availBytes / MB}MB cannot hold " +
+                        "the minimum-chunk decode baseline (required=${requiredBytes / MB}MB)",
+                )
+                return Result.failure(TranscriptionException.InsufficientMemory(
+                    context.getString(
+                        R.string.transcribe_low_memory, formatMb(availBytes), formatMb(requiredBytes))
+                ))
+            }
+            val effective = TranscriptionMemoryPolicy.effectiveChunkSeconds(availBytes, modelSize, cap, memoryFamily)
             if (effective != cap) {
                 Log.i(TAG, "Chunk cap tightened ${cap}s -> ${effective}s for ${backend.id} (RAM-derived)")
             }
@@ -1558,12 +1715,21 @@ class TranscriptionOrchestrator @Inject constructor(
         result: String,
         durationMs: Long,
         isPartial: Boolean = false,
-        failedChunkCount: Int = 0
+        failedChunkCount: Int = 0,
+        /** TASK-276 AC3: the pre-punctuation original, kept when the pass changed the text. */
+        rawTranscript: String? = null,
+        /** TASK-121.4: the AI summary of a long transcript, when generation succeeded. */
+        summary: String? = null,
+        /** TASK-494: why an attended summary attempt produced none. */
+        summarySkipReason: String? = null,
     ) {
         val entity = logDao.getByTaskId(taskId) ?: return
         logDao.update(entity.toLogEntry().copy(
             status = LogEntry.Status.SUCCESS, result = result, durationMs = durationMs,
-            isPartial = isPartial, failedChunkCount = failedChunkCount
+            isPartial = isPartial, failedChunkCount = failedChunkCount,
+            rawTranscript = rawTranscript,
+            summary = summary,
+            summarySkipReason = summarySkipReason
         ).toEntity())
         preferencesManager.clearPartialTranscriptionState()
         lastPartialSaveMs = 0L

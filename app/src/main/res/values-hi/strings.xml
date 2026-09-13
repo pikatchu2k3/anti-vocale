@@ -78,12 +78,24 @@
     <string name="logs_prompt_label">प्रॉम्प्ट:</string>
     <string name="logs_result_label">नतीजा:</string>
     <string name="logs_error_label">गड़बड़ी:</string>
-    <string name="logs_task_id">टास्क ID: %1$s</string>
     <string name="logs_unknown_error">अनजानी गड़बड़ी</string>
     <string name="logs_transcription_cancelled">ट्रांसक्रिप्शन रद्द किया गया</string>
     <string name="logs_search_placeholder">एंट्री खोजें…</string>
     <string name="logs_search_no_results">कोई मिलती-जुलती एंट्री नहीं</string>
     <string name="logs_search_no_results_hint">कोई दूसरा खोज शब्द आज़माएं</string>
+    <string name="browse_audio_content_description">ट्रांसक्रिप्शन के लिए ऑडियो फ़ाइल चुनें</string>
+    <string name="settings_replay_tour">स्वागत टूर फिर से चलाएँ</string>
+    <string name="tour_done">समझ गया</string>
+    <string name="tour_skip">छोड़ें</string>
+    <string name="tour_next">आगे</string>
+    <string name="tour_body_browse">कोई वॉइस संदेश नहीं है? इस बटन से अपने स्टोरेज से कोई भी ऑडियो फ़ाइल चुनें।</string>
+    <string name="tour_title_browse">या एक फ़ाइल चुनें</string>
+    <string name="tour_body_history">किसी भी मैसेंजर से एक वॉइस संदेश साझा करें। ट्रांसक्रिप्ट यहाँ दिखाई देता है, तैयार होने पर सूचना आती है।</string>
+    <string name="tour_title_history">एक वॉइस संदेश भेजें</string>
+    <string name="tour_body_models">पहले मॉडल्स टैब से एक ट्रांसक्रिप्शन मॉडल डाउनलोड करें। Parakeet अनुशंसित डिफ़ॉल्ट है।</string>
+    <string name="tour_title_models">एक मॉडल डाउनलोड करें</string>
+    <string name="tour_body_welcome">ट्रांसक्रिप्शन पूरी तरह इस फ़ोन पर होती है; आपका ऑडियो कभी इसे नहीं छोड़ता। शुरू करने से पहले तीन त्वरित संकेत।</string>
+    <string name="tour_title_welcome">Anti-Vocale में आपका स्वागत है</string>
     <string name="voice_message_duration">वॉइस मैसेज</string>
     <string name="source_was_video">स्रोत: वीडियो फ़ाइल</string>
     <string name="processed_in">%1$s में प्रोसेस हुआ</string>
@@ -166,6 +178,8 @@
     <string name="catalog_model_deleted">%1$s मिटाया गया</string>
     <string name="catalog_download_confirm_title">%1$s डाउनलोड करें?</string>
     <string name="catalog_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा।</string>
+    <string name="model_fit_no_fit">यह मॉडल शायद इस डिवाइस पर नहीं चलेगा: RAM आवश्यकता से कम है।</string>
+    <string name="model_fit_tight">चेतावनी: यह मॉडल इस डिवाइस RAM में मुश्किल भर पूरा होता है; मेमरी दबाव में निष्फल हो सकता है।</string>
     <string name="catalog_extract_confirm_title">%1$s निकालें?</string>
     <string name="catalog_extract_confirm_message">मॉडल फ़ाइल पहले से डाउनलोड है। इससे इसे इस्तेमाल के लिए निकाला जाएगा।</string>
 
@@ -208,6 +222,7 @@
     <string name="transcription_partial_chip">अधूरा</string>
     <string name="transcription_failed">ट्रांसक्रिप्शन विफल</string>
     <string name="error_model_load">मॉडल फ़ाइल ख़राब या गलत फ़ॉर्मैट की हो सकती है। मॉडल टैब से इसे फिर से डाउनलोड करें।</string>
+    <string name="error_model_corrupt_healed">मॉडल की कुछ फ़ाइलें दूषित थीं, इसलिए हटा दी गईं। मॉडल टैब खोलकर मॉडल फिर से डाउनलोड करें।</string>
     <string name="error_native">ट्रांसक्रिप्शन के दौरान एक अंदरूनी गड़बड़ी हुई। अगर यह बार-बार हो तो कोई दूसरा मॉडल आज़माएं।</string>
     <string name="error_not_initialized">कोई मॉडल लोड नहीं है। मॉडल टैब खोलकर एक मॉडल डाउनलोड करें या चुनें।</string>
     <string name="error_model_unavailable">चुना गया मॉडल अब उपलब्ध नहीं है। मॉडल टैब खोलकर कोई दूसरा चुनें।</string>
@@ -232,6 +247,7 @@
     <string name="native_crash_title">ऐप अचानक बंद हुआ</string>
     <string name="native_crash_go_to_model">मॉडल टैब पर जाएं</string>
     <string name="model_load_low_memory">इस मॉडल के लिए ज़रूरी मेमोरी काफ़ी नहीं है (%1$s उपलब्ध, लगभग %2$s चाहिए)। दूसरे ऐप बंद करें या छोटा मॉडल इस्तेमाल करें। सेटिंग में फ़ोर्स्ड लोडिंग उपलब्ध है।</string>
+    <string name="transcribe_low_memory">इस मॉडल से ट्रांसक्राइब करने के लिए पर्याप्त खाली मेमोरी नहीं है (लगभग %1$s खाली, %2$s चाहिए)। अन्य ऐप्स बंद करके पुनः प्रयास करें, या सेटिंग में मॉडल लोड बाध्य करें चालू करें।</string>
     <string name="force_model_load">मॉडल ज़बरदस्ती लोड करें</string>
     <string name="force_model_load_desc">मेमोरी कम लगने पर भी मॉडल लोड करें। कम RAM वाले डिवाइस पर ऐप बंद हो सकता है।</string>
     <string name="copy">कॉपी करें</string>
@@ -315,6 +331,7 @@
     <string name="settings_feedback_source_title">सोर्स कोड</string>
     <string name="settings_feedback_license_title">लाइसेंस</string>
     <string name="settings_feedback_license_value">Apache 2.0</string>
+    <string name="settings_feedback_version_title">संस्करण</string>
     <string name="settings_feedback_privacy_note">आपकी कार्रवाई के बिना कुछ नहीं भेजा जाता; यह ईमेल आपका मेल ऐप भेजता है।</string>
     <string name="settings_feedback_address_copied">कोई मेल ऐप नहीं मिला। पता क्लिपबोर्ड पर कॉपी हुआ: %1$s</string>
     <string name="settings_feedback_body_version">ऐप वर्ज़न</string>
@@ -421,7 +438,14 @@
     <string name="punctuation_prompt_title">विराम चिह्न प्रॉम्प्ट</string>
     <string name="punctuation_prompt_description">विराम चिह्न चरण के लिए निर्देश। अंतर्निहित प्रॉम्प्ट के लिए खाली छोड़ें।</string>
     <string name="punctuation_prompt_placeholder">अंतर्निहित प्रॉम्प्ट</string>
+    <string name="summary_prompt_title">सारांश प्रॉम्प्ट</string>
+    <string name="summary_prompt_description">AI सारांश के निर्देश बदलें। खाली छोड़ने पर अंतर्निहित (दो-तीन वाक्य) प्रॉम्प्ट चलेगा।</string>
     <string name="punctuation_default_prompt">इस ट्रांसक्रिप्शन में विराम चिह्न और बड़े अक्षर जोड़ें। हर शब्द बिल्कुल वैसा ही रखें जैसा लिखा है; कुछ भी ठीक न करें, अनुवाद न करें, जोड़ें नहीं या हटाएँ नहीं। केवल सुधारी हुई ट्रांसक्रिप्शन ही लिखें।</string>
+    <!-- Settings Tab - Smart Summary (TASK-121.4) -->
+    <string name="summarize_title">लंबी ट्रांसक्रिप्शन का सारांश बनाएं</string>
+    <string name="summarize_description">Gemma मॉडल से लंबी ट्रांसक्रिप्शन में एक छोटा AI सारांश जोड़ता है (Gemma डाउनलोड होना चाहिए)।</string>
+    <string name="summarize_status">AI से सारांश बन रहा है…</string>
+    <string name="summary_default_prompt">इस ट्रांसक्रिप्शन का सारांश 2-3 वाक्यों में दें, ट्रांसक्रिप्शन की भाषा में। नाम और संख्याएँ बनाए रखें। केवल सारांश ही लिखें।</string>
     <string name="vad_title">मौन हटाएं (VAD)</string>
     <string name="vad_description">ट्रांसक्रिप्शन से पहले वॉइस मैसेज के ख़ामोश हिस्से हटाएं। प्रोसेसिंग समय घटता है और सटीकता बेहतर होती है।</string>
     <string name="progressive_title">प्रगतिशील डिस्प्ले</string>
@@ -459,10 +483,10 @@
 
     <!-- Settings Tab - Transcription Language -->
     <string name="transcription_language_title">ट्रांसक्रिप्शन भाषा</string>
-    <string name="transcription_language_system">ऐप भाषा के अनुसार</string>
     <string name="transcription_language_auto">अपने आप पहचानें</string>
-    <string name="transcription_language_description">ट्रांसक्रिप्शन के लिए ऑडियो की भाषा। कोई खास भाषा चुनने पर डिटेक्शन छूटता है और प्रोसेसिंग तेज़ होती है।</string>
-    <string name="transcription_language_note">डिफ़ॉल्ट रूप से Whisper Small पर आपकी ऐप भाषा इस्तेमाल होती है (मॉडल समर्थन न करे तो अपने आप पहचान)। सिर्फ़ Whisper मॉडल पर लागू। Distil Italian मॉडल हमेशा इतालवी इस्तेमाल करता है। बाक़ी बैकएंड (Gemma, Parakeet, Qwen3-ASR) अपने आप पहचानते हैं।</string>
+    <string name="transcription_language_no_conditioning">सक्रिय मॉडल भाषा अपने आप पहचानता है। यह सेटिंग सिर्फ़ Whisper मॉडल और स्ट्रीमिंग मॉडल पर लागू होती है।</string>
+    <string name="transcription_language_unsupported_pin">सक्रिय मॉडल इस भाषा को समर्थन नहीं देता। कोई समर्थित भाषा या अपने आप पहचानना चुनें; बदलने तक आपकी पसंद ऐसे ही रहेगी।</string>
+    <string name="transcription_language_forced_hint">यह भाषा ज़बरदस्ती लागू होती है: किसी दूसरी भाषा का ऑडियो ख़राब या अनुवादित रूप में आ सकता है। पहचान ग़लत न हो तो अपने आप पहचानना ही रखें।</string>
 
     <!-- Settings Tab - Theme -->
     <string name="theme_title">थीम</string>
@@ -472,6 +496,17 @@
     <string name="theme_default">डिफ़ॉल्ट (Indigo)</string>
     <string name="theme_whatsapp">WhatsApp</string>
     <string name="theme_telegram">Telegram</string>
+
+    <!-- Settings Tab - App icon (TASK-392) -->
+    <string name="app_icon_title">ऐप आइकन</string>
+    <string name="app_icon_note">बदलते समय कुछ लॉन्चर पर आइकन एक पल के लिए छिप सकता है; स्टोर लिस्टिंग में डिफ़ॉल्ट आइकन ही रहता है।</string>
+    <string name="app_icon_variant_default">डिफ़ॉल्ट</string>
+    <string name="app_icon_variant_wavecut">विच्छिन्न तरंग</string>
+    <string name="app_icon_variant_crossed">काटी हुई तरंग</string>
+    <string name="app_icon_variant_textblock">आवाज़ से पाठ</string>
+    <string name="app_icon_variant_monogram">एवी मोनोग्राम</string>
+    <string name="app_icon_variant_capsule">टूटा वॉइस नोट</string>
+    <string name="app_icon_variant_mutebar">म्यूट पट्टी</string>
 
     <!-- Per-App Settings -->
     <string name="per_app_settings_title">प्रति-ऐप सेटिंग</string>
@@ -718,7 +753,7 @@
     <string name="benchmark_cancel">रद्द करें</string>
     <string name="benchmark_rerun">फिर चलाएं</string>
     <string name="benchmark_retry">फिर से कोशिश करें</string>
-    <string name="benchmark_speed_label">गति</string>
+    <string name="benchmark_speed_label">प्रति ऑडियो मिनट समय</string>
     <string name="benchmark_speed_value">%1$.1f सेकंड/मिनट ऑडियो</string>
     <string name="benchmark_time_label">इन्फ़रेंस समय</string>
     <string name="benchmark_time_value">%1$d ms</string>
@@ -792,6 +827,7 @@
     <string name="share_target_nemotron">Anti-Vocale (Nemotron)</string>
     <string name="share_target_gigaam">Anti-Vocale (GigaAM)</string>
     <string name="share_target_external">Anti-Vocale (External)</string>
+    <string name="share_shortcut_transcribe_with">%1$s से ट्रांसक्राइब करें</string>
     <string name="external_none_imported">कोई बाहरी मॉडल इंपोर्ट नहीं हुआ</string>
     <string name="external_section_title">बाहरी मॉडल</string>
     <string name="model_advanced_section">अतिरिक्त सेटिंग</string>
@@ -825,7 +861,7 @@
     <string name="external_decode_language">डिकोड भाषा</string>
     <string name="external_decode_auto">स्वतः पहचान</string>
     <string name="external_family">मॉडल फ़ैमिली</string>
-    <string name="external_family_transducer">Transducer (NeMo/Zipformer)</string>
+    <string name="external_family_transducer">ट्रांसड्यूसर (ऑफ़लाइन NeMo/Zipformer)</string>
     <string name="external_family_transducer_help">एनकोडर + डिकोडर + जॉइनर + टोकन फ़ाइलें चाहिए</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">एनकोडर + डिकोडर + टोकन फ़ाइलें चाहिए</string>
@@ -868,7 +904,7 @@
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">सबटाइटल मिले</string>
-    <string name="subtitles_found_text">एम्बेडेड सबटाइटल (%1$s) इस्तेमाल करें, या ऑडियो ट्रांसक्राइब करें?</string>
+    <string name="subtitles_found_text">एम्बेडेड सबटाइटल (%1$s) इस्तेमाल करें या ऑडियो ट्रांसक्राइब करें? चयन न होने पर ट्रांसक्रिप्शन %2$s बाद शुरू होगा।</string>
     <string name="subtitles_language_unknown">अज्ञात</string>
     <string name="action_use_subtitles">सबटाइटल इस्तेमाल करें</string>
     <string name="action_transcribe_audio">ऑडियो ट्रांसक्राइब करें</string>
@@ -908,10 +944,16 @@
     <string name="logs_status_success">सफल</string>
     <string name="logs_status_error">त्रुटि</string>
     <string name="logs_status_processing">प्रोसेसिंग</string>
+    <string name="logs_original_label">मूल (विराम चिह्न से पहले):</string>
+    <string name="logs_summary_label">सारांश:</string>
+    <string name="summary_skipped_context">सारांश छोड़ा गया: ट्रांसक्रिप्ट सारांश पास की सीमा से लंबा है।</string>
+    <string name="summary_skipped_no_model">सारांश छोड़ा गया: कोई Gemma मॉडल कॉन्फ़िगर नहीं है। सारांश चालू करने के लिए मॉडल्स टैब से डाउनलोड करें।</string>
+    <string name="summary_skipped_failed">सारांश बनाते समय विफलता; ट्रांसक्रिप्ट सुरक्षित है।</string>
+    <string name="summary_skipped_guard">सारांश छोड़ा गया: बनाया गया सारांश लंबाई सीमाओं से बाहर था (सारांश के लिए बहुत छोटा या बहुत लंबा)।</string>
+    <string name="copy_summary">सारांश कॉपी करें</string>
+    <string name="copy_original">मूल कॉपी करें</string>
     <string name="logs_model_label">मॉडल: %1$s</string>
     <string name="model_limit_chunked">कोई सीमा नहीं: लंबी ऑडियो स्वतः विभाजित होती है</string>
-    <string name="show_task_details_title">टास्क विवरण दिखाएँ</string>
-    <string name="show_task_details_description">एंट्री पर टास्क ID दिखाएं। सपोर्ट से संपर्क में काम आएगा; डिफ़ॉल्ट रूप से बंद।</string>
 
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">बैकग्राउंड में चलने की अनुमति दें</string>

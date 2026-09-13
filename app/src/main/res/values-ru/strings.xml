@@ -86,12 +86,24 @@
     <string name="logs_prompt_label">Запрос:</string>
     <string name="logs_result_label">Результат:</string>
     <string name="logs_error_label">Ошибка:</string>
-    <string name="logs_task_id">ID задачи: %1$s</string>
     <string name="logs_unknown_error">Неизвестная ошибка</string>
     <string name="logs_transcription_cancelled">Распознавание отменено</string>
     <string name="logs_search_placeholder">Поиск записей…</string>
     <string name="logs_search_no_results">Подходящих записей нет</string>
     <string name="logs_search_no_results_hint">Попробуйте другой поисковый запрос</string>
+    <string name="browse_audio_content_description">Выбрать аудиофайл для расшифровки</string>
+    <string name="settings_replay_tour">Пройти приветственный тур снова</string>
+    <string name="tour_done">Понятно</string>
+    <string name="tour_skip">Пропустить</string>
+    <string name="tour_next">Далее</string>
+    <string name="tour_body_browse">Нет голосового сообщения под рукой? Выберите любой аудиофайл из памяти этой кнопкой.</string>
+    <string name="tour_title_browse">Или выберите файл</string>
+    <string name="tour_body_history">Поделитесь голосовым сообщением из любого мессенджера. Расшифровка появится здесь, с уведомлением по готовности.</string>
+    <string name="tour_title_history">Отправьте голосовое сообщение</string>
+    <string name="tour_body_models">Сначала скачайте модель расшифровки во вкладке Модели. Parakeet, рекомендуемый вариант по умолчанию.</string>
+    <string name="tour_title_models">Скачайте модель</string>
+    <string name="tour_body_welcome">Расшифровка выполняется полностью на этом телефоне; ваше аудио его никогда не покидает. Три короткие подсказки перед началом.</string>
+    <string name="tour_title_welcome">Добро пожаловать в Anti-Vocale</string>
     <string name="voice_message_duration">голосовое сообщение</string>
     <string name="source_was_video">Источник: видеофайл</string>
     <string name="processed_in">Обработано за %1$s</string>
@@ -174,6 +186,8 @@
     <string name="catalog_model_deleted">%1$s удалена</string>
     <string name="catalog_download_confirm_title">Скачать %1$s?</string>
     <string name="catalog_download_confirm_message">Будет загружено ~%1$d МБ.</string>
+    <string name="model_fit_no_fit">Эта модель, скорее всего, не запустится на этом устройстве: RAM ниже необходимого.</string>
+    <string name="model_fit_tight">Внимание: эта модель на грани RAM этого устройства; под нагрузкой возможен сбой.</string>
     <string name="catalog_extract_confirm_title">Извлечь %1$s?</string>
     <string name="catalog_extract_confirm_message">Файл модели уже загружен. Сейчас он будет извлечён для использования.</string>
 
@@ -218,6 +232,7 @@
     <string name="transcription_partial_chip">Неполная</string>
     <string name="transcription_failed">Не удалось выполнить распознавание</string>
     <string name="error_model_load">Файл модели может быть повреждён или иметь неверный формат. Попробуйте скачать его заново на вкладке «Модель».</string>
+    <string name="error_model_corrupt_healed">Некоторые файлы модели оказались повреждены и были удалены. Откройте вкладку Модели и скачайте модель заново.</string>
     <string name="error_native">Во время распознавания произошла внутренняя ошибка. Если это повторяется, попробуйте другую модель.</string>
     <string name="error_not_initialized">Модель не загружена. Откройте вкладку «Модель», чтобы скачать или выбрать модель.</string>
     <string name="error_model_unavailable">Выбранная модель больше недоступна. Откройте вкладку «Модель» и выберите другую.</string>
@@ -242,6 +257,7 @@
     <string name="native_crash_title">Приложение неожиданно закрылось</string>
     <string name="native_crash_go_to_model">Перейти на вкладку «Модель»</string>
     <string name="model_load_low_memory">Недостаточно свободной памяти для этой модели (доступно %1$s, требуется около %2$s). Закройте другие приложения или используйте модель меньшего размера. Доступна принудительная загрузка в настройках</string>
+    <string name="transcribe_low_memory">Недостаточно свободной памяти для транскрибации этой моделью (свободно около %1$s, требуется %2$s). Закройте другие приложения и попробуйте снова или включите принудительную загрузку модели в настройках.</string>
     <string name="force_model_load">Принудительная загрузка модели</string>
     <string name="force_model_load_desc">Загружать модель, даже если памяти кажется недостаточно. На устройствах с малым объёмом ОЗУ приложение может закрываться.</string>
     <string name="copy">Копировать</string>
@@ -331,6 +347,7 @@
     <string name="settings_feedback_source_title">Исходный код</string>
     <string name="settings_feedback_license_title">Лицензия</string>
     <string name="settings_feedback_license_value">Apache 2.0</string>
+    <string name="settings_feedback_version_title">Версия</string>
     <string name="settings_feedback_privacy_note">Ничего не отправляется без вашего действия; письмо отправится вашим почтовым приложением.</string>
     <string name="settings_feedback_address_copied">Почтовое приложение не найдено. Адрес скопирован в буфер обмена: %1$s</string>
     <string name="settings_feedback_body_version">Версия приложения</string>
@@ -443,7 +460,14 @@
     <string name="punctuation_prompt_title">Промпт пунктуации</string>
     <string name="punctuation_prompt_description">Инструкция для этапа пунктуации. Оставьте пустым, чтобы использовать встроенную.</string>
     <string name="punctuation_prompt_placeholder">Встроенный промпт</string>
+    <string name="summary_prompt_title">Промпт резюме</string>
+    <string name="summary_prompt_description">Своя инструкция для ИИ-резюме. Пусто означает встроенный промпт (два-три предложения).</string>
     <string name="punctuation_default_prompt">Добавь пунктуацию и заглавные буквы в эту расшифровку. Сохрани каждое слово точно как написано; ничего не исправляй, не переводи, не добавляй и не удаляй. Выведи только исправленную расшифровку.</string>
+    <!-- Settings Tab - Smart Summary (TASK-121.4) -->
+    <string name="summarize_title">Резюмировать длинные расшифровки</string>
+    <string name="summarize_description">Добавляет короткое резюме с ИИ к длинным расшифровкам с помощью модели Gemma (требуется скачанная Gemma).</string>
+    <string name="summarize_status">Резюмирую с помощью ИИ…</string>
+    <string name="summary_default_prompt">Сделай краткое содержание этой расшифровки в 2-3 предложениях, на языке расшифровки. Сохрани имена и числа. Выведи только краткое содержание.</string>
     <string name="vad_title">Удаление тишины (VAD)</string>
     <string name="vad_description">Удалять беззвучные участки из голосовых сообщений перед распознаванием. Сокращает время обработки и повышает точность.</string>
     <string name="progressive_title">Прогрессивный показ</string>
@@ -481,10 +505,10 @@
 
     <!-- Settings Tab - Transcription Language -->
     <string name="transcription_language_title">Язык распознавания</string>
-    <string name="transcription_language_system">Как язык приложения</string>
     <string name="transcription_language_auto">Определять автоматически</string>
-    <string name="transcription_language_description">Язык аудио для распознавания. Выбор конкретного языка пропускает автоопределение и ускоряет обработку</string>
-    <string name="transcription_language_note">По умолчанию на Whisper Small используется язык приложения (автоматическое определение, если модель его не поддерживает). Применяется только к моделям Whisper. Модель Distil Italian всегда использует итальянский. Остальные бэкенды (Gemma, Parakeet, Qwen3-ASR) определяют язык автоматически.</string>
+    <string name="transcription_language_no_conditioning">Активная модель определяет язык автоматически. Эта настройка применяется к моделям Whisper и к потоковой модели.</string>
+    <string name="transcription_language_unsupported_pin">Активная модель не поддерживает этот язык. Выберите поддерживаемый язык или автоматическое определение; выбор сохранится, пока вы его не смените.</string>
+    <string name="transcription_language_forced_hint">Язык будет задан принудительно: аудио на другом языке может выйти искажённым или переведённым. Оставляйте автоматическое определение, если оно не ошибается.</string>
 
     <!-- Settings Tab - Theme -->
     <string name="theme_title">Тема</string>
@@ -494,6 +518,17 @@
     <string name="theme_default">По умолчанию (индиго)</string>
     <string name="theme_whatsapp">WhatsApp</string>
     <string name="theme_telegram">Telegram</string>
+
+    <!-- Settings Tab - App icon (TASK-392) -->
+    <string name="app_icon_title">Значок приложения</string>
+    <string name="app_icon_note">При смене значок может на время исчезнуть в некоторых лаунчерах; в магазине остаётся значок по умолчанию.</string>
+    <string name="app_icon_variant_default">По умолчанию</string>
+    <string name="app_icon_variant_wavecut">Прерванная волна</string>
+    <string name="app_icon_variant_crossed">Перечёркнутая волна</string>
+    <string name="app_icon_variant_textblock">Из голоса в текст</string>
+    <string name="app_icon_variant_monogram">Монограмма AV</string>
+    <string name="app_icon_variant_capsule">Разорванная голосовая</string>
+    <string name="app_icon_variant_mutebar">Полоса тишины</string>
 
     <!-- Per-App Settings -->
     <string name="per_app_settings_title">Настройки по приложениям</string>
@@ -746,7 +781,7 @@
     <string name="benchmark_cancel">Отмена</string>
     <string name="benchmark_rerun">Запустить снова</string>
     <string name="benchmark_retry">Повторить попытку</string>
-    <string name="benchmark_speed_label">Скорость</string>
+    <string name="benchmark_speed_label">Время на минуту аудио</string>
     <string name="benchmark_speed_value">%1$.1f с/мин аудио</string>
     <string name="benchmark_time_label">Время вывода</string>
     <string name="benchmark_time_value">%1$d мс</string>
@@ -832,6 +867,7 @@
     <string name="share_target_nemotron">Anti-Vocale (Nemotron)</string>
     <string name="share_target_gigaam">Anti-Vocale (GigaAM)</string>
     <string name="share_target_external">Anti-Vocale (External)</string>
+    <string name="share_shortcut_transcribe_with">Распознать с помощью %1$s</string>
     <string name="external_none_imported">Внешние модели не импортированы</string>
     <string name="external_section_title">Внешние модели</string>
     <string name="model_advanced_section">Дополнительно</string>
@@ -865,7 +901,7 @@
     <string name="external_decode_language">Язык распознавания</string>
     <string name="external_decode_auto">Автоопределение</string>
     <string name="external_family">Семейство моделей</string>
-    <string name="external_family_transducer">Transducer (NeMo/Zipformer)</string>
+    <string name="external_family_transducer">Трансдьюсер (офлайн NeMo/Zipformer)</string>
     <string name="external_family_transducer_help">Ожидаются файлы encoder + decoder + joiner + tokens</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Ожидаются файлы encoder + decoder + tokens</string>
@@ -914,7 +950,7 @@
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Найдены субтитры</string>
-    <string name="subtitles_found_text">Использовать встроенные субтитры (%1$s) или распознать аудио?</string>
+    <string name="subtitles_found_text">Использовать встроенные субтитры (%1$s) или распознать аудио? Без выбора распознавание начнётся через %2$s.</string>
     <string name="subtitles_language_unknown">неизвестно</string>
     <string name="action_use_subtitles">Использовать субтитры</string>
     <string name="action_transcribe_audio">Распознать аудио</string>
@@ -926,10 +962,16 @@
     <string name="logs_status_success">Успешно</string>
     <string name="logs_status_error">Ошибка</string>
     <string name="logs_status_processing">Обработка</string>
+    <string name="logs_original_label">Оригинал (до пунктуации):</string>
+    <string name="logs_summary_label">Краткое содержание:</string>
+    <string name="summary_skipped_context">Резюме пропущено: транскрипция превышает длину, которую проход резюме может обработать.</string>
+    <string name="summary_skipped_no_model">Резюме пропущено: модель Gemma не настроена. Скачайте её на вкладке «Модели», чтобы включить резюме.</string>
+    <string name="summary_skipped_failed">Не удалось создать резюме; транскрипция не пострадала.</string>
+    <string name="summary_skipped_guard">Резюме пропущено: сгенерированное резюме вышло за пределы ограничений по длине (слишком короткое или слишком длинное для резюме).</string>
+    <string name="copy_summary">Копировать резюме</string>
+    <string name="copy_original">Копировать оригинал</string>
     <string name="logs_model_label">Модель: %1$s</string>
     <string name="model_limit_chunked">Без ограничений: длинные записи разбиваются автоматически</string>
-    <string name="show_task_details_title">Показывать детали задачи</string>
-    <string name="show_task_details_description">Показывать ID задачи в записях. Пригодится при обращении в поддержку. По умолчанию выключено</string>
 
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">Разрешить работу в фоне</string>

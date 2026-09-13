@@ -85,17 +85,37 @@
     <string name="logs_prompt_label">Komut:</string>
     <string name="logs_result_label">Sonuç:</string>
     <string name="logs_error_label">Hata:</string>
-    <string name="logs_task_id">Görev Kimliği: %1$s</string>
     <string name="logs_unknown_error">Bilinmeyen hata</string>
     <string name="logs_status_queued">Kuyrukta</string>
     <string name="logs_status_success">Başarılı</string>
     <string name="logs_status_error">Hata</string>
     <string name="logs_status_processing">İşleniyor</string>
+    <string name="logs_original_label">Orijinal (noktalamadan önce):</string>
+    <string name="logs_summary_label">Özet:</string>
+    <string name="summary_skipped_context">Özet atlandı: transkript, özet geçişinin işleyebileceği uzunluğu aşıyor.</string>
+    <string name="summary_skipped_no_model">Özet atlandı: Gemma modeli yapılandırılmamış. Özetleri etkinleştirmek için Modeller sekmesinden indirin.</string>
+    <string name="summary_skipped_failed">Özet oluşturulamadı; transkript sağlam.</string>
+    <string name="summary_skipped_guard">Özet atlandı: üretilen özet uzunluk sınırlarının dışında kaldı (bir özet için çok kısa veya çok uzun).</string>
+    <string name="copy_summary">Özeti kopyala</string>
+    <string name="copy_original">Orijinali kopyala</string>
     <string name="logs_model_label">Model: %1$s</string>
     <string name="logs_transcription_cancelled">Metin çıkarma iptal edildi</string>
     <string name="logs_search_placeholder">Kayıtlarda ara…</string>
     <string name="logs_search_no_results">Eşleşen kayıt yok</string>
     <string name="logs_search_no_results_hint">Farklı bir arama terimi deneyin</string>
+    <string name="browse_audio_content_description">Transkript için bir ses dosyası seç</string>
+    <string name="settings_replay_tour">Hoş geldin turunu tekrar oynat</string>
+    <string name="tour_done">Anladım</string>
+    <string name="tour_skip">Atla</string>
+    <string name="tour_next">İleri</string>
+    <string name="tour_body_browse">Elinde sesli mesaj yok mu? Bu düğmeyle depolamadan herhangi bir ses dosyası seçin.</string>
+    <string name="tour_title_browse">Ya da bir dosya seçin</string>
+    <string name="tour_body_history">Herhangi bir messenger\'dan bir sesli mesaj paylaşın. Transkript burada görünür, hazır olunca bildirim gelir.</string>
+    <string name="tour_title_history">Bir sesli mesaj gönderin</string>
+    <string name="tour_body_models">Önce Modelle sekmesinden bir transkripsiyon modeli indirin. Parakeet önerilen varsayılılandır.</string>
+    <string name="tour_title_models">Bir model indirin</string>
+    <string name="tour_body_welcome">Transkripsiyon tamamen bu telefonda çalışır; sesiniz asla telefonu terk etmez. Başlamadan önce üç kısa işaret.</string>
+    <string name="tour_title_welcome">Anti-Vocale\'e hoş geldiniz</string>
     <string name="voice_message_duration">sesli mesaj</string>
     <string name="source_was_video">Kaynak: video dosyası</string>
     <string name="processed_in">%1$s içinde işlendi</string>
@@ -178,6 +198,8 @@
     <string name="catalog_model_deleted">%1$s silindi</string>
     <string name="catalog_download_confirm_title">%1$s indirilsin mi?</string>
     <string name="catalog_download_confirm_message">Bu, yaklaşık %1$dMB indirir.</string>
+    <string name="model_fit_no_fit">Bu model bu cihazda büyük olasılıkla çalışmaz: RAM\'i modelin ihtiyacının altında.</string>
+    <string name="model_fit_tight">Not: bu model bu cihazın RAM\'ine ancak sığıyor; bellek baskısı altında başarısız olabilir.</string>
     <string name="catalog_extract_confirm_title">%1$s ayıklansın mı?</string>
     <string name="catalog_extract_confirm_message">Model dosyası zaten indirildi. Bu, kullanım için dosyayı ayıklar.</string>
 
@@ -220,6 +242,7 @@
     <string name="transcription_partial_chip">Eksik</string>
     <string name="transcription_failed">Metin çıkarma başarısız</string>
     <string name="error_model_load">Model dosyası bozuk veya yanlış biçimde olabilir. Model sekmesinden yeniden indirmeyi deneyin.</string>
+    <string name="error_model_corrupt_healed">Modelin bazı dosyaları bozuktu ve kaldırıldı. Modeller sekmesini açıp modeli yeniden indirin.</string>
     <string name="error_native">Metin çıkarma sırasında bir iç hata oluştu. Sorun sürerse farklı bir model deneyin.</string>
     <string name="error_not_initialized">Yüklü model yok. Model sekmesini açıp bir model indirin veya seçin.</string>
     <string name="error_model_unavailable">Seçili model artık kullanılamıyor. Model sekmesini açıp başka bir model seçin.</string>
@@ -244,6 +267,7 @@
     <string name="native_crash_title">Uygulama beklenmedik şekilde kapandı</string>
     <string name="native_crash_go_to_model">Model sekmesine git</string>
     <string name="model_load_low_memory">Bu model için yeterli boş bellek yok (%1$s boş, yaklaşık %2$s gerekiyor). Diğer uygulamaları kapatın veya daha küçük bir model kullanın. Zorunlu yükleme Ayarlar\'dan yapılabilir.</string>
+    <string name="transcribe_low_memory">Bu modelle transkripsiyon için yeterli boş bellek yok (yaklaşık %1$s boş, %2$s gerekiyor). Diğer uygulamaları kapatıp tekrar deneyin veya ayarlarda Model yüklemeyi zorla seçeneğini açın.</string>
     <string name="force_model_load">Model yüklemeyi zorla</string>
     <string name="force_model_load_desc">Bellek yetersiz görünse bile modeli yükle. Az RAM\'li cihazlarda uygulamayı kapatabilir.</string>
     <string name="copy">Kopyala</string>
@@ -333,6 +357,7 @@
     <string name="settings_feedback_source_title">Kaynak kod</string>
     <string name="settings_feedback_license_title">Lisans</string>
     <string name="settings_feedback_license_value">Apache 2.0</string>
+    <string name="settings_feedback_version_title">Sürüm</string>
     <string name="settings_feedback_privacy_note">Siz işlem yapmadan hiçbir şey gönderilmez; bu e-postayı e-posta uygulamanız gönderir.</string>
     <string name="settings_feedback_address_copied">E-posta uygulaması bulunamadı. Adres panoya kopyalandı: %1$s</string>
     <string name="settings_feedback_body_version">Uygulama sürümü</string>
@@ -443,7 +468,14 @@
     <string name="punctuation_prompt_title">Noktalama istemi</string>
     <string name="punctuation_prompt_description">Noktalama adımı için yönerge. Yerleşik olanı kullanmak için boş bırakın.</string>
     <string name="punctuation_prompt_placeholder">Yerleşik istem</string>
+    <string name="summary_prompt_title">Özet istemi</string>
+    <string name="summary_prompt_description">Yapay zekâ özeti talimatını değiştirin. Boş bırakılırsa yerleşik istem (iki-üç cümle) kullanılır.</string>
     <string name="punctuation_default_prompt">Bu transkripte noktalama ve büyük harfler ekle. Her kelimeyi tam yazıldığı gibi koru; hiçbir şeyi düzeltme, çevirme, ekleme veya çıkarma. Yalnızca düzeltilmiş transkripti yaz.</string>
+    <!-- Settings Tab - Smart Summary (TASK-121.4) -->
+    <string name="summarize_title">Uzun transkriptleri özetle</string>
+    <string name="summarize_description">Gemma modeliyle uzun transkriptlere kısa bir yapay zekâ özeti ekler (Gemma\'nın indirilmiş olması gerekir).</string>
+    <string name="summarize_status">Yapay zekâ ile özetleniyor…</string>
+    <string name="summary_default_prompt">Bu transkripti 2-3 cümleyle, transkriptin dilinde özetle. İsimleri ve sayıları koru. Sadece özeti yaz.</string>
     <string name="vad_title">Sessizliği Kırp (VAD)</string>
     <string name="vad_description">Metin çıkarmadan önce sesli mesajlardaki sessiz kısımları kaldırır. İşleme süresini azaltır ve doğruluğu artırır.</string>
     <string name="progressive_title">Aşamalı Görüntüleme</string>
@@ -481,10 +513,10 @@
 
     <!-- Settings Tab - Transcription Language -->
     <string name="transcription_language_title">Metin Çıkarma Dili</string>
-    <string name="transcription_language_system">Uygulama dilini kullan</string>
     <string name="transcription_language_auto">Otomatik algıla</string>
-    <string name="transcription_language_description">Metin çıkarma için ses dili. Belirli bir dil seçmek algılamayı atlar ve işlemeyi hızlandırır.</string>
-    <string name="transcription_language_note">Varsayılan olarak Whisper Small\'da uygulama dili kullanılır (model desteklemiyorsa otomatik algılama). Yalnızca Whisper modelleri için geçerlidir. Distil Italian modeli her zaman İtalyanca kullanır. Diğer arka uçlar (Gemma, Parakeet, Qwen3-ASR) otomatik algılar.</string>
+    <string name="transcription_language_no_conditioning">Etkin model dili otomatik algılar. Bu ayar Whisper modellerine ve akış modeline uygulanır.</string>
+    <string name="transcription_language_unsupported_pin">Etkin model bu dili desteklemiyor. Desteklenen bir dil veya otomatik algılamayı seçin; seçiminiz değiştirene kadar korunur.</string>
+    <string name="transcription_language_forced_hint">Bu dili zorlar: başka bir dildeki ses bozuk veya çevrilmiş çıkabilir. Algılama yanlış olmadıkça otomatik algılamayı kullanın.</string>
 
     <!-- Settings Tab - Theme -->
     <string name="theme_title">Tema</string>
@@ -494,6 +526,17 @@
     <string name="theme_default">Varsayılan (Çivit)</string>
     <string name="theme_whatsapp">WhatsApp</string>
     <string name="theme_telegram">Telegram</string>
+
+    <!-- Settings Tab - App icon (TASK-392) -->
+    <string name="app_icon_title">Uygulama simgesi</string>
+    <string name="app_icon_note">Değiştirirken simge bazı başlatıcılarda kısa süre kaybolabilir; mağaza listesinde varsayılan simge kalır.</string>
+    <string name="app_icon_variant_default">Varsayılan</string>
+    <string name="app_icon_variant_wavecut">Kesik dalga</string>
+    <string name="app_icon_variant_crossed">Üstü çizili dalga</string>
+    <string name="app_icon_variant_textblock">Sesten metne</string>
+    <string name="app_icon_variant_monogram">AV monogramı</string>
+    <string name="app_icon_variant_capsule">Yırtık sesli mesaj</string>
+    <string name="app_icon_variant_mutebar">Sessizlik çubuğu</string>
 
     <!-- Per-App Settings -->
     <string name="per_app_settings_title">Uygulama Başına Ayarlar</string>
@@ -744,7 +787,7 @@
     <string name="benchmark_cancel">İptal</string>
     <string name="benchmark_rerun">Yeniden Çalıştır</string>
     <string name="benchmark_retry">Tekrar dene</string>
-    <string name="benchmark_speed_label">Hız</string>
+    <string name="benchmark_speed_label">Dakika başına süre</string>
     <string name="benchmark_speed_value">sesin dakikası başına %1$.1f s</string>
     <string name="benchmark_time_label">Çıkarım süresi</string>
     <string name="benchmark_time_value">%1$d ms</string>
@@ -826,6 +869,7 @@
     <string name="share_target_nemotron">Anti-Vocale (Nemotron)</string>
     <string name="share_target_gigaam">Anti-Vocale (GigaAM)</string>
     <string name="share_target_external">Anti-Vocale (External)</string>
+    <string name="share_shortcut_transcribe_with">%1$s ile metne çıkar</string>
     <string name="external_none_imported">İçe aktarılan harici model yok</string>
     <string name="external_section_title">Harici modeller</string>
     <string name="model_advanced_section">Gelişmiş</string>
@@ -859,7 +903,7 @@
     <string name="external_decode_language">Kod çözme dili</string>
     <string name="external_decode_auto">Otomatik algıla</string>
     <string name="external_family">Model ailesi</string>
-    <string name="external_family_transducer">Transdüser (NeMo/Zipformer)</string>
+    <string name="external_family_transducer">Transdüser (çevrimdışı NeMo/Zipformer)</string>
     <string name="external_family_transducer_help">Kodlayıcı + kod çözücü + birleştirici + token dosyaları bekler</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Kodlayıcı + kod çözücü + token dosyaları bekler</string>
@@ -885,8 +929,6 @@
     <!-- Conversation Grouping -->
     <string name="conversation_grouping_title">Konuşmaya Göre Grupla</string>
     <string name="compact_result_actions_title">Kompakt eylem düğmeleri</string>
-    <string name="show_task_details_title">Görev ayrıntılarını göster</string>
-    <string name="show_task_details_description">Girişlerde görev kimliğini göster. Destekle iletişimde yararlıdır; varsayılan olarak kapalıdır.</string>
     <string name="compact_result_actions_description">Metin çıkarma eylemlerini yalnızca simge olarak, sonuç kartının köşesine yerleştirilmiş şekilde göster. Etiketli düğmeler için kapatın.</string>
     <string name="conversation_grouping_description">Metin çıkarmaları kaynak uygulamaya göre (WhatsApp, Telegram vb.) daraltılabilir bölümlerde gruplandır.</string>
     <plurals name="conversation_group_count">
@@ -908,7 +950,7 @@
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Altyazılar bulundu</string>
-    <string name="subtitles_found_text">Gömülü altyazılar (%1$s) kullanılsın mı, yoksa ses metne çıkarılsın mı?</string>
+    <string name="subtitles_found_text">Gömülü altyazılar (%1$s) kullanılsın mı yoksa ses metne mi çıkarılsın? Seçim yapılmazsa transkripsiyon %2$s sonra başlar.</string>
     <string name="subtitles_language_unknown">bilinmiyor</string>
     <string name="action_use_subtitles">Altyazıları kullan</string>
     <string name="action_transcribe_audio">Sesi metne çıkar</string>

@@ -137,7 +137,14 @@ class ExternalCatalogTest {
         // + german whisper (TASK-404, primeline re-export)
         // + canary flash per language en/de/es/fr (TASK-408, renamed from
         // "NeMo Flash" to NVIDIA's canonical family naming)
-        assertEquals(10, entries.size)
+        // + whisper tiny multilingual (TASK-475, low-RAM) + sense voice
+        // small multilingual (TASK-476, zh/en/yue/ja/ko)
+        assertEquals(12, entries.size)
+        val sense = ExternalCatalog.filter(entries, "sense")
+        assertEquals(1, sense.size)
+        assertEquals(ModelFamily.SENSE_VOICE, sense[0].family)
+        // the reporter's Asian-language path: zh finds it via the language code
+        assertEquals(sense, ExternalCatalog.filter(entries, "zh"))
         val arabic = ExternalCatalog.filter(entries, "arabic")
         assertEquals(1, arabic.size)
         val byCode = ExternalCatalog.filter(entries, "ar")
@@ -149,6 +156,15 @@ class ExternalCatalogTest {
         assertEquals(4, ExternalCatalog.filter(entries, "canary").size)
         // ...and the "de" code surfaces every German-capable entry via languages
         assertEquals(4, ExternalCatalog.filter(entries, "de").size)
+    }
+
+    @Test
+    fun `bundled index is alphabetically sorted by display name`() {
+        // Only OUR curated file is held to the rule: parseIndex deliberately
+        // keeps input order so a custom/remote catalog may ship unsorted.
+        val text = java.io.File("src/main/assets/external-catalog/index.json").readText()
+        val names = ExternalCatalog.parseIndex(text).map { it.name }
+        assertEquals(names.sortedBy { it.lowercase() }, names)
     }
 
     @Test

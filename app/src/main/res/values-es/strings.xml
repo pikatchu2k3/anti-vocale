@@ -68,12 +68,24 @@
     <string name="logs_prompt_label">Prompt:</string>
     <string name="logs_result_label">Resultado:</string>
     <string name="logs_error_label">Error:</string>
-    <string name="logs_task_id">ID de tarea: %1$s</string>
     <string name="logs_unknown_error">Error desconocido</string>
     <string name="logs_transcription_cancelled">Transcripción cancelada</string>
     <string name="logs_search_placeholder">Buscar entradas…</string>
     <string name="logs_search_no_results">Sin entradas coincidentes</string>
     <string name="logs_search_no_results_hint">Prueba con otro término de búsqueda</string>
+    <string name="browse_audio_content_description">Elegir un archivo de audio para transcribir</string>
+    <string name="settings_replay_tour">Repetir el tour de bienvenida</string>
+    <string name="tour_done">Entendido</string>
+    <string name="tour_skip">Omitir</string>
+    <string name="tour_next">Siguiente</string>
+    <string name="tour_body_browse">¿No tienes un mensaje de voz a mano? Elige cualquier archivo de audio de tu almacenamiento con este botón.</string>
+    <string name="tour_title_browse">O elige un archivo</string>
+    <string name="tour_body_history">Comparte un mensaje de voz desde cualquier mensajero. La transcripción aparece aquí, con una notificación cuando está lista.</string>
+    <string name="tour_title_history">Envía un mensaje de voz</string>
+    <string name="tour_body_models">Primero descarga un modelo de transcripción desde la pestaña Modelos. Parakeet es el predeterminado recomendado.</string>
+    <string name="tour_title_models">Descarga un modelo</string>
+    <string name="tour_body_welcome">La transcripción ocurre por completo en este teléfono; tu audio nunca sale de él. Tres apuntes rápidos antes de empezar.</string>
+    <string name="tour_title_welcome">Bienvenido a Anti-Vocale</string>
     <string name="voice_message_duration">mensaje de voz</string>
     <string name="source_was_video">Origen: archivo de video</string>
     <string name="processed_in">Procesado en %1$s</string>
@@ -142,6 +154,8 @@
     <string name="catalog_model_deleted">%1$s eliminado</string>
     <string name="catalog_download_confirm_title">¿Descargar %1$s?</string>
     <string name="catalog_download_confirm_message">Esto descargará ~%1$d MB.</string>
+    <string name="model_fit_no_fit">Este modelo probablemente no funcione en este dispositivo: su RAM está por debajo de lo necesario.</string>
+    <string name="model_fit_tight">Aviso: este modelo justo cabe en la RAM de este dispositivo; puede fallar bajo presión de memoria.</string>
     <string name="catalog_extract_confirm_title">¿Extraer %1$s?</string>
     <string name="catalog_extract_confirm_message">El archivo del modelo ya está descargado. Se extraerá para su uso.</string>
     <string name="download_status_downloading">Descargando…</string>
@@ -178,6 +192,7 @@
     <string name="transcription_partial_chip">Incompleta</string>
     <string name="transcription_failed">Error de transcripción</string>
     <string name="error_model_load">El archivo del modelo puede estar corrupto o en formato incorrecto. Vuelve a descargarlo desde la pestaña Modelo.</string>
+    <string name="error_model_corrupt_healed">Algunos archivos del modelo estaban dañados y se han eliminado. Abre la pestaña Modelos y descarga el modelo de nuevo.</string>
     <string name="error_native">Ocurrió un error interno durante la transcripción. Si persiste, prueba con otro modelo.</string>
     <string name="error_not_initialized">No hay ningún modelo cargado. Abre la pestaña Modelo para descargar o seleccionar uno.</string>
     <string name="error_model_unavailable">El modelo seleccionado ya no está disponible. Abre la pestaña Modelo y elige otro.</string>
@@ -202,6 +217,7 @@
     <string name="native_crash_title">La app se cerró inesperadamente</string>
     <string name="native_crash_go_to_model">Ir a la pestaña Modelo</string>
     <string name="model_load_low_memory">No hay memoria libre suficiente para este modelo (%1$s disponible, ~%2$s necesario). Cierra otras apps o usa un modelo más ligero. La carga forzada está disponible en Ajustes.</string>
+    <string name="transcribe_low_memory">No hay memoria libre suficiente para transcribir con este modelo (unas %1$s libres, se necesitan %2$s). Cierra otras apps e inténtalo de nuevo, o activa Forzar carga del modelo en Ajustes.</string>
     <string name="force_model_load">Forzar carga del modelo</string>
     <string name="force_model_load_desc">Carga el modelo aunque la memoria parezca insuficiente. Puede cerrar la app en dispositivos con poca RAM.</string>
     <string name="copy">Copiar</string>
@@ -280,6 +296,7 @@
     <string name="settings_feedback_source_title">Código fuente</string>
     <string name="settings_feedback_license_title">Licencia</string>
     <string name="settings_feedback_license_value">Apache 2.0</string>
+    <string name="settings_feedback_version_title">Versión</string>
     <string name="settings_feedback_privacy_note">Nada se envía sin tu acción; tu app de correo envía este email.</string>
     <string name="settings_feedback_address_copied">Sin app de correo. Dirección copiada: %1$s</string>
     <string name="settings_feedback_body_version">Versión de la app</string>
@@ -369,7 +386,14 @@
     <string name="punctuation_prompt_title">Prompt de puntuación</string>
     <string name="punctuation_prompt_description">Instrucción para el paso de puntuación. Déjalo vacío para usar el integrado.</string>
     <string name="punctuation_prompt_placeholder">Prompt integrado</string>
+    <string name="summary_prompt_title">Prompt del resumen</string>
+    <string name="summary_prompt_description">Instrucción personalizada para el resumen IA. Vacío usa el integrado (dos o tres frases).</string>
     <string name="punctuation_default_prompt">Añade puntuación y mayúsculas a esta transcripción. Mantén cada palabra exactamente como está escrita; no corrijas, traduzcas, añadas ni quites nada. Devuelve solo la transcripción corregida.</string>
+    <!-- Settings Tab - Smart Summary (TASK-121.4) -->
+    <string name="summarize_title">Resumir transcripciones largas</string>
+    <string name="summarize_description">Añade un resumen corto con IA a las transcripciones largas con el modelo Gemma (requiere Gemma descargado).</string>
+    <string name="summarize_status">Resumiendo con IA…</string>
+    <string name="summary_default_prompt">Resume esta transcripción en 2-3 frases, en el idioma de la transcripción. Mantén los nombres y los números. Devuelve solo el resumen.</string>
     <string name="vad_title">Eliminar silencios (VAD)</string>
     <string name="vad_description">Elimina las partes de silencio de los mensajes de voz antes de transcribir. Reduce el tiempo de proceso y mejora la precisión.</string>
     <string name="progressive_title">Visualización progresiva</string>
@@ -399,10 +423,10 @@
     <string name="language_description">Elige el idioma de la aplicación.</string>
     <string name="language_system">Predeterminado del sistema</string>
     <string name="transcription_language_title">Idioma de transcripción</string>
-    <string name="transcription_language_system">Seguir el idioma de la aplicación</string>
     <string name="transcription_language_auto">Detección automática</string>
-    <string name="transcription_language_description">Idioma del audio para la transcripción. Elegir un idioma concreto omite la detección y acelera el procesamiento.</string>
-    <string name="transcription_language_note">De forma predeterminada, en Whisper Small se usa el idioma de la aplicación (detección automática si el modelo no lo admite). Solo aplica a modelos Whisper. Distil Italian siempre usa italiano. Otros backends (Gemma, Parakeet, Qwen3-ASR) detectan automáticamente.</string>
+    <string name="transcription_language_no_conditioning">El modelo activo detecta el idioma automáticamente. Este ajuste se aplica a los modelos Whisper y al modelo de streaming.</string>
+    <string name="transcription_language_unsupported_pin">El modelo activo no admite este idioma. Elegir un idioma admitido o la detección automática; la elección se conserva hasta que se cambie.</string>
+    <string name="transcription_language_forced_hint">Fuerza este idioma: el audio en otro idioma puede salir degradado o traducido. Dejar la detección automática salvo que falle.</string>
     <string name="theme_title">Tema</string>
     <string name="theme_description">Elige el tema de color de la aplicación.</string>
     <string name="theme_mode_title">Modo del tema</string>
@@ -410,6 +434,17 @@
     <string name="theme_default">Predeterminado (Índigo)</string>
     <string name="theme_whatsapp">WhatsApp</string>
     <string name="theme_telegram">Telegram</string>
+
+    <!-- Settings Tab - App icon (TASK-392) -->
+    <string name="app_icon_title">Icono de la aplicación</string>
+    <string name="app_icon_note">Al cambiarlo, el icono puede desaparecer un momento en algunos lanzadores; la ficha de la tienda mantiene el icono predeterminado.</string>
+    <string name="app_icon_variant_default">Predeterminado</string>
+    <string name="app_icon_variant_wavecut">Onda interrumpida</string>
+    <string name="app_icon_variant_crossed">Onda tachada</string>
+    <string name="app_icon_variant_textblock">De voz a texto</string>
+    <string name="app_icon_variant_monogram">Monograma AV</string>
+    <string name="app_icon_variant_capsule">Nota de voz rota</string>
+    <string name="app_icon_variant_mutebar">Barra de silencio</string>
     <string name="per_app_settings_title">Ajustes por aplicación</string>
     <string name="per_app_settings_description">Personaliza el comportamiento de notificaciones de cada app</string>
     <string name="per_app_settings_info">Toca una app para configurar sus notificaciones.</string>
@@ -614,7 +649,7 @@
     <string name="benchmark_cancel">Cancelar</string>
     <string name="benchmark_rerun">Ejecutar de nuevo</string>
     <string name="benchmark_retry">Reintentar</string>
-    <string name="benchmark_speed_label">Velocidad</string>
+    <string name="benchmark_speed_label">Tiempo por minuto de audio</string>
     <string name="benchmark_speed_value">%1$.1f s/min de audio</string>
     <string name="benchmark_time_label">Tiempo de inferencia</string>
     <string name="benchmark_time_value">%1$d ms</string>
@@ -690,6 +725,7 @@
     <string name="share_target_nemotron">Anti-Vocale (Nemotron)</string>
     <string name="share_target_gigaam">Anti-Vocale (GigaAM)</string>
     <string name="share_target_external">Anti-Vocale (External)</string>
+    <string name="share_shortcut_transcribe_with">Transcribir con %1$s</string>
     <string name="external_none_imported">No hay modelos externos importados</string>
     <string name="external_section_title">Modelos externos</string>
     <string name="model_advanced_section">Avanzado</string>
@@ -723,7 +759,7 @@
     <string name="external_decode_language">Idioma de decodificación</string>
     <string name="external_decode_auto">Detección automática</string>
     <string name="external_family">Familia de modelo</string>
-    <string name="external_family_transducer">Transductor (NeMo/Zipformer)</string>
+    <string name="external_family_transducer">Transductor (NeMo/Zipformer sin streaming)</string>
     <string name="external_family_transducer_help">Espera archivos encoder + decoder + joiner + tokens</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Espera archivos encoder + decoder + tokens</string>
@@ -762,7 +798,7 @@
     <string name="retranscribe_setting_title">Botón re-transcribir</string>
     <string name="retranscribe_setting_description">Muestra un botón en las transcripciones de audio para reintentar con otro modelo.</string>
     <string name="subtitles_found_title">Subtítulos encontrados</string>
-    <string name="subtitles_found_text">¿Usar los subtítulos integrados (%1$s) o transcribir el audio?</string>
+    <string name="subtitles_found_text">¿Usar los subtítulos incorporados (%1$s) o transcribir el audio? Si no eliges, la transcripción empieza tras %2$s.</string>
     <string name="subtitles_language_unknown">desconocido</string>
     <string name="action_use_subtitles">Usar subtítulos</string>
     <string name="action_transcribe_audio">Transcribir audio</string>
@@ -774,10 +810,16 @@
     <string name="logs_status_success">Correcto</string>
     <string name="logs_status_error">Error</string>
     <string name="logs_status_processing">Procesando</string>
+    <string name="logs_original_label">Original (antes de la puntuación):</string>
+    <string name="logs_summary_label">Resumen:</string>
+    <string name="summary_skipped_context">Resumen omitido: la transcripción supera la longitud que el resumen puede procesar.</string>
+    <string name="summary_skipped_no_model">Resumen omitido: no hay modelo Gemma configurado. Descárgalo en la pestaña Modelos para activar resúmenes.</string>
+    <string name="summary_skipped_failed">El resumen falló al generarse; la transcripción está intacta.</string>
+    <string name="summary_skipped_guard">Resumen omitido: el resumen generado quedó fuera de los límites de longitud (demasiado corto o demasiado largo para ser un resumen).</string>
+    <string name="copy_summary">Copiar resumen</string>
+    <string name="copy_original">Copiar original</string>
     <string name="logs_model_label">Modelo: %1$s</string>
     <string name="model_limit_chunked">Sin límite: los audios largos se dividen automáticamente</string>
-    <string name="show_task_details_title">Mostrar detalles de la tarea</string>
-    <string name="show_task_details_description">Muestra el ID de tarea en las entradas. Útil para contactar con soporte; desactivado por defecto.</string>
 
     <!-- TASK-336 -->
     <string name="battery_exemption_title">Permitir funcionamiento en segundo plano</string>

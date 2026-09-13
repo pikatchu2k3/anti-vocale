@@ -201,7 +201,18 @@ data class TranscriptionResult(
     /** TASK-450: this request would have been refused on the VAD (whole-file)
      *  path for the device's memory ceiling and was streamed without silence
      *  stripping instead; surfaced in the result notification's subtext. */
-    val streamedWithoutVad: Boolean = false
+    val streamedWithoutVad: Boolean = false,
+    /** TASK-276 AC3: the raw ASR text before the punctuation pass, set only
+     *  when the pass replaced the text (persisted as the log row's original). */
+    val rawTranscript: String? = null,
+    /** TASK-121.4: the AI summary of a long transcript, attached as metadata
+     *  (persisted as the log row's summary). The delivered [text] is never
+     *  replaced by it. */
+    val summary: String? = null,
+    /** TASK-494: stable token for why an ATTENDED summary attempt produced
+     *  no summary (the guards rejected the output). Rendered localized in
+     *  the entry details; never user text. */
+    val summarySkipReason: String? = null,
 ) {
     companion object {
         private val WHITESPACE = Regex("\\s+")

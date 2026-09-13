@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [LogEntity::class], version = 4, exportSchema = true)
+@Database(entities = [LogEntity::class], version = 7, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun logDao(): LogDao
@@ -35,6 +35,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** TASK-276 AC3: the raw ASR text kept alongside the polished result. */
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE logs ADD COLUMN rawTranscript TEXT DEFAULT NULL")
+            }
+        }
+
+        /** TASK-121.4: the AI summary kept alongside the delivered transcript. */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE logs ADD COLUMN summary TEXT DEFAULT NULL")
+            }
+        }
+
+        /** TASK-494: why an attended summary attempt produced none. */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE logs ADD COLUMN summarySkipReason TEXT DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -42,7 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "anti_vocale_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build().also { INSTANCE = it }
             }
         }

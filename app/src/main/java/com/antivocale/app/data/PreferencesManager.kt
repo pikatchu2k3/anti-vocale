@@ -31,12 +31,25 @@ interface PreferencesManager {
     val outputFolderUri: Flow<String?>
     val vadEnabled: Flow<Boolean>
     val vadAdvisoryDismissed: Flow<Boolean>
+
+    /**
+     * TASK-491: the first-install welcome tour has been completed (or
+     * skipped). NOT version-keyed: an app update must never replay the tour;
+     * it resets only by a fresh install (DataStore cleared) or the explicit
+     * Settings replay row.
+     */
+    val onboardingCompleted: Flow<Boolean>
     val progressiveTranscription: Flow<Boolean>
     val defaultPrompt: Flow<String>
     /** TASK-276 punctuation pass mode: "off" | "auto" | "always"; default "auto". */
     val punctuationMode: Flow<String>
     /** TASK-276 user override of the punctuation prompt; blank = the localized curated default. */
     val punctuationPrompt: Flow<String>
+    /** TASK-121.4 smart-summary pass toggle: attach a Gemma summary to long transcripts. Default off. */
+    val summarizeEnabled: Flow<Boolean>
+
+    /** TASK-483: editable override of the summary-pass prompt. Blank = the built-in 2-3 sentence default. */
+    val summaryPrompt: Flow<String>
     val threadCount: Flow<Int>
     val inferenceProvider: Flow<String>
     val transcriptionLanguage: Flow<String>
@@ -46,8 +59,6 @@ interface PreferencesManager {
     val showRetranscribeButton: Flow<Boolean>
     val forceModelLoad: Flow<Boolean>
     val compactResultActions: Flow<Boolean>
-    /** GH #45 follow-up: show the task-id detail line on log entries. Default off. */
-    val showTaskDetails: Flow<Boolean>
 
     val externalModelsJson: Flow<String?>
     suspend fun saveExternalModelsJson(json: String)
@@ -69,10 +80,15 @@ interface PreferencesManager {
     suspend fun saveOutputFolderUri(uri: String?)
     suspend fun saveVadEnabled(enabled: Boolean)
     suspend fun saveVadAdvisoryDismissed(dismissed: Boolean)
+
+    /** TASK-491: marks the welcome tour done; false re-arms it. */
+    suspend fun saveOnboardingCompleted(completed: Boolean)
     suspend fun saveProgressiveTranscription(enabled: Boolean)
     suspend fun saveDefaultPrompt(prompt: String)
     suspend fun savePunctuationMode(mode: String)
     suspend fun savePunctuationPrompt(prompt: String)
+    suspend fun saveSummarizeEnabled(enabled: Boolean)
+    suspend fun saveSummaryPrompt(prompt: String)
     suspend fun saveThreadCount(threads: Int)
     suspend fun saveInferenceProvider(provider: String)
     suspend fun saveTranscriptionLanguage(language: String)
@@ -82,7 +98,6 @@ interface PreferencesManager {
     suspend fun saveShowRetranscribeButton(enabled: Boolean)
     suspend fun saveForceModelLoad(enabled: Boolean)
     suspend fun saveCompactResultActions(enabled: Boolean)
-    suspend fun saveShowTaskDetails(enabled: Boolean)
 
     suspend fun saveBenchmarkResult(modelId: String, jsonResult: String)
     fun getBenchmarkResult(modelId: String): Flow<String?>
@@ -104,8 +119,16 @@ interface PreferencesManager {
         const val DEFAULT_VAD_ENABLED = false
         const val DEFAULT_PROGRESSIVE_TRANSCRIPTION = true
         const val DEFAULT_PROMPT_VALUE = ""
+
+        /**
+         * Character cap shared by every prompt editor and saver (TASK-485:
+         * the 500 literal had drifted across 7 unlinked take() sites).
+         */
+        const val PROMPT_CAP = 500
         /** TASK-276: the AUTO mode trusts the per-model punctuatesOutput flag. */
         const val DEFAULT_PUNCTUATION_MODE = "auto"
+        /** TASK-121.4: opt-in; a second inference per long transcript must be a choice. */
+        const val DEFAULT_SUMMARIZE_ENABLED = false
         const val DEFAULT_THEME = "DEFAULT"
         const val DEFAULT_THEME_MODE = "SYSTEM"
         const val DEFAULT_TRANSCRIPTION_BACKEND = "sherpa-onnx"
@@ -116,20 +139,23 @@ interface PreferencesManager {
         const val DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE = "nemo_transducer"
         const val DEFAULT_LANGUAGE = "system"
         /**
-         * TASK-434: the untouched default follows the app/UI locale on variants
-         * flagged `preferUiLanguage` (Whisper Small), else auto-detects. "auto"
-         * remains a selectable, explicit model-side auto-detection choice; see
+         * The untouched default. TASK-457 removed the app-locale pinning it used
+         * to carry: "system" now resolves exactly like "auto" (model-side
+         * detection), and survives only as the stored default so existing
+         * installs keep resolving without a preference migration; see
          * TranscriptionLanguagePolicy.
          */
         const val DEFAULT_TRANSCRIPTION_LANGUAGE = "system"
         const val DEFAULT_SWIPE_ACTION_MODE = "REVEAL"
+
+        /** The Logs swipe dropdown's exact option set (SettingsTab + the test SPI both pin to this). */
+        val SWIPE_ACTION_MODES = com.antivocale.app.ui.tabs.SwipeActionMode.NAMES
         const val DEFAULT_INFERENCE_PROVIDER = "auto"
         const val DEFAULT_GROUP_LOGS_BY_CONVERSATION = true
         const val DEFAULT_ADVANCED_SHARING_ENABLED = false
         const val DEFAULT_SHOW_RETRANSCRIBE_BUTTON = true
         const val DEFAULT_FORCE_MODEL_LOAD = false
         const val DEFAULT_COMPACT_RESULT_ACTIONS = true
-        const val DEFAULT_SHOW_TASK_DETAILS = false
 
         /** The maintained community index, published from this repo. */
         const val DEFAULT_EXTERNAL_CATALOG_URL =

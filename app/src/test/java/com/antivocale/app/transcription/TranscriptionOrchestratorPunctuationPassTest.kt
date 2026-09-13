@@ -1,5 +1,6 @@
 package com.antivocale.app.transcription
 
+import com.antivocale.app.data.local.LogEntity
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -90,8 +91,15 @@ class TranscriptionOrchestratorPunctuationPassTest : TranscriptionOrchestratorTe
     }
 
     @Test
-    fun `auto mode punctuates a non-punctuating model via the llm backend`() = runTest {
-        every { preferencesManager.punctuationMode } returns flowOf("auto")
+    fun `always mode punctuates an unpunctuated transcript via the llm backend`() = runTest {
+        // logSuccess needs an existing row to update (the base stubs null).
+        coEvery { logDao.getByTaskId(any()) } returns LogEntity(
+            id = "punct-1", timestamp = 1, taskId = "punct-1",
+            type = "AUDIO", status = "PROCESSING", prompt = "", result = "")
+        // 2026-09-06 correction: gigaam punctuates natively, so AUTO no longer
+        // selects it (flag true for every backend); ALWAYS + an unpunctuated
+        // transcript is the shipping path this test pins.
+        every { preferencesManager.punctuationMode } returns flowOf("always")
         stubSwapToLlm()
         coEvery { llmBackend.generateText(any()) } returns Result.success(punctuatedTranscript)
         val audioFile = temporaryFolder.newFile("audio.ogg")
@@ -110,6 +118,12 @@ class TranscriptionOrchestratorPunctuationPassTest : TranscriptionOrchestratorTe
         coVerify(exactly = 1) { backendManager.setActiveBackend(eq(LlmTranscriptionBackend.BACKEND_ID), any(), any()) }
         coVerify(exactly = 1) { llmBackend.generateText(any()) }
         assertEquals(punctuatedTranscript, result.getOrNull())
+        // AC3: the row's original is the pre-polish ASR text
+        coVerify {
+            logDao.update(match {
+                it.result == punctuatedTranscript && it.rawTranscript == rawTranscript
+            })
+        }
         // the pass fed the curated default prompt + the raw transcript
         coVerify {
             llmBackend.generateText(match { it.contains(rawTranscript) && it.isNotBlank() })
@@ -160,7 +174,7 @@ class TranscriptionOrchestratorPunctuationPassTest : TranscriptionOrchestratorTe
 
     @Test
     fun `degenerate polished output is rejected in favor of the original`() = runTest {
-        every { preferencesManager.punctuationMode } returns flowOf("auto")
+        every { preferencesManager.punctuationMode } returns flowOf("always")
         stubSwapToLlm()
         coEvery { llmBackend.generateText(any()) } returns Result.success("Да.")
         val audioFile = temporaryFolder.newFile("audio.ogg")
