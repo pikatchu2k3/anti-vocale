@@ -92,13 +92,20 @@
     <string name="tour_title_browse">या एक फ़ाइल चुनें</string>
     <string name="tour_body_history">किसी भी मैसेंजर से एक वॉइस संदेश साझा करें। ट्रांसक्रिप्ट यहाँ दिखाई देता है, तैयार होने पर सूचना आती है।</string>
     <string name="tour_title_history">एक वॉइस संदेश भेजें</string>
-    <string name="tour_body_models">पहले मॉडल्स टैब से एक ट्रांसक्रिप्शन मॉडल डाउनलोड करें। Parakeet अनुशंसित डिफ़ॉल्ट है।</string>
+    <string name="tour_body_models">पहले मॉडल्स टैब से एक ट्रांसक्रिप्शन मॉडल डाउनलोड करें। Parakeet अनुशंसित डिफ़ॉल्ट है। मॉडल बड़े होते हैं, कई GB तक, लेकिन हर एक केवल एक बार डाउनलोड होता है। ऐप अपडेट के लिए कभी दोबारा डाउनलोड की आवश्यकता नहीं होती।</string>
     <string name="tour_title_models">एक मॉडल डाउनलोड करें</string>
     <string name="tour_body_welcome">ट्रांसक्रिप्शन पूरी तरह इस फ़ोन पर होती है; आपका ऑडियो कभी इसे नहीं छोड़ता। शुरू करने से पहले तीन त्वरित संकेत।</string>
     <string name="tour_title_welcome">Anti-Vocale में आपका स्वागत है</string>
     <string name="voice_message_duration">वॉइस मैसेज</string>
     <string name="source_was_video">स्रोत: वीडियो फ़ाइल</string>
     <string name="processed_in">%1$s में प्रोसेस हुआ</string>
+    <string name="transcript_render_capped">पहले %1$d अक्षर दिखाए गए हैं, %2$d और। पूरा टेक्स्ट देखने के लिए कॉपी करें।</string>
+    <string name="transcript_capped_autosave_hint">पूरा ट्रांसक्रिप्ट ऑटो-सेव में: सेटिंग्स → फ़ोल्डर में सहेजें</string>
+    <string name="transcript_capped_autosave_saved">पूरा ट्रांसक्रिप्ट आपके फ़ोल्डर में स्वतः सहेजा गया</string>
+    <string name="export_settings_title">ऑटो-सेव और एक्सपोर्ट</string>
+    <string name="export_settings_description">सहेजी गई ट्रांसक्रिप्ट के लिए फ़ोल्डर और फ़ाइल स्वरूप चुनें</string>
+    <string name="error_folder_not_writable">यह फ़ोल्डर फ़ाइलें प्राप्त नहीं कर सकता। डिवाइस स्टोरेज से फ़ोल्डर चुनें (Downloads शॉर्टकट नहीं)।</string>
+    <string name="language_phone_option">फ़ोन भाषा (%1$s)</string>
     <string name="today">आज</string>
     <string name="yesterday">कल, %1$s</string>
     <string name="yesterday_label">कल</string>
@@ -232,6 +239,7 @@
     <string name="error_file_not_found">ऑडियो फ़ाइल नहीं मिली</string>
     <string name="error_invalid_format">ऑडियो प्रारूप निर्धारित नहीं किया जा सका</string>
     <string name="error_no_audio_track">फ़ाइल में कोई ऑडियो ट्रैक नहीं मिला</string>
+    <string name="error_no_decoder">इस डिवाइस में इस ऑडियो के लिए कोई डिकोडर नहीं है: %1$s</string>
     <string name="error_duration_unknown">ऑडियो अवधि निर्धारित नहीं की जा सकी</string>
     <string name="error_conversion_failed">रूपांतरण विफल: %1$s</string>
     <string name="error_chunk_failed">सेगमेंट %1$d विफल: %2$s</string>
@@ -258,8 +266,6 @@
     <string name="confidence_low">कम भरोसा</string>
     <string name="no_audio_file">कोई ऑडियो फ़ाइल नहीं मिली</string>
     <string name="failed_to_process_audio">ऑडियो फ़ाइल प्रोसेस करने में विफल</string>
-    <string name="unsupported_audio_format">मैसेजिंग ऐप के वॉइस मैसेज समर्थित हैं; .%1$s एक समर्थित फ़ॉर्मैट नहीं है।</string>
-    <string name="unknown_audio_format">ऑडियो फ़ॉर्मैट पहचाना नहीं जा सका। ऑडियो किसी मैसेजिंग ऐप से शेयर करें।</string>
     <string name="transcription_started">ट्रांसक्रिप्शन शुरू हुआ…</string>
     <string name="processing_segment_progress">%2$d में से %1$d हिस्सा…</string>
     <string name="progressive_initial">टेक्स्ट तैयार हो रहा है; पूरा होने पर फ़ाइनल नतीजा</string>
@@ -978,5 +984,36 @@
     <string name="a11y_back">पीछे</string>
     <string name="litertlm_importing">इंपोर्ट हो रहा है…</string>
     <string name="model_ram_warning">इस डिवाइस पर %1$s के लिए पर्याप्त मेमोरी नहीं हो सकती। लोड विफल हो सकता है; हल्के मॉडल सुरक्षित हैं।</string>
-    <string name="error_oom_transcription">इस ऑडियो को ट्रांसक्रिप्ट करने के लिए पर्याप्त मेमोरी नहीं है। छोटी फ़ाइल, हल्का मॉडल आज़माएं, या अन्य ऐप बंद करें।</string>
+    <string name="error_oom_transcription">इस ऑडियो को ट्रांसक्रिप्ट करने के लिए पर्याप्त मेमोरी नहीं है। छोटी फ़ाइल, हल्का मॉडल आज़माएं, या अन्य ऐप बंद करें। यदि फिर भी विफल हो, तो सेटिंग्स > उन्नत > मॉडल लोड बाध्य करें इस जाँच को छोड़ सकता है।</string>
+    <string name="external_family_detected">पहचाना गया: %1$s</string>
+    <string name="external_family_pick_title">यह मॉडल किस परिवार का है?</string>
+    <string name="subtitle_timeout_title">स्वचालित चयन समय-सीमा</string>
+    <string name="subtitle_timeout_description">सबटाइटल वाले वीडियो की चयन सूचना कितनी देर प्रतीक्षा करती है और खुद ट्रांसक्रिप्ट शुरू करती है।</string>
+    <string name="transcript_export_format_title">ऑटो-सेव फ़ाइल प्रारूप</string>
+    <string name="transcript_export_format_description">ऑटो-सेव फ़ोल्डर में सहेजी गई फ़ाइलों का प्रारूप। टाइमस्टैम्प वाले प्रारूप केवल तभी लिखे जाते हैं जब ट्रांसक्रिप्शन से समय संबंधी डेटा मिला हो।</string>
+    <string name="transcript_export_format_txt">सादा टेक्स्ट</string>
+    <string name="transcript_export_format_txt_timed">टाइमस्टैम्प वाला टेक्स्ट (प्रायोगिक)</string>
+    <string name="transcript_export_format_srt">SRT सबटाइटल (प्रायोगिक)</string>
+    <string name="transcript_export_format_vtt">WebVTT सबटाइटल (प्रायोगिक)</string>
+    <string name="settings_search_hint">सेटिंग्स खोजें…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d परिणाम</item>
+        <item quantity="other">%1$d परिणाम</item>
+    </plurals>
+    <string name="settings_search_no_results">कोई मेल खाती सेटिंग्स नहीं</string>
+    <string name="settings_search_clear">खोज साफ़ करें</string>
+        <string name="partial_transcript_label">आंशिक ट्रांसक्रिप्ट</string>
+    
+    <string name="decoded_of_total">%2$s में से %1$s डिकोड हुआ</string>
+    
+    <string name="decoded_so_far">%1$s डिकोड हुआ</string>
+    <string name="language_chip_setting_title">परिणामों पर भाषा चिप</string>
+    <string name="language_chip_setting_description">हर ट्रांसक्रिप्ट पर पहचानी गई भाषा दिखाएँ; जाँचने या बदलने के लिए उसे छुएँ</string>
+    <string name="language_chip_dialog_title">भाषा</string>
+    <string name="language_chip_detected_body">स्वतः पहचानी गई: %1$s। भाषा गलत है? ट्रांसक्रिप्शन भाषा बदलें और ऑडियो फिर से ट्रांसक्राइब करें।</string>
+    <string name="language_chip_pinned_body">सेट की गई: %1$s। बदलने के लिए ट्रांसक्रिप्शन भाषा सेटिंग खोलें।</string>
+    <string name="language_chip_open_setting">भाषा सेटिंग खोलें</string>
+    <string name="curated_section_title">आपकी भाषा के लिए</string>
+    <string name="curated_browse_all">सभी भाषाएँ देखें</string>
+    <string name="curated_suggest_model">अपनी भाषा के लिए मॉडल सुझाएँ</string>
 </resources>

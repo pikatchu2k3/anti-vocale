@@ -19,41 +19,37 @@ object SharedAudioHandler {
 
     const val TAG = "SharedAudioHandler"
 
-    /** Video containers accepted as audio input (audio track extracted, no visual analysis).
+    /** Video containers treated as audio input (audio track extracted, no visual analysis).
      *  Public so the Logs tab can mark entries whose source was a video file. */
     val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "mov", "3g2")
 
-    /** True if [path] is a video container — the audio track is extracted from it
-     *  at decode time. Used by the Logs tab to badge video-sourced transcriptions. */
+    /** True if [path] is a video container (the audio track is extracted from it
+     *  at decode time). Used by the Logs tab to badge video-sourced transcriptions. */
     fun isVideoFile(path: String?): Boolean {
         val ext = path?.substringAfterLast('.')?.lowercase() ?: return false
         return ext in VIDEO_EXTENSIONS
     }
 
-    // Supported extensions. Audio containers plus video containers — video is
-    // treated purely as an audio source: AudioPreprocessor.extractAudioTrack()
-    // selects the audio track and ignores video/subtitle tracks, so a video file
-    // flows through the same decode path as audio once accepted here.
-    private val SUPPORTED_EXTENSIONS = setOf(
-        // Audio
-        "mp3", "m4a", "ogg", "oga", "wav", "aac", "3gp", "flac", "opus", "amr"
-    ) + VIDEO_EXTENSIONS
-
     // Directory name for shared audio files
     private const val SHARED_AUDIO_DIR = "shared_audio"
+
+    // MimeTypeMap's (and careless senders') generic-binary answer: not a
+    // format signal, so extension resolution treats it as unresolved.
+    private const val GENERIC_BINARY_EXTENSION = "bin"
 
     /**
      * Result of copying a shared audio URI into app storage. Non-Success variants
      * let the share flow show a specific, user-facing message instead of a generic
      * "failed". The specific cause of each failure is logged by [copyToAppStorage]
      * at Log.e, so these variants carry only what the caller needs for the toast.
+     *
+     * GH #18: there is no format-rejection variant any more. The copy accepts
+     * every file; whether a container is decodable is decided later, by
+     * MediaExtractor/MediaCodec in AudioPreprocessor, whose typed errors reach
+     * the user through PreprocessingErrorMessages.
      */
     sealed class CopyResult {
         data class Success(val path: String) : CopyResult()
-        /** The shared content had no recognizable audio extension/MIME. */
-        object UnknownFormat : CopyResult()
-        /** Format was identified but is not in the accepted set. [extension] is the raw ext (no dot). */
-        data class UnsupportedFormat(val extension: String) : CopyResult()
         /** The content could not be read (permission, I/O, empty stream). */
         object Unreadable : CopyResult()
         /** Target storage cannot hold the source plus margin (TASK-432 pre-copy gate). */
@@ -67,15 +63,6 @@ object SharedAudioHandler {
          */
         fun userMessage(context: Context): String = when (this) {
             is Success -> error("Success carries no error message")
-            is UnsupportedFormat ->
-                // The extension comes from the sender's URI/MIME; guard
-                // against garbage before interpolating (non-token falls back).
-                if (extension.matches(Regex("^[a-zA-Z0-9]{1,8}$"))) {
-                    context.getString(R.string.unsupported_audio_format, extension)
-                } else {
-                    context.getString(R.string.unknown_audio_format)
-                }
-            UnknownFormat -> context.getString(R.string.unknown_audio_format)
             Unreadable -> context.getString(R.string.failed_to_process_audio)
             is OutOfSpace -> context.getString(R.string.error_storage_full, neededMb)
         }
@@ -114,18 +101,30 @@ object SharedAudioHandler {
             }
             Log.d(TAG, "Resolved MIME: $resolvedMimeType")
 
-            val extension = resolveExtension(uri, resolvedMimeType)
-            Log.d(TAG, "Extension: $extension")
-
+            // TASK-519 (GH #95): when the sender's URI carries no extension
+            // and the MIME type is unhelpful (ACR Phone and other call
+            // recorders share via content:// URIs with no extension and
+            // application/octet-stream), sniff the magic bytes. The sniffed
+            // result flows through the SAME path as a normally-resolved
+            // extension; it only names the local copy (and feeds the video
+            // badge), never an acceptance decision.
+            var extension = resolveExtension(uri, resolvedMimeType)
             if (extension == null) {
-                Log.e(TAG, "Could not determine file extension for URI: $uri")
-                return CopyResult.UnknownFormat
+                extension = sniffExtension(context, uri)
+                if (extension != null) {
+                    Log.i(TAG, "Extension resolved by magic-byte sniffing: $extension")
+                }
             }
-
-            if (!SUPPORTED_EXTENSIONS.contains(extension.lowercase())) {
-                Log.e(TAG, "Unsupported audio format: $extension")
-                return CopyResult.UnsupportedFormat(extension)
+            if (extension == null) {
+                // GH #18: no identifier at all (no MIME, no path extension, no
+                // sniffable magic). The file is STILL accepted: the copy path
+                // no longer gates on format, MediaExtractor validates at decode
+                // time. "bin" only names the local file; MediaExtractor sniffs
+                // the container itself and never reads the extension.
+                Log.i(TAG, "No format identifier for URI: $uri; accepting unvalidated as .$GENERIC_BINARY_EXTENSION")
+                extension = GENERIC_BINARY_EXTENSION
             }
+            Log.d(TAG, "Extension: $extension")
 
             // Create output directory if needed
             val outputDir = File(context.filesDir, SHARED_AUDIO_DIR).apply {
@@ -207,9 +206,14 @@ object SharedAudioHandler {
             // e.g., "audio/ogg; codecs=opus" -> "audio/ogg"
             val baseMimeType = mimeType.split(";").first().trim()
 
-            // Try MimeTypeMap first
+            // Try MimeTypeMap first. "bin" is its generic-binary answer for
+            // application/octet-stream on modern Android, not a real format
+            // signal; accepting it made the TASK-519 sniffer unreachable
+            // (ACR Phone shares were named ".bin" without the magic bytes
+            // ever being read). Treat it as unresolved so the URI path and
+            // the sniffer get their turn.
             val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(baseMimeType)
-            if (!ext.isNullOrBlank()) {
+            if (!ext.isNullOrBlank() && ext.lowercase() != GENERIC_BINARY_EXTENSION) {
                 return ext.lowercase()
             }
 
@@ -244,16 +248,48 @@ object SharedAudioHandler {
             }
         }
 
-        // Fall back to URI path
+        // Fall back to URI path. A ".bin" suffix is the same generic-binary
+        // non-signal as the MIME answer above: the sniffer decides.
         val path = uri.path
         if (!path.isNullOrBlank()) {
             val lastDot = path.lastIndexOf('.')
             if (lastDot >= 0 && lastDot < path.length - 1) {
-                return path.substring(lastDot + 1).lowercase()
+                val pathExt = path.substring(lastDot + 1).lowercase()
+                if (pathExt != GENERIC_BINARY_EXTENSION) return pathExt
             }
         }
 
         return null
+    }
+
+    /**
+     * TASK-519 (GH #95): magic-byte sniffing for content URIs whose extension
+     * and MIME type both fail to resolve (ACR Phone and other call recorders
+     * share via content:// URIs with no extension and application/octet-stream).
+     * Reads the first bytes of the stream and matches known audio/video
+     * container signatures; returns the extension or null.
+     */
+    private fun sniffExtension(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val header = ByteArray(16)
+                var offset = 0
+                // InputStream.read may return fewer bytes than asked; fill
+                // the header buffer to the stream's end so the signatures
+                // that live deeper in the header (WAV's WAVE at offset 8,
+                // ftyp's brand at 8) are not truncated into a null result.
+                while (offset < header.size) {
+                    val read = input.read(header, offset, header.size - offset)
+                    if (read < 0) break
+                    offset += read
+                }
+                if (offset == 0) return null
+                AudioFormatSniffer.detect(header.sliceArray(0 until offset))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not sniff format from URI: $uri", e)
+            null
+        }
     }
 
     /**

@@ -30,10 +30,25 @@ interface LogDao {
      * 500 = the bounded UI window; the search query below reaches FULL history
      * (SQL LIKE) so the bound does not silently hide older transcripts from search.
      */
-    @Query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500")
+    /**
+     * The two queries below list every [LogEntity] column EXCEPT `segments`
+     * (GH #92): the cues JSON re-copies the transcript per timed row, and these
+     * queries re-emit on every table write (including per-chunk interim
+     * updates), so the list paths must not carry it. Room fills the unselected
+     * nullable column with its null default (partial-entity query) and
+     * validates each column name at compile time. When a column is added to
+     * LogEntity, add it to BOTH lists or it silently reads as its default in
+     * the Logs list.
+     */
+    @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
+        "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
+        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs ORDER BY timestamp DESC LIMIT 500")
     fun getAll(): Flow<List<LogEntity>>
 
-    @Query("SELECT * FROM logs WHERE result LIKE '%' || :query || '%' ORDER BY timestamp DESC LIMIT 500")
+    @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
+        "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
+        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs WHERE result LIKE '%' || :query || '%' " +
+        "ORDER BY timestamp DESC LIMIT 500")
     fun searchAll(query: String): Flow<List<LogEntity>>
 
     @Query("SELECT * FROM logs WHERE taskId = :taskId LIMIT 1")
@@ -78,6 +93,20 @@ interface LogDao {
      */
     @Query("UPDATE logs SET result = :result, isPartial = :isPartial WHERE taskId = :taskId")
     suspend fun updateInterimResult(taskId: String, result: String, isPartial: Boolean)
+
+    /**
+     * TASK-568: decoded audio seconds at the failure point, column-scoped
+     * like [updateInterimResult]. Written by the streaming catches when a
+     * run dies mid-stream, so the ERROR row can say decoded-of-total; the
+     * success path keeps durationMs as processing time and never calls this.
+     */
+    @Query("UPDATE logs SET durationMs = :durationMs WHERE taskId = :taskId")
+    suspend fun updateFailureDecodedMs(taskId: String, durationMs: Long)
+
+    /** TASK-570: structured failure diagnostics, column-scoped (JSON from
+     *  [FailureContextJson]); written once at failure time. */
+    @Query("UPDATE logs SET failureContext = :json WHERE taskId = :taskId")
+    suspend fun updateFailureContext(taskId: String, json: String?)
 
     /** Same TASK-390 contract as [updateInterimResult], for the duration column. */
     @Query("UPDATE logs SET audioDurationSeconds = :seconds WHERE taskId = :taskId")

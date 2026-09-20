@@ -2,6 +2,10 @@
 
 Questions that come up frequently, mostly collected from real [issue reports](https://github.com/RisorseArtificiali/anti-vocale/issues).
 
+## Can it transcribe calls or meetings?
+
+Yes, if you have the recording: share the audio file with the app (your recorder's share button, or History > pick a file). Recordings longer than a model's own limit are split and stitched automatically; the streaming path accepts up to two hours. If a long run fails partway, the transcript produced so far is kept and shown on the entry. The result exports as subtitles (SRT, VTT) or timestamped text, with sentence-level timing on streaming models. The app does not record calls itself, and it does not tell speakers apart yet ([#83](https://github.com/RisorseArtificiali/anti-vocale/issues/83)).
+
 ## Models and their limits
 
 ### How long can an audio file be?
@@ -47,6 +51,10 @@ That is a documented Whisper failure class (a repetition-loop hallucination unde
 
 With **Auto-detect**, Whisper detects the language of the audio itself, and that is the right default. Setting a language explicitly forces it: audio in a different language can then come out degraded, or even translated into the language you set. Leave Auto-detect unless the detection misfires.
 
+### My transcriptions used to come out in my language, and after updating they come out in English. What changed?
+
+Before version 1.12 the app silently applied the phone's language when the model supported forcing one. Many people speak a language different from their phone's, and for them that silent forcing produced the wrong output, so since 1.12 the default is Auto-detect for everyone: the model listens to the audio and decides. When that guess misfires, the transcript comes out in the wrong language. If you transcribe mostly in one language, set it explicitly in **Settings → Transcription → Transcription Language**; an explicit choice applies to the models that accept it (the Whisper family and the streaming model), while Parakeet keeps detecting on its own.
+
 ## Queue and concurrent requests
 
 ### What happens if I share a second audio while one is transcribing?
@@ -73,6 +81,10 @@ In the **Logs** tab: expand an entry and the metadata row under the transcript s
 ### How do I delete or manage log entries?
 
 Swipe an entry to delete it. A standard long-press context menu is being added alongside the gesture ([#52](https://github.com/RisorseArtificiali/anti-vocale/issues/52)), with options like delete, re-transcribe, and copy.
+
+### Can I see who sent a voice message, or what my messaging apps put in their notifications?
+
+Anti-Vocale only knows the app a voice message came from (WhatsApp, Telegram, Signal): the Android share system carries no contact or sender information. If your workflow needs that level of detail, a notification logger shows you what your messaging apps actually put in their notifications, including sender and conversation names: [NotificationLog](https://f-droid.org/en/packages/de.jl.notificationlog/) is a privacy-first, open-source option that stores your full notification history locally.
 
 ## Nightly builds
 

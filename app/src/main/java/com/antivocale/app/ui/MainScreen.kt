@@ -15,8 +15,9 @@ import androidx.compose.ui.res.stringResource
 import com.antivocale.app.R
 import com.antivocale.app.ui.components.PipTranscriptionView
 import com.antivocale.app.ui.onboarding.TourStep
-import com.antivocale.app.ui.onboarding.TourOverlayCard
 import com.antivocale.app.ui.onboarding.tourCardModifier
+import com.antivocale.app.ui.onboarding.TourOverlayCard
+import com.antivocale.app.ui.onboarding.tourRevealable
 import com.antivocale.app.ui.tabs.LogsTab
 import com.antivocale.app.ui.tabs.ModelTab
 import com.antivocale.app.ui.tabs.SettingsTab
@@ -118,22 +119,34 @@ fun MainScreen(
     // TASK-486: the debug-SPI navigation signal (consumed exactly once; the
     // settings-scoped remainder is handed to the Settings tab).
     val testNav by TestNavigation.pending.collectAsState()
-    var settingsNavRequest by remember { mutableStateOf<TestNavigation.NavRequest?>(null) }
-    var modelsNavRequest by remember { mutableStateOf<TestNavigation.NavRequest?>(null) }
+    var settingsNavRequest by remember { mutableStateOf<AppNavigation.NavRequest?>(null) }
+    var modelsNavRequest by remember { mutableStateOf<AppNavigation.NavRequest?>(null) }
+
+    // One routing rule for settings destinations, shared by the TEST_SPI
+    // effect and production callers (the capped-transcript auto-save hint):
+    // switch to the Settings tab and hand the destination to SettingsTab
+    // through the consume-once NavRequest, never through the pending token
+    // (its write side is debug-only by contract, AppNavigation KDoc). The
+    // tab index DERIVES from TAB_KEYS so inserting a tab cannot silently
+    // reroute every settings navigation. Accepted race (debug-only): a TEST_SPI
+    // settings destination landing between a hint tap and SettingsTab's
+    // composition overwrites the single in-flight NavRequest slot.
+    val settingsTabIndex = AppNavigation.TAB_KEYS.indexOf("settings")
+    fun openSettings(destination: AppNavigation.Destination) {
+        selectedTabIndex = settingsTabIndex
+        settingsNavRequest = AppNavigation.NavRequest.next(destination)
+    }
     LaunchedEffect(testNav) {
         val dest = testNav ?: return@LaunchedEffect
         TestNavigation.pending.value = null
-        when (val parsed = TestNavigation.parse(dest)) {
-            is TestNavigation.Destination.Tab -> selectedTabIndex = parsed.index
-            is TestNavigation.Destination.ModelTarget -> {
+        when (val parsed = AppNavigation.parse(dest)) {
+            is AppNavigation.Destination.Tab -> selectedTabIndex = parsed.index
+            is AppNavigation.Destination.ModelTarget -> {
                 selectedTabIndex = 1
-                modelsNavRequest = TestNavigation.NavRequest.next(parsed)
+                modelsNavRequest = AppNavigation.NavRequest.next(parsed)
             }
-            is TestNavigation.Destination.SettingsSubPage,
-            is TestNavigation.Destination.SettingsSection -> {
-                selectedTabIndex = 2
-                settingsNavRequest = TestNavigation.NavRequest.next(parsed)
-            }
+            is AppNavigation.Destination.SettingsSubPage,
+            is AppNavigation.Destination.SettingsSection -> openSettings(parsed)
             null -> Unit
         }
     }
@@ -145,8 +158,23 @@ fun MainScreen(
 
     // Logs tab is first since it is the primary use case (viewing transcription history)
     val tabs = listOf(
-        TabItem(R.string.logs_tab, Icons.Default.History) { LogsTab(highlightTaskId = highlightTaskId, tourRevealState = revealState) },
-        TabItem(R.string.model_tab, Icons.Default.Storage) { ModelTab(onNavigateToSettings = { navigateToTab(2) }, navRequest = modelsNavRequest, onNavConsumed = { modelsNavRequest = null }) },
+        // GH #94 / TASK-548(B): the capped-transcript auto-save hint
+        // navigates to the export sub-page (TASK-543), where the folder
+        // and format cards live.
+        TabItem(R.string.logs_tab, Icons.Default.History) {
+            LogsTab(
+                highlightTaskId = highlightTaskId,
+                tourRevealState = revealState,
+                onNavigateToSettings = {
+                    openSettings(
+                        AppNavigation.Destination.SettingsSubPage(
+                            AppNavigation.SUBPAGE_KEY_EXPORT
+                        )
+                    )
+                },
+            )
+        },
+        TabItem(R.string.model_tab, Icons.Default.Storage) { ModelTab(onNavigateToSettings = { navigateToTab(settingsTabIndex) }, navRequest = modelsNavRequest, onNavConsumed = { modelsNavRequest = null }) },
         TabItem(R.string.settings_tab, Icons.Default.Settings) { SettingsTab(onNavigateToModelTab = { navigateToTab(1) }, navRequest = settingsNavRequest, onNavConsumed = { settingsNavRequest = null }) }
     )
 
@@ -183,8 +211,11 @@ fun MainScreen(
                     TourOverlayCard(
                         step = step,
                         isLast = isLast,
-                        // no alignment: the card renders at the overlay default position
-                        // (modifier removed to debug visibility)
+                        // TASK-508: the alignment modifier MUST be passed. It was
+                        // dropped during the TASK-491 debug round and the card
+                        // fell back to the library's default top-start placement,
+                        // covering the tab row the tour teaches the user to tap.
+                        modifier = tourCardModifier(this, step),
                         onNext = {
                             if (nextStep != null) tourStep = nextStep else finishTour()
                         },
@@ -193,29 +224,24 @@ fun MainScreen(
                 }
             },
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            stringResource(R.string.app_name),
-                            modifier = Modifier.revealable(
-                                key = TourStep.Welcome.key,
-                                state = revealState,
-                                borderStroke = androidx.compose.foundation.BorderStroke(
-                                    width = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                ),
-                                padding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                            ),
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
+            // TASK-565: the removed TopAppBar provided the status-bar inset; without
+                // it the TabRow sits under the status-bar icons.
+                Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                // TASK-565 (maintainer): the app-name bar is gone. The
+                // launcher, recents, and Settings > About carry the name;
+                // the TabRow says where you are. The freed space is where
+                // the History search field and the Models filter sit.
 
+                // TASK-508: the Welcome cutout is the WHOLE tab row, not the
+                // app title. The title's cutout sits above the TabRow, so a
+                // card placed "under" it landed on top of the tabs (verified
+                // on device: card y440-1100 covered the tab row y505-575).
+                // Revealing the tab row highlights all three tabs - what the
+                // intro step actually introduces - and Bottom placement then
+                // puts the card safely below them.
                 TabRow(
                     selectedTabIndex = selectedTabIndex,
+                    modifier = Modifier.tourRevealable(TourStep.Welcome.key, revealState),
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
@@ -230,19 +256,7 @@ fun MainScreen(
                             onClick = { selectedTabIndex = index },
                             text = { Text(stringResource(tab.titleResId)) },
                             icon = { Icon(tab.icon, contentDescription = stringResource(tab.titleResId)) },
-                            modifier = if (tourKey != null) {
-                                Modifier.revealable(
-                                    key = tourKey,
-                                    state = revealState,
-                                    borderStroke = androidx.compose.foundation.BorderStroke(
-                                        width = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    ),
-                                    padding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                                )
-                            } else {
-                                Modifier
-                            },
+                            modifier = tourKey?.let { Modifier.tourRevealable(it, revealState) } ?: Modifier,
                         )
                     }
                 }

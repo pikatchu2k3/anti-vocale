@@ -631,10 +631,26 @@ class SherpaBackend(
                 val transcription = result.text
                 val detectedLang = result.lang.ifBlank { null }
 
+                // GH #92: token timestamps decide whether sentence-level subtitle
+                // cues are possible for this model (empty = chunk cues only), and
+                // durations.size > 0 is the TDT signal that the 700ms pause split
+                // can fire. Deliberately NOT debug-gated: release logcat is the
+                // standing field-diagnostic path (F-Droid's CrashReporter is
+                // logcat-only), and the sibling per-chunk logs are ungated too.
+                Log.d(TAG, "Token timestamps: ${result.timestamps.size} entries" +
+                    ", durations=${result.durations.size}" +
+                    (result.timestamps.firstOrNull()?.let { ", first=%.2fs".format(it) } ?: "") +
+                    (result.timestamps.lastOrNull()?.let { ", last=%.2fs".format(it) } ?: ""))
+
                 Log.d(TAG, "Transcription complete: '${transcription.take(100)}...' (${transcription.length} chars)")
 
                 if (transcription.isBlank()) {
-                    Result.failure(TranscriptionException.NoTranscriptionProduced())
+                    // GH #96: a blank decode on a chunked path is a silence
+                    // window, not a lost chunk. Returning it as a successful
+                    // empty result lets the orchestrator skip it without
+                    // counting a failure; the single-chunk (whole-file) path
+                    // maps it to NoTranscriptionProduced at its own gate.
+                    Result.success(TranscriptionResult(text = ""))
                 } else {
                     // Keep the ORIGINAL samples length (not the padded one) for the duration calc.
                     val confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate)
@@ -642,6 +658,7 @@ class SherpaBackend(
                         text = transcription,
                         confidence = confidence,
                         detectedLanguage = detectedLang,
+                        tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, result.durations),
                     ))
                 }
             } catch (e: Exception) {
@@ -712,6 +729,11 @@ class SherpaBackend(
 
                 val result = rec.getResult(stream)
                 val transcription = result.text
+                // TASK-540 probe: whether the online JNI fills timestamps for
+                // streaming transducers is unprobed in either direction; empty
+                // arrays close the sentence-cue path for streaming models.
+                Log.d(TAG, "Online token timestamps: ${result.timestamps.size} entries")
+
                 if (transcription.isNotBlank() && transcription != lastEmitted) {
                     onPartial(transcription)
                 }
@@ -719,7 +741,12 @@ class SherpaBackend(
                 Log.d(TAG, "Transcription complete: '${transcription.take(100)}...' (${transcription.length} chars)")
 
                 if (transcription.isBlank()) {
-                    Result.failure(TranscriptionException.NoTranscriptionProduced())
+                    // GH #96: a blank decode on a chunked path is a silence
+                    // window, not a lost chunk. Returning it as a successful
+                    // empty result lets the orchestrator skip it without
+                    // counting a failure; the single-chunk (whole-file) path
+                    // maps it to NoTranscriptionProduced at its own gate.
+                    Result.success(TranscriptionResult(text = ""))
                 } else {
                     // OnlineRecognizerResult exposes no confidence/language fields.
                     val confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate)
@@ -727,6 +754,7 @@ class SherpaBackend(
                         text = transcription,
                         confidence = confidence,
                         detectedLanguage = null,
+                        tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, FloatArray(0)),
                     ))
                 }
             } catch (e: Exception) {

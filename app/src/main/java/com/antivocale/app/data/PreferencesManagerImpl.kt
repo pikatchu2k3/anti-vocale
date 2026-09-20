@@ -29,6 +29,7 @@ class PreferencesManagerImpl(
     companion object {
         private val MODEL_PATH = stringPreferencesKey("model_path")
         private val KEEP_ALIVE_TIMEOUT = intPreferencesKey("keep_alive_timeout_v2")
+        private val SUBTITLE_CHOICE_TIMEOUT = intPreferencesKey("subtitle_choice_timeout")
         private val KEEP_ALIVE_TIMEOUT_LEGACY = stringPreferencesKey("keep_alive_timeout")
         private val LANGUAGE_PREFERENCE = stringPreferencesKey("language_preference")
         private val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
@@ -59,6 +60,7 @@ class PreferencesManagerImpl(
         private val GGUF_MODEL_PATH = stringPreferencesKey("gguf_model_path")
         private val AUTO_COPY_ENABLED = booleanPreferencesKey("auto_copy_enabled")
         private val OUTPUT_FOLDER_URI = stringPreferencesKey("output_folder_uri")
+        private val TRANSCRIPT_EXPORT_FORMAT = stringPreferencesKey("transcript_export_format")
         private val VAD_ENABLED = booleanPreferencesKey("vad_enabled")
         private val PROGRESSIVE_TRANSCRIPTION = booleanPreferencesKey("progressive_transcription")
         private val DEFAULT_PROMPT = stringPreferencesKey("default_prompt")
@@ -71,6 +73,7 @@ class PreferencesManagerImpl(
         private val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
         private val SWIPE_ACTION_MODE = stringPreferencesKey("swipe_action_mode")
         private val BENCHMARK_RESULTS = stringPreferencesKey("benchmark_results")
+        private val MEASURED_MODEL_MEMORY = stringPreferencesKey("measured_model_memory")
         private val VAD_ADVISORY_DISMISSED = booleanPreferencesKey("vad_advisory_dismissed")
         private val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         private val GROUP_LOGS_BY_CONVERSATION = booleanPreferencesKey("group_logs_by_conversation")
@@ -78,6 +81,7 @@ class PreferencesManagerImpl(
         private val SHOW_RETRANSCRIBE_BUTTON = booleanPreferencesKey("show_retranscribe_button")
         private val FORCE_MODEL_LOAD = booleanPreferencesKey("force_model_load")
         private val COMPACT_RESULT_ACTIONS = booleanPreferencesKey("compact_result_actions")
+        private val LANGUAGE_CHIP_ENABLED = booleanPreferencesKey("language_chip_enabled")
         private val PARTIAL_TRANSCRIPTION_TEXT = stringPreferencesKey("partial_transcription_text")
         private val PARTIAL_TRANSCRIPTION_TIMESTAMP = longPreferencesKey("partial_transcription_timestamp")
         private val EXTERNAL_MODELS_JSON = stringPreferencesKey("external_models_json")
@@ -88,6 +92,7 @@ class PreferencesManagerImpl(
     private data class CachedPreferences(
         val modelPath: String? = null,
         val keepAliveTimeout: Int = PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT,
+        val subtitleChoiceTimeout: Int = PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES,
         val themePreference: String = PreferencesManager.DEFAULT_THEME,
         val themeMode: String = PreferencesManager.DEFAULT_THEME_MODE,
         val transcriptionBackend: String = PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
@@ -99,6 +104,7 @@ class PreferencesManagerImpl(
         val ggufModelPath: String? = null,
         val autoCopyEnabled: Boolean = PreferencesManager.DEFAULT_AUTO_COPY_ENABLED,
         val outputFolderUri: String? = null,
+        val transcriptExportFormat: String = PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         val vadEnabled: Boolean = PreferencesManager.DEFAULT_VAD_ENABLED,
         val progressiveTranscription: Boolean = PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION,
         val defaultPrompt: String = PreferencesManager.DEFAULT_PROMPT_VALUE,
@@ -117,6 +123,7 @@ class PreferencesManagerImpl(
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         val forceModelLoad: Boolean = PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+        val languageChipEnabled: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         val externalModelsJson: String? = null
     )
 
@@ -125,6 +132,8 @@ class PreferencesManagerImpl(
         keepAliveTimeout = this[KEEP_ALIVE_TIMEOUT]
             ?: this[KEEP_ALIVE_TIMEOUT_LEGACY]?.toIntOrNull()
             ?: PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT,
+        subtitleChoiceTimeout = this[SUBTITLE_CHOICE_TIMEOUT]
+            ?: PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES,
         themePreference = this[THEME_PREFERENCE] ?: PreferencesManager.DEFAULT_THEME,
         themeMode = this[THEME_MODE] ?: PreferencesManager.DEFAULT_THEME_MODE,
         transcriptionBackend = this[TRANSCRIPTION_BACKEND] ?: PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
@@ -139,6 +148,7 @@ class PreferencesManagerImpl(
         ggufModelPath = this[GGUF_MODEL_PATH],
         autoCopyEnabled = this[AUTO_COPY_ENABLED] ?: PreferencesManager.DEFAULT_AUTO_COPY_ENABLED,
         outputFolderUri = this[OUTPUT_FOLDER_URI],
+        transcriptExportFormat = this[TRANSCRIPT_EXPORT_FORMAT] ?: PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         vadEnabled = this[VAD_ENABLED] ?: PreferencesManager.DEFAULT_VAD_ENABLED,
         progressiveTranscription = this[PROGRESSIVE_TRANSCRIPTION] ?: PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION,
         defaultPrompt = this[DEFAULT_PROMPT] ?: PreferencesManager.DEFAULT_PROMPT_VALUE,
@@ -157,6 +167,7 @@ class PreferencesManagerImpl(
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         forceModelLoad = this[FORCE_MODEL_LOAD] ?: PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+        languageChipEnabled = this[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         externalModelsJson = this[EXTERNAL_MODELS_JSON]
     )
 
@@ -187,12 +198,23 @@ class PreferencesManagerImpl(
         it[KEEP_ALIVE_TIMEOUT] ?: it[KEEP_ALIVE_TIMEOUT_LEGACY]?.toIntOrNull() ?: PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT
     }.onStart { emit(cache.get().keepAliveTimeout) }
 
+    override val subtitleChoiceTimeoutMinutes: Flow<Int> = dataStore.data.map {
+        it[SUBTITLE_CHOICE_TIMEOUT] ?: PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES
+    }.onStart { emit(cache.get().subtitleChoiceTimeout) }
+
     override suspend fun saveKeepAliveTimeout(minutes: Int) {
         dataStore.edit { preferences ->
             preferences[KEEP_ALIVE_TIMEOUT] = minutes
             preferences.remove(KEEP_ALIVE_TIMEOUT_LEGACY)
         }
         cache.updateAndGet { it.copy(keepAliveTimeout = minutes) }
+    }
+
+    override suspend fun saveSubtitleChoiceTimeoutMinutes(minutes: Int) {
+        dataStore.edit { preferences ->
+            preferences[SUBTITLE_CHOICE_TIMEOUT] = minutes
+        }
+        cache.updateAndGet { it.copy(subtitleChoiceTimeout = minutes) }
     }
 
     override suspend fun getLegacyLanguagePreference(): String {
@@ -324,6 +346,17 @@ class PreferencesManagerImpl(
             }
         }
         cache.updateAndGet { it.copy(outputFolderUri = uri) }
+    }
+
+    override val transcriptExportFormat: Flow<String> = dataStore.data.map {
+        it[TRANSCRIPT_EXPORT_FORMAT] ?: PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT
+    }.onStart { emit(cache.get().transcriptExportFormat) }
+
+    override suspend fun saveTranscriptExportFormat(format: String) {
+        dataStore.edit { preferences ->
+            preferences[TRANSCRIPT_EXPORT_FORMAT] = format
+        }
+        cache.updateAndGet { it.copy(transcriptExportFormat = format) }
     }
 
     override val vadEnabled: Flow<Boolean> = dataStore.data.map { it[VAD_ENABLED] ?: PreferencesManager.DEFAULT_VAD_ENABLED }
@@ -505,6 +538,38 @@ class PreferencesManagerImpl(
         }
     }
 
+    override val measuredModelMemory: Flow<Map<String, com.antivocale.app.transcription.MeasuredModelMemory.Record>> =
+        dataStore.data.map { prefs ->
+            com.antivocale.app.transcription.MeasuredModelMemory.decode(prefs[MEASURED_MODEL_MEMORY])
+        }
+
+    override suspend fun mergeMeasuredModelMemorySample(
+        key: String,
+        loadDeltaBytes: Long,
+        modelSizeBytes: Long,
+    ) {
+        dataStore.edit { preferences ->
+            val m = com.antivocale.app.transcription.MeasuredModelMemory
+            val records = m.decode(preferences[MEASURED_MODEL_MEMORY]).toMutableMap()
+            val merged = m.merge(records[key], loadDeltaBytes, modelSizeBytes, System.currentTimeMillis())
+            if (merged != null) {
+                records[key] = merged
+                preferences[MEASURED_MODEL_MEMORY] = m.encode(records)
+            }
+        }
+    }
+
+    override suspend fun pruneMeasuredModelMemory(validKeys: Set<String>) {
+        dataStore.edit { preferences ->
+            val m = com.antivocale.app.transcription.MeasuredModelMemory
+            val records = m.decode(preferences[MEASURED_MODEL_MEMORY])
+            if (records.keys.any { it !in validKeys }) {
+                preferences[MEASURED_MODEL_MEMORY] =
+                    m.encode(records.filterKeys { it in validKeys })
+            }
+        }
+    }
+
     override val partialTranscriptionText: Flow<String?> = dataStore.data.map { it[PARTIAL_TRANSCRIPTION_TEXT] }
 
     override val partialTranscriptionTimestamp: Flow<Long?> = dataStore.data.map { it[PARTIAL_TRANSCRIPTION_TIMESTAMP] }
@@ -558,11 +623,21 @@ class PreferencesManagerImpl(
 
     override val compactResultActions: Flow<Boolean> = dataStore.data.map { it[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS }
         .onStart { emit(cache.get().compactResultActions) }
+    override val languageChipEnabled: Flow<Boolean> = dataStore.data.map { it[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED }
+        .onStart { emit(cache.get().languageChipEnabled) }
+
     override suspend fun saveCompactResultActions(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[COMPACT_RESULT_ACTIONS] = enabled
         }
         cache.updateAndGet { it.copy(compactResultActions = enabled) }
+    }
+
+    override suspend fun saveLanguageChipEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[LANGUAGE_CHIP_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(languageChipEnabled = enabled) }
     }
 
     override suspend fun saveForceModelLoad(enabled: Boolean) {

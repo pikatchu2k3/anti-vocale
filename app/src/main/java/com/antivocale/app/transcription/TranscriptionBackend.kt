@@ -213,6 +213,23 @@ data class TranscriptionResult(
      *  no summary (the guards rejected the output). Rendered localized in
      *  the entry details; never user text. */
     val summarySkipReason: String? = null,
+    /** GH #92: subtitle cues with offsets from the audio start: sentence-level
+     *  when token timing exists, else one positional cue per chunk. Empty on the
+     *  whole-clip paths that produce no cue data and whenever honest timing is unavailable; see the
+     *  assembly paths in TranscriptionOrchestrator. */
+    val segments: List<TimedSegment> = emptyList(),
+    /** GH #92: per-token timings, chunk-relative, when the path supplies them
+     *  (see [TimedToken]); empty means no token timing and the chunk-level
+     *  [segments] apply unchanged. Sentence cues are derived from these in
+     *  SentenceCueBuilder at the assembly paths. Populated by the offline sherpa
+     *  paths only: the OnlineRecognizer paths (Nemotron, streaming externals)
+     *  are deliberately unwired pending an on-device probe of their timestamp
+     *  arrays. */
+    val tokens: List<TimedToken> = emptyList(),
+    /** TASK-512: how this result was produced (decode path, chunk coverage,
+     *  chunk cap, RAM at request time); persisted as the row's processing
+     *  context and surfaced in the entry details and report email. */
+    val processing: ProcessingContext? = null,
 ) {
     companion object {
         private val WHITESPACE = Regex("\\s+")

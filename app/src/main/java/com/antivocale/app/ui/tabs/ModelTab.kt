@@ -3,6 +3,7 @@ package com.antivocale.app.ui.tabs
 import android.annotation.SuppressLint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +19,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
+import android.net.Uri
+import com.antivocale.app.transcription.ModelFamilyDetector
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,6 +29,7 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
@@ -39,13 +43,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.antivocale.app.R
-import com.antivocale.app.ui.TestNavigation
+import com.antivocale.app.ui.AppNavigation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.ModelDownloader
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ModelFamily
+import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.data.catalog.CatalogDisplay
 import com.antivocale.app.data.catalog.CatalogEntry
 import com.antivocale.app.data.catalog.CatalogStringKeys
@@ -65,6 +70,7 @@ import com.antivocale.app.transcription.audioLimitForVariants
 import com.antivocale.app.transcription.ModelVariant
 import com.antivocale.app.transcription.SherpaModelDownloader
 import androidx.compose.ui.text.style.TextOverflow
+import com.antivocale.app.ui.components.CardTitleRow
 import com.antivocale.app.ui.components.DownloadButtonState
 import com.antivocale.app.ui.components.DownloadProgressView
 import com.antivocale.app.ui.components.InfoIconButton
@@ -95,7 +101,7 @@ fun ModelTab(
     viewModel: ModelViewModel = hiltViewModel(),
     benchmarkViewModel: BenchmarkViewModel = hiltViewModel(),
     onNavigateToSettings: () -> Unit = {},
-    navRequest: TestNavigation.NavRequest? = null,
+    navRequest: AppNavigation.NavRequest? = null,
     onNavConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -117,20 +123,91 @@ fun ModelTab(
     var externalImport by remember { mutableStateOf(ExternalImportUiState()) }
 
     // Folder picker launcher for external-model imports (OpenDocumentTree; SAF copy in the VM).
+    // TASK-513: the picked folder is probed BEFORE importing. One family consumes
+    // every file: auto-select it and report it with the detected chip (the
+    // import fires immediately; the chip documents which family won). A
+    // Whisper/Canary-shaped set is first narrowed by the folder name, and
+    // only a still-ambiguous pick opens the chooser: detect then confirm,
+    // never a silent family guess (GH #93). CTC is the one exception to
+    // auto-import: its nemo/zipformer subtype changes the sherpa config and
+    // a wrong pick dies at native load (exit 255, no import-time metadata
+    // check), so a detected CTC opens the chooser for a conscious subtype
+    // pick instead of importing with the stale UI default. (The manual URL
+    // path keeps its subtype dropdown as the conscious pick; the in-flight
+    // import itself is not cancellable, only the detect probe is.)
+    val externalImportScope = rememberCoroutineScope()
+    var detectedExternalFamily by remember { mutableStateOf<ModelFamily?>(null) }
+    var ambiguousPick by remember { mutableStateOf<AmbiguousFamilyPick?>(null) }
+    var detectJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun importFolder(picked: Uri, family: ModelFamily, ctcSubtype: String? = null) {
+        // A chooser subtype is written back so the section dropdown (and a
+        // follow-up manual import) starts from what the user chose.
+        externalImport = if (ctcSubtype != null)
+            externalImport.withFamily(family).copy(ctcModelType = ctcSubtype)
+        else externalImport.withFamily(family)
+        viewModel.importExternalFromFolder(
+            context, picked, family,
+            ctcModelType = ctcSubtype ?: externalImport.ctcModelType,
+            options = externalImport.options(),
+            languages = externalImport.languageCodes(),
+        )
+    }
+    fun routeDetection(picked: Uri, family: ModelFamily) {
+        // The chip shows the detected family in every branch: for CTC it is
+        // the surviving feedback if the user dismisses the subtype chooser.
+        detectedExternalFamily = family
+        if (family == ModelFamily.CTC) {
+            ambiguousPick = AmbiguousFamilyPick(picked, listOf(ModelFamily.CTC))
+        } else {
+            importFolder(picked, family)
+        }
+    }
     val externalFolderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        uri?.let {
-            context.contentResolver.takePersistableUriPermission(
-                it,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            viewModel.importExternalFromFolder(
-                context, it, externalImport.family,
-                ctcModelType = externalImport.ctcModelType,
-                options = externalImport.options(),
-                languages = externalImport.languageCodes(),
-            )
+        uri?.let { picked ->
+            // Some third-party/OEM pickers return a grant without the
+            // persistable flag; the unguarded call would throw directly in
+            // the callback (SettingsTab guards the identical call).
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    picked,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }.onFailure { android.util.Log.w("ModelTab", "persistable grant failed for $picked", it) }
+            detectedExternalFamily = null
+            ambiguousPick = null
+            // A rapid re-pick must not race the previous detect probe; the
+            // import phase itself is not cancellable (viewModelScope).
+            detectJob?.cancel()
+            detectJob = externalImportScope.launch {
+                // A broken grant can also fail the SAF listing itself; route
+                // that through the import path so the error surfaces in the
+                // snackbar instead of crashing the coroutine scope.
+                val detection = runCatching {
+                    viewModel.detectExternalFamily(context, picked)
+                }.getOrElse {
+                    android.util.Log.w("ModelTab", "folder detect failed for $picked", it)
+                    ModelFamilyDetector.Result.Unknown
+                }
+                when (detection) {
+                    is ModelFamilyDetector.Result.Detected ->
+                        routeDetection(picked, detection.family)
+                    is ModelFamilyDetector.Result.Ambiguous -> {
+                        // The tree URI's last segment usually carries the
+                        // folder name: "canary-180m" resolves without asking.
+                        val narrowed = ModelFamilyDetector.narrow(
+                            detection.candidates, picked.lastPathSegment)
+                        if (narrowed != null) {
+                            routeDetection(picked, narrowed)
+                        } else {
+                            ambiguousPick = AmbiguousFamilyPick(picked, detection.candidates)
+                        }
+                    }
+                    ModelFamilyDetector.Result.Unknown ->
+                        importFolder(picked, externalImport.family)
+                }
+            }
         }
     }
 
@@ -451,6 +528,38 @@ fun ModelTab(
             onLanguageSelected = { filterLanguageCode = it }
         )
 
+        // GH #70: curated "For your language" elevation. The language comes
+        // from the UI configuration (the per-app locale when one is set, else
+        // the system one): the reactive equivalent of
+        // LocaleManager.effectiveLocale, so a locale change recomposes the
+        // section. Two rules keep the mechanisms from stacking: an explicit
+        // language-filter choice always beats the automatic curation (the
+        // filter stays the primary tool), and one "Browse all languages" tap
+        // returns to the universal tab for the rest of this tab visit (no
+        // persisted preference; a tab re-entry shows the curation again).
+        val curatedAppLanguage = LocalConfiguration.current.locales[0]?.language
+        val curatedProfile =
+            if (filterLanguageCode == null) CuratedProfiles.forLanguage(curatedAppLanguage) else null
+        var browseAllModels by remember { mutableStateOf(false) }
+        val showCuratedSection = curatedProfile != null && !browseAllModels
+        // While the curation is on screen it IS the tab: the catalog and Gemma
+        // sections hide behind "Browse all languages" (their installed models
+        // still surface as fully functional cards inside the recommendations).
+        val catalogEntriesVisible = if (showCuratedSection) emptyList() else viewModel.catalogEntries
+        if (showCuratedSection) {
+            CuratedLanguageSection(
+                profile = curatedProfile,
+                viewModel = viewModel,
+                benchmarkViewModel = benchmarkViewModel,
+                catalogStates = catalogStates,
+                activeBackendId = activeBackendId,
+                isTranscribing = isTranscribing,
+                guardedModelSwitch = guardedSwitch,
+                onInfoClick = { modelInfoVariant = it },
+                onBrowseAll = { browseAllModels = true },
+            )
+        }
+
         // Unload Model button — only shown when model is actually loaded in memory
         if (uiState.status == ModelViewModel.ModelStatus.READY) {
             UnloadModelButton(
@@ -462,7 +571,7 @@ fun ModelTab(
         // Catalog-driven model sections (Parakeet, Whisper, Qwen3-ASR, Nemotron, GigaAM).
         // One generic section per catalog entry — all model-specific behavior lives in the
         // catalog, never in hard-coded per-model UI.
-        viewModel.catalogEntries.forEach { entry ->
+        catalogEntriesVisible.forEach { entry ->
             val visibleVariants = remember(entry.id, filterLanguageCode) {
                 filterVariants(CatalogVariantUi.forEntry(entry.id), filterLanguageCode) { it.supportedLanguageCodes }
             }
@@ -482,7 +591,7 @@ fun ModelTab(
         }
 
         // Download models section - Gemma LLM models (advanced features)
-        if (visibleGemmaVariants.isNotEmpty()) {
+        if (!showCuratedSection && visibleGemmaVariants.isNotEmpty()) {
             ModelDownloadSection(
                 viewModel = viewModel,
                 context = context,
@@ -508,7 +617,7 @@ fun ModelTab(
         LaunchedEffect(navRequest) {
             if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
             val request = navRequest ?: return@LaunchedEffect
-            if (request.destination is TestNavigation.Destination.ModelTarget) {
+            if (request.destination is AppNavigation.Destination.ModelTarget) {
                 advancedExpanded = true
             }
         }
@@ -553,16 +662,11 @@ fun ModelTab(
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Memory,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("LiteRT-LM", style = MaterialTheme.typography.titleMedium)
-                        }
+                        CardTitleRow(
+                            icon = Icons.Default.Memory,
+                            title = "LiteRT-LM",
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
@@ -612,10 +716,56 @@ fun ModelTab(
                     viewModel = viewModel,
                     activeBackendId = activeBackendId,
                     folderPicker = { externalFolderPicker.launch(null) },
+                    detectedFamily = detectedExternalFamily,
                     selection = externalImport,
-                    onSelectionChange = { externalImport = it },
+                    onSelectionChange = { externalImport = it; detectedExternalFamily = null },
                     onDeleteRequest = { externalToDelete = it }
                 )
+
+                if (ambiguousPick != null) {
+                    // TASK-513 (GH #93): the folder shape fits more than one
+                    // family and the folder name did not resolve it; the
+                    // user picks, the import runs with the choice. A CTC
+                    // pick (offered here for detected-CTC sets and
+                    // CTC-bearing ambiguous sets) splits into its two
+                    // sherpa subtypes: the subtype decides the config and a
+                    // wrong guess dies at native load, so it is never taken
+                    // from a default.
+                    AlertDialog(
+                        onDismissRequest = { ambiguousPick = null },
+                        title = { Text(stringResource(R.string.external_family_pick_title)) },
+                        text = {
+                            Column {
+                                ambiguousPick?.candidates?.forEach { family ->
+                                    if (family == ModelFamily.CTC) {
+                                        TextButton(onClick = {
+                                            val picked = ambiguousPick?.uri
+                                            ambiguousPick = null
+                                            picked?.let { importFolder(it, family, ModelFamilySupport.CTC_TYPE_NEMO) }
+                                        }) { Text(stringResource(R.string.external_ctc_subtype_nemo)) }
+                                        TextButton(onClick = {
+                                            val picked = ambiguousPick?.uri
+                                            ambiguousPick = null
+                                            picked?.let { importFolder(it, family, ModelFamilySupport.CTC_TYPE_ZIPFORMER) }
+                                        }) { Text(stringResource(R.string.external_ctc_subtype_zipformer)) }
+                                    } else {
+                                        TextButton(onClick = {
+                                            val picked = ambiguousPick?.uri
+                                            ambiguousPick = null
+                                            picked?.let { importFolder(it, family) }
+                                        }) { Text(familyLabel(family)) }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { ambiguousPick = null }) {
+                                Text(stringResource(android.R.string.cancel))
+                            }
+                        },
+                    )
+                }
             }
         }
 
@@ -671,6 +821,224 @@ fun ModelTab(
     }
 }
 
+// ==================== Curated language section (GH #70) ====================
+
+/** Bundled community-index snapshot the curated profiles resolve against. */
+private const val CURATED_COMMUNITY_INDEX = "external-catalog/index.json"
+
+/**
+ * The "For your language" elevation (GH #70): the profile's ranked
+ * recommendations, each rendered as the reason line plus the same card the
+ * universal tab shows (bundled entries) or a one-tap import card (community
+ * entries), closed by the community-input link and the "Browse all
+ * languages" escape.
+ */
+@Composable
+private fun CuratedLanguageSection(
+    profile: CuratedProfiles.Profile,
+    viewModel: ModelViewModel,
+    benchmarkViewModel: BenchmarkViewModel,
+    catalogStates: Map<String, ModelViewModel.ModelEntryUiState>,
+    activeBackendId: String,
+    isTranscribing: Boolean,
+    guardedModelSwitch: (() -> Unit) -> Unit,
+    onInfoClick: (ModelVariant) -> Unit,
+    onBrowseAll: () -> Unit,
+) {
+    val context = LocalContext.current
+    // Community references resolve against the BUNDLED index snapshot: static
+    // data (no fetch at render time) that a catalog-URL override cannot
+    // rewrite. A name that vanished from the snapshot drops its row (the
+    // CuratedProfilesTest contract keeps the seeds resolvable).
+    val communityIndex = remember {
+        runCatching {
+            context.assets.open(CURATED_COMMUNITY_INDEX)
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.getOrNull()
+            ?.let { ExternalCatalog.parseIndex(it).associateBy { entry -> entry.name } }
+            ?: emptyMap()
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Star,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.curated_section_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() },
+            )
+        }
+
+        profile.recommendations.forEach { recommendation ->
+            when (recommendation) {
+                is CuratedProfiles.Recommendation.Bundled -> {
+                    val entry = BundledCatalog.byId(recommendation.entryId)
+                    val variants = entry?.let {
+                        CatalogVariantUi.forEntry(it.id).filter { variant ->
+                            recommendation.variantNames == null ||
+                                variant.variantName in recommendation.variantNames
+                        }
+                    }
+                    if (entry != null && !variants.isNullOrEmpty()) {
+                        CuratedWhyLine(whyResId = recommendation.whyResId)
+                        CatalogModelSection(
+                            viewModel = viewModel,
+                            benchmarkViewModel = benchmarkViewModel,
+                            entry = entry,
+                            state = catalogStates[entry.id] ?: ModelViewModel.ModelEntryUiState(),
+                            activeBackendId = activeBackendId,
+                            isTranscribing = isTranscribing,
+                            visibleVariants = variants,
+                            guardedModelSwitch = guardedModelSwitch,
+                            onInfoClick = onInfoClick,
+                        )
+                    }
+                }
+                is CuratedProfiles.Recommendation.Community ->
+                    communityIndex[recommendation.catalogName]?.let { catalogEntry ->
+                        CuratedWhyLine(whyResId = recommendation.whyResId)
+                        CuratedCommunityCard(
+                            entry = catalogEntry,
+                            viewModel = viewModel,
+                        )
+                    }
+            }
+        }
+
+        // The community-input angle of GH #70: curation invites suggestions.
+        Text(
+            text = stringResource(R.string.curated_suggest_model),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .clickable(role = Role.Button) {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            Uri.parse(CuratedProfiles.SUGGESTION_ISSUE_URL),
+                        )
+                    )
+                }
+                .padding(vertical = 4.dp),
+        )
+
+        OutlinedButton(
+            onClick = onBrowseAll,
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp),
+        ) {
+            Icon(Icons.Default.ExpandMore, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.curated_browse_all))
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/** One recommendation's reason line, rendered above its card. */
+@Composable
+private fun CuratedWhyLine(@StringRes whyResId: Int) {
+    Text(
+        text = stringResource(whyResId),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/**
+ * In-flight external-import state, shared by the Advanced section and the
+ * curated community cards: the file-progress row while importing (TASK-398:
+ * same progress widget as catalog downloads, so a stalled import is visible
+ * instead of a static label) and the persistent error line on failure. Idle
+ * renders nothing.
+ */
+@Composable
+private fun ExternalImportStateView(state: ModelViewModel.ExternalImportState) {
+    when (state) {
+        is ModelViewModel.ExternalImportState.Importing -> Column(
+            modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()
+        ) {
+            Text(
+                if (state.fileCount > 0)
+                    stringResource(
+                        R.string.external_importing_file,
+                        state.fileName, state.fileIndex + 1, state.fileCount)
+                else
+                    stringResource(R.string.external_importing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (state.fileCount > 0) {
+                DownloadProgressView(
+                    downloadState = DownloadState.Downloading(
+                        bytesDownloaded = state.bytes,
+                        totalBytes = state.totalBytes,
+                        // progressPercent is the 0..100 scale (ResumeDownloadHelper convention)
+                        progressPercent = state.progress * 100,
+                    ),
+                    downloadProgress = state.progress,
+                )
+            }
+        }
+        is ModelViewModel.ExternalImportState.Error -> Text(
+            stringResource(R.string.external_import_failed, state.message),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        else -> {}
+    }
+}
+
+/**
+ * One community-catalog recommendation: the index entry as a compact card
+ * with a one-tap import (the same import the catalog dialog runs) and the
+ * shared import progress/error state.
+ */
+@Composable
+private fun CuratedCommunityCard(
+    entry: ExternalCatalog.CatalogEntry,
+    viewModel: ModelViewModel,
+) {
+    val importState by viewModel.externalImportState.collectAsState()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = entry.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { viewModel.importExternalFromUrl(entry.entryUrl, entry.family) },
+                enabled = importState !is ModelViewModel.ExternalImportState.Importing,
+            ) {
+                Icon(Icons.Default.CloudDownload, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.external_import))
+            }
+            ExternalImportStateView(importState)
+        }
+    }
+}
+
 // ==================== Model Download Section ====================
 
 /**
@@ -712,7 +1080,8 @@ private fun ModelDownloadSection(
                     Column {
                         Text(
                             text = stringResource(R.string.download_models),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = stringResource(R.string.gemma_advanced_features_description),
@@ -870,7 +1239,8 @@ private fun CatalogModelSection(
                     Column {
                         Text(
                             text = stringResource(entryTitleResId),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
                         if (entryDescriptionResId != null) {
                             Text(
@@ -1039,13 +1409,32 @@ private fun variantFitHint(
 
 // ==================== External models section (v2a) ====================
 
+/** TASK-513: an ambiguous family pick waiting on the user's choice. */
+private data class AmbiguousFamilyPick(val uri: Uri, val candidates: List<ModelFamily>)
+
+/** Family label table (TASK-513 hoisted from the section: compile-time
+ *  constant, shared by the dropdown, the detected chip, and the chooser). */
+private val FAMILY_OPTIONS = listOf(
+    Triple(ModelFamily.TRANSDUCER, R.string.external_family_transducer, R.string.external_family_transducer_help),
+    Triple(ModelFamily.WHISPER, R.string.external_family_whisper, R.string.external_family_whisper_help),
+    Triple(ModelFamily.CTC, R.string.external_family_ctc, R.string.external_family_ctc_help),
+    Triple(ModelFamily.SENSE_VOICE, R.string.external_family_sense_voice, R.string.external_family_sense_voice_help),
+    Triple(ModelFamily.CANARY, R.string.external_family_canary, R.string.external_family_canary_help),
+)
+
+/** One label lookup, loud on a missing row (a family without a label must
+ *  fail, not silently leak the untranslated enum into the UI). */
+@Composable
+private fun familyLabel(family: ModelFamily): String = stringResource(
+    FAMILY_OPTIONS.first { it.first == family }.second)
+
 /**
  * Family selection + conditional options for external-model imports. One immutable
  * holder so both import paths (folder and URL) share a single selection state.
  */
 internal data class ExternalImportUiState(
     val family: ModelFamily = ModelFamily.TRANSDUCER,
-    val ctcModelType: String = "nemo_ctc",
+    val ctcModelType: String = ModelFamilySupport.CTC_TYPE_NEMO,
     /** TASK-401 alternative A: one "Decode language" choice replaces the old twin
      *  free-text fields. It feeds the family's language option AND derives the
      *  record's language tags (one value, both purposes); blank = auto-detect. */
@@ -1200,12 +1589,13 @@ private fun LanguageEndonymDropdown(
 @Composable
 private fun ExternalModelsSection(
     viewModel: ModelViewModel,
-    navRequest: TestNavigation.NavRequest? = null,
+    navRequest: AppNavigation.NavRequest? = null,
     onNavConsumed: () -> Unit = {},
     activeBackendId: String,
     folderPicker: () -> Unit,
     selection: ExternalImportUiState,
     onSelectionChange: (ExternalImportUiState) -> Unit,
+    detectedFamily: ModelFamily? = null,
     onDeleteRequest: (ExternalModelRecord) -> Unit,
 ) {
     val records by viewModel.externalModels.collectAsState()
@@ -1219,27 +1609,15 @@ private fun ExternalModelsSection(
         if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
         val request = navRequest ?: return@LaunchedEffect
         onNavConsumed()
-        if (request.destination is TestNavigation.Destination.ModelTarget) {
+        if (request.destination is AppNavigation.Destination.ModelTarget) {
             urlDialogOpen = true
         }
     }
     var dropdownExpanded by remember { mutableStateOf(false) }
     var ctcExpanded by remember { mutableStateOf(false) }
 
-    // lint AST misresolves this block; it returns List<Triple<...>>
-    @SuppressLint("RememberReturnType")
-    val familyOptions = remember {
-        listOf(
-            Triple(ModelFamily.TRANSDUCER, R.string.external_family_transducer, R.string.external_family_transducer_help),
-            Triple(ModelFamily.WHISPER, R.string.external_family_whisper, R.string.external_family_whisper_help),
-            Triple(ModelFamily.CTC, R.string.external_family_ctc, R.string.external_family_ctc_help),
-            Triple(ModelFamily.SENSE_VOICE, R.string.external_family_sense_voice, R.string.external_family_sense_voice_help),
-            Triple(ModelFamily.CANARY, R.string.external_family_canary, R.string.external_family_canary_help),
-        )
-    }
-
     // Outer section Card matching the curated sections (GigaAM, Nemotron):
-    // surfaceVariant background, header with icon + title + description, 16dp padding.
+    // surfaceVariant background, shared card-title header, 16dp padding.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -1247,19 +1625,12 @@ private fun ExternalModelsSection(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header (same shape as GigaAmDownloadSection's header)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.GraphicEq,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text("ONNX Sherpa", style = MaterialTheme.typography.titleMedium)
-                }
-            }
+            // Section header: the shared card-title idiom.
+            CardTitleRow(
+                icon = Icons.Default.GraphicEq,
+                title = "ONNX Sherpa",
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1272,7 +1643,7 @@ private fun ExternalModelsSection(
                 modifier = Modifier.padding(bottom = 8.dp)
             ) {
                 OutlinedTextField(
-                    value = stringResource(familyOptions.first { it.first == selection.family }.second),
+                    value = familyLabel(selection.family),
                     onValueChange = {},
                     readOnly = true,
                     label = { Text(stringResource(R.string.external_family)) },
@@ -1280,7 +1651,7 @@ private fun ExternalModelsSection(
                     modifier = Modifier.fillMaxWidth().menuAnchor()
                 )
                 ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-                    familyOptions.forEach { (value, labelRes, helpRes) ->
+                    FAMILY_OPTIONS.forEach { (value, labelRes, helpRes) ->
                         DropdownMenuItem(
                             text = {
                                 Column {
@@ -1344,7 +1715,7 @@ private fun ExternalModelsSection(
                     modifier = Modifier.padding(bottom = 8.dp)
                 ) {
                     OutlinedTextField(
-                        value = if (selection.ctcModelType == "zipformer_ctc")
+                        value = if (selection.ctcModelType == ModelFamilySupport.CTC_TYPE_ZIPFORMER)
                             stringResource(R.string.external_ctc_subtype_zipformer)
                         else stringResource(R.string.external_ctc_subtype_nemo),
                         onValueChange = {},
@@ -1357,20 +1728,47 @@ private fun ExternalModelsSection(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.external_ctc_subtype_nemo)) },
                             onClick = {
-                                onSelectionChange(selection.copy(ctcModelType = "nemo_ctc"))
+                                onSelectionChange(selection.copy(ctcModelType = ModelFamilySupport.CTC_TYPE_NEMO))
                                 ctcExpanded = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.external_ctc_subtype_zipformer)) },
                             onClick = {
-                                onSelectionChange(selection.copy(ctcModelType = "zipformer_ctc"))
+                                onSelectionChange(selection.copy(ctcModelType = ModelFamilySupport.CTC_TYPE_ZIPFORMER))
                                 ctcExpanded = false
                             }
                         )
                     }
                 }
                 else -> {}
+            }
+
+            detectedFamily?.let { detected ->
+                // TASK-513 (GH #93): the detected-family chip. The import
+                // fires immediately; the chip documents which family the
+                // files picked, and clears on the next pick or a manual
+                // family change.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.external_family_detected,
+                            familyLabel(detected),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -1391,44 +1789,8 @@ private fun ExternalModelsSection(
             ) { Text(stringResource(R.string.external_import_url)) }
         }
 
-        when (val st = importState) {
-            is ModelViewModel.ExternalImportState.Importing -> Column(
-                modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()
-            ) {
-                // TASK-398: same progress widget as catalog downloads, so a stalled
-                // external import is visible instead of a static "Importing…" label.
-                Text(
-                    if (st.fileCount > 0)
-                        stringResource(
-                            R.string.external_importing_file,
-                            st.fileName, st.fileIndex + 1, st.fileCount)
-                    else
-                        stringResource(R.string.external_importing),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (st.fileCount > 0) {
-                    DownloadProgressView(
-                        downloadState = DownloadState.Downloading(
-                            bytesDownloaded = st.bytes,
-                            totalBytes = st.totalBytes,
-                            // progressPercent is the 0..100 scale (ResumeDownloadHelper convention)
-                            progressPercent = st.progress * 100,
-                        ),
-                        downloadProgress = st.progress,
-                    )
-                }
-            }
-            is ModelViewModel.ExternalImportState.Error -> Text(
-                stringResource(R.string.external_import_failed, st.message),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            else -> {}
-        }
+
+        ExternalImportStateView(importState)
 
         // Gap between the import buttons/state and the first card
         if (records.isNotEmpty()) Spacer(modifier = Modifier.height(8.dp))
@@ -1725,7 +2087,7 @@ private fun ExternalModelCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(record.displayName, style = MaterialTheme.typography.titleMedium)
+                        Text(record.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         // TASK-386: plain comma join instead of the middot chain:
                         // " · " was announced as "middle dot" by TalkBack in some locales.
                         Text(

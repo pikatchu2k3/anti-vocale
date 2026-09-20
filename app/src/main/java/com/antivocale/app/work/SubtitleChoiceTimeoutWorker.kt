@@ -1,6 +1,5 @@
 package com.antivocale.app.work
 
-import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -12,6 +11,7 @@ import com.antivocale.app.R
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.receiver.ShareReceiverActivity
+import com.antivocale.app.receiver.SubtitleChoice
 import com.antivocale.app.service.TranscriptionNotificationListener
 import com.antivocale.app.transcription.TranscriptionOrchestrator
 import com.antivocale.app.util.AppNotificationChannel
@@ -24,7 +24,7 @@ import kotlinx.coroutines.Dispatchers
 
 /**
  * Expedited one-shot [CoroutineWorker] that fires when the user ignores the subtitle-choice
- * notification for [ShareReceiverActivity.SUBTITLE_CHOICE_TIMEOUT_MINUTES] minutes. It runs
+ * notification for the user-configured timeout (PreferencesManager.subtitleChoiceTimeoutMinutes). It runs
  * the normal ASR path directly through [TranscriptionOrchestrator] (it does NOT call
  * `startForegroundService(InferenceService)`, which is blocked from the background on
  * Android 12+) and posts the result via [TranscriptionNotificationListener].
@@ -51,6 +51,10 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
         val taskId = inputData.getString(KEY_TASK_ID) ?: "subtitle_timeout_${System.currentTimeMillis()}"
         val sourcePackage = inputData.getString(KEY_SOURCE_PACKAGE)
         val backendOverride = inputData.getString(KEY_BACKEND_OVERRIDE)
+        // F5: the offerer's source rides the work data; data persisted by a
+        // pre-source build falls back to share (its only origin then).
+        val source = inputData.getString(KEY_SOURCE)
+            ?: com.antivocale.app.service.InferenceService.SOURCE_SHARE
 
         if (filePath.isNullOrBlank()) {
             Log.e(TAG, "Missing file path input — cannot run ASR fallback")
@@ -64,9 +68,7 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
         // a prompt posted by a pre-TASK-440 build survives an in-window app update
         // (this worker does), and a stale prompt with live actions is worse than none.
         try {
-            val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
-            notificationManager.cancel(ShareReceiverActivity.choiceNotificationId(taskId))
-            notificationManager.cancel(taskId.hashCode())
+            SubtitleChoice.cancelPrompt(applicationContext, filePath, taskId)
         } catch (e: Exception) {
             Log.w(TAG, "Could not cancel choice notification", e)
         }
@@ -90,10 +92,10 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
             val cacheDir = applicationContext.cacheDir
             val result = orchestrator.processRequest(
                 taskId = taskId,
-                requestType = "audio",
+                requestType = com.antivocale.app.receiver.TaskerRequestReceiver.REQUEST_TYPE_AUDIO,
                 prompt = "",
                 filePath = filePath,
-                source = com.antivocale.app.service.InferenceService.SOURCE_SHARE,
+                source = source,
                 sourcePackage = sourcePackage,
                 backendOverride = backendOverride,
                 trackIndex = -1,
@@ -149,6 +151,7 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
         const val KEY_FILE_PATH = "file_path"
         const val KEY_TASK_ID = "task_id"
         const val KEY_SOURCE_PACKAGE = "source_package"
+        const val KEY_SOURCE = "source"
         const val KEY_BACKEND_OVERRIDE = "backend_override"
     }
 }

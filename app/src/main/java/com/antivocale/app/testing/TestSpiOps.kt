@@ -1,6 +1,7 @@
 package com.antivocale.app.testing
 
 import com.antivocale.app.data.ExternalModelRecord
+import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelStore
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BuiltInBackendIds
@@ -9,6 +10,7 @@ import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.ui.theme.ThemeMode
 import com.antivocale.app.ui.theme.ThemeType
+import com.antivocale.app.util.SubtitleFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
@@ -34,6 +36,7 @@ import org.json.JSONObject
 internal class TestSpiOps(
     private val preferences: PreferencesManager,
     private val externalModels: ExternalModelStore,
+    private val importer: ExternalModelImportOperations,
 ) {
 
     suspend fun handle(
@@ -41,11 +44,13 @@ internal class TestSpiOps(
         key: String? = null,
         value: String? = null,
         entry: String? = null,
+        url: String? = null,
     ): String = runCatching {
         when (op) {
             OP_GET -> get()
             OP_SET -> set(key, value, entry)
             OP_RECORDS -> records()
+            OP_IMPORT -> importModel(url)
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -72,6 +77,7 @@ internal class TestSpiOps(
             .put("punctuationPrompt", preferences.punctuationPrompt.first())
             .put("threadCount", preferences.threadCount.first())
             .put("keepAliveTimeoutMinutes", preferences.keepAliveTimeout.first())
+            .put("subtitleChoiceTimeoutMinutes", preferences.subtitleChoiceTimeoutMinutes.first())
             .put("inferenceProvider", preferences.inferenceProvider.first())
             .put("transcriptionLanguage", preferences.transcriptionLanguage.first())
             .put("transcriptionBackend", backend)
@@ -81,6 +87,9 @@ internal class TestSpiOps(
             .put("autoCopyEnabled", preferences.autoCopyEnabled.first())
             .put("forceModelLoad", preferences.forceModelLoad.first())
             .put("compactResultActions", preferences.compactResultActions.first())
+            .put("languageChipEnabled", preferences.languageChipEnabled.first())
+            // TASK-575: read-only over the SPI (records are written by loads).
+            .put("measuredModelMemory", preferences.measuredModelMemory.first().entries.joinToString(",") { e -> e.key + "=" + e.value.runs + "runs" })
             .put("advancedSharingEnabled", preferences.advancedSharingEnabled.first())
             .put("showRetranscribeButton", preferences.showRetranscribeButton.first())
             .put("groupLogsByConversation", preferences.groupLogsByConversation.first())
@@ -92,6 +101,7 @@ internal class TestSpiOps(
             .put("defaultPrompt", preferences.defaultPrompt.first())
             .put("summaryPrompt", preferences.summaryPrompt.first())
             .put("outputFolderUri", preferences.outputFolderUri.first() ?: JSONObject.NULL)
+            .put("transcriptExportFormat", preferences.transcriptExportFormat.first())
             .put("externalCatalogUrl", preferences.externalCatalogUrl.first())
             .toString()
     }
@@ -104,7 +114,7 @@ internal class TestSpiOps(
     private suspend fun activeModelPath(backend: String): String? = when {
         backend.startsWith(ExternalModelRecord.BACKEND_ID_PREFIX) ->
             externalModels.records().firstOrNull { it.backendId == backend }?.dir
-        backend == LlmTranscriptionBackend.BACKEND_ID -> preferences.modelPath.first()
+        BuiltInBackendIds.isLlm(backend) -> preferences.modelPath.first()
         else -> preferences.sherpaModelPath(backend).first()
     }
 
@@ -126,6 +136,7 @@ internal class TestSpiOps(
         "show_retranscribe" to preferences::saveShowRetranscribeButton,
         "force_model_load" to preferences::saveForceModelLoad,
         "compact_result_actions" to preferences::saveCompactResultActions,
+        "language_chip" to preferences::saveLanguageChipEnabled,
     )
 
     /**
@@ -140,6 +151,11 @@ internal class TestSpiOps(
         "swipe_action" to Pair(PreferencesManager.SWIPE_ACTION_MODES, preferences::saveSwipeActionMode),
         "theme" to Pair(THEME_TYPES, preferences::saveThemePreference),
         "theme_mode" to Pair(THEME_MODES, preferences::saveThemeMode),
+        // GH #92: device tests flip the auto-save format over adb.
+        "transcript_export_format" to Pair(
+            SubtitleFormatter.Format.entries.map { it.name },
+            preferences::saveTranscriptExportFormat,
+        ),
     )
 
     /** Free-text preferences: written as given, no parse. */
@@ -191,6 +207,15 @@ internal class TestSpiOps(
                     null
                 }
             }
+            // (key, unit suffix for the error message, saver). keep_alive's
+            // TASK-451 rationale applies to all: any positive int honored
+            // downstream, the dropdowns offer the curated sets.
+            val positiveIntKeys = listOf(
+                Triple("subtitle_timeout", "minutes", preferences::saveSubtitleChoiceTimeoutMinutes),
+                Triple("keep_alive", "minutes", preferences::saveKeepAliveTimeout),
+                // sherpa-onnx rejects num_threads < 1 at the native load.
+                Triple("threads", "threads", preferences::saveThreadCount),
+            )
             textKeys.forEach { (key, save) ->
                 putUnique(key) { value, _ ->
                     save(value)
@@ -202,24 +227,18 @@ internal class TestSpiOps(
             // the stored value. Values outside the dropdown
             // (SettingsViewModel.timeoutOptions) are accepted on purpose: any
             // positive int is honored downstream, and a timing test may want 3.
-            putUnique("keep_alive") { value, _ ->
-                val minutes = value.toIntOrNull()
-                if (minutes == null || minutes <= 0) {
-                    "keep_alive expects a positive integer (minutes), got '$value'"
-                } else {
-                    preferences.saveKeepAliveTimeout(minutes)
-                    null
-                }
-            }
-            putUnique("threads") { value, _ ->
-                // Positive only: sherpa-onnx rejects num_threads < 1 at
-                // recognizer load, and 0 would brick the next cold start.
-                val threads = value.toIntOrNull()
-                if (threads == null || threads <= 0) {
-                    "threads expects a positive integer, got '$value'"
-                } else {
-                    preferences.saveThreadCount(threads)
-                    null
+            // TASK-515 (reuse review): the third positive-int validator
+            // tipped the copy count; one typed table now serves all of them
+            // (the TASK-469 shape: the table IS the dispatch).
+            positiveIntKeys.forEach { (key, unit, save) ->
+                putUnique(key) { value, _ ->
+                    val n = value.toIntOrNull()
+                    if (n == null || n <= 0) {
+                        "$key expects a positive integer ($unit), got '$value'"
+                    } else {
+                        save(n)
+                        null
+                    }
                 }
             }
             putUnique("backend") { value, _ ->
@@ -314,15 +333,36 @@ internal class TestSpiOps(
             .toString()
     }
 
+    /**
+     * TASK-550 device pass: the external-model import, driven without UI. The
+     * importer classifies the url (catalog-entry JSON vs HuggingFace repo),
+     * exactly the path the import dialog uses; the response is the imported
+     * record, so a device test can chain set backend=external:<id> on it.
+     */
+    private suspend fun importModel(url: String?): String {
+        if (url.isNullOrBlank()) {
+            return JSONObject()
+                .put("op", OP_IMPORT)
+                .put("error", "missing 'url' extra")
+                .toString()
+        }
+        val record = importer.importFromUrl(url)
+        return JSONObject()
+            .put("op", OP_IMPORT)
+            .put("record", record.toJson().put("backendId", record.backendId))
+            .toString()
+    }
+
     private fun help(error: String? = null): String = JSONObject()
         .apply { error?.let { put("error", it) } }
         .put("op", OP_HELP)
-        .put("ops", JSONArray(listOf(OP_GET, OP_SET, OP_RECORDS, OP_HELP)))
+        .put("ops", JSONArray(listOf(OP_GET, OP_SET, OP_RECORDS, OP_IMPORT, OP_HELP)))
         .put("setKeys", JSONArray(SET_KEYS))
         .put(
             "usage",
-            "am broadcast -a com.antivocale.app.TEST_SPI --es op=<$OP_GET|$OP_SET|$OP_RECORDS|$OP_HELP> " +
-                "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path only)]")
+            "am broadcast -a com.antivocale.app.TEST_SPI --es op=<$OP_GET|$OP_SET|$OP_RECORDS|$OP_IMPORT|$OP_HELP> " +
+                "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path only)] " +
+                "[--es url=<entry-or-repo url> (import only)]")
         .put(
             "transcription",
             "transcription is NOT triggered here: broadcast com.antivocale.app.PROCESS_REQUEST with extras " +
@@ -334,6 +374,7 @@ internal class TestSpiOps(
         const val OP_GET = "get"
         const val OP_SET = "set"
         const val OP_RECORDS = "records"
+        const val OP_IMPORT = "import"
         const val OP_HELP = "help"
 
         /** TASK-276: the single source is PunctuationPolicy.MODE_PREFS; the SPI only adds write-time strictness. */

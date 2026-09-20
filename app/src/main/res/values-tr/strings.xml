@@ -112,13 +112,20 @@
     <string name="tour_title_browse">Ya da bir dosya seçin</string>
     <string name="tour_body_history">Herhangi bir messenger\'dan bir sesli mesaj paylaşın. Transkript burada görünür, hazır olunca bildirim gelir.</string>
     <string name="tour_title_history">Bir sesli mesaj gönderin</string>
-    <string name="tour_body_models">Önce Modelle sekmesinden bir transkripsiyon modeli indirin. Parakeet önerilen varsayılılandır.</string>
+    <string name="tour_body_models">Önce Modelle sekmesinden bir transkripsiyon modeli indirin. Parakeet önerilen varsayılılandır. Modeller büyüktür, birkaç GB\'a kadar, ancak her biri yalnızca bir kez indirilir. Uygulama güncellemeleri yeniden indirme gerektirmez.</string>
     <string name="tour_title_models">Bir model indirin</string>
     <string name="tour_body_welcome">Transkripsiyon tamamen bu telefonda çalışır; sesiniz asla telefonu terk etmez. Başlamadan önce üç kısa işaret.</string>
     <string name="tour_title_welcome">Anti-Vocale\'e hoş geldiniz</string>
     <string name="voice_message_duration">sesli mesaj</string>
     <string name="source_was_video">Kaynak: video dosyası</string>
     <string name="processed_in">%1$s içinde işlendi</string>
+    <string name="transcript_render_capped">İlk %1$d karakter gösteriliyor, %2$d karakter daha. Tam metin için Kopyala\'yı kullanın.</string>
+    <string name="transcript_capped_autosave_hint">Tam transkript otomatik kayıtta: Ayarlar → Klasöre kaydet</string>
+    <string name="transcript_capped_autosave_saved">Tam transkript otomatik olarak klasörünüze kaydedildi</string>
+    <string name="export_settings_title">Otomatik kaydet ve dışa aktar</string>
+    <string name="export_settings_description">Kaydedilen transkriptler için klasör ve dosya biçimi seçin</string>
+    <string name="error_folder_not_writable">Bu klasör dosya alamaz. Cihaz depolama alanından bir klasör seçin (Downloads kısayolu değil).</string>
+    <string name="language_phone_option">Telefon dili (%1$s)</string>
     <string name="today">Bugün</string>
     <string name="yesterday">Dün, %1$s</string>
     <string name="yesterday_label">Dün</string>
@@ -252,6 +259,7 @@
     <string name="error_file_not_found">Ses dosyası bulunamadı</string>
     <string name="error_invalid_format">Ses biçimi belirlenemedi</string>
     <string name="error_no_audio_track">Dosyada ses izi bulunamadı</string>
+    <string name="error_no_decoder">Bu cihazda bu ses için kod çözücü yok: %1$s</string>
     <string name="error_duration_unknown">Ses süresi belirlenemedi</string>
     <string name="error_conversion_failed">Dönüştürme başarısız: %1$s</string>
     <string name="error_chunk_failed">%1$d. bölüm başarısız: %2$s</string>
@@ -278,8 +286,6 @@
     <string name="confidence_low">Düşük güven</string>
     <string name="no_audio_file">Ses dosyası alınmadı</string>
     <string name="failed_to_process_audio">Ses dosyası işlenemedi</string>
-    <string name="unsupported_audio_format">Mesajlaşma uygulamalarındaki sesli mesajlar desteklenir; .%1$s desteklenen bir biçim değil.</string>
-    <string name="unknown_audio_format">Ses biçimi tanımlanamadı. Sesi bir mesajlaşma uygulamasından paylaşın.</string>
     <string name="transcription_started">Metin çıkarma başladı…</string>
     <string name="processing_segment_progress">Dilim %1$d / %2$d…</string>
     <string name="progressive_initial">Metin hazırlanıyor; tamamlanınca nihai sonuç</string>
@@ -979,5 +985,36 @@
     <string name="a11y_back">Geri</string>
     <string name="litertlm_importing">İçe aktarılıyor…</string>
     <string name="model_ram_warning">Bu cihazda %1$s için yeterli bellek olmayabilir. Yükleme başarısız olabilir; daha hafif modeller daha güvenli.</string>
-    <string name="error_oom_transcription">Bu sesi transkribe etmek için yeterli bellek yok. Daha kısa bir dosya, daha küccük bir model deneyin veya diğer uygulamaları kapatın.</string>
+    <string name="error_oom_transcription">Bu sesi transkribe etmek için yeterli bellek yok. Daha kısa bir dosya, daha küccük bir model deneyin veya diğer uygulamaları kapatın. Yine başarısız olursa, Ayarlar > Gelişmiş > Model yüklemeyi zorla bu kontrolü atlayabilir.</string>
+    <string name="external_family_detected">Algılandı: %1$s</string>
+    <string name="external_family_pick_title">Bu model hangi aileden?</string>
+    <string name="subtitle_timeout_title">Otomatik seçim süresi</string>
+    <string name="subtitle_timeout_description">Altyazılı videonun seçim bildirimi kendi kendine transkript başlamadan ne kadar bekler.</string>
+    <string name="transcript_export_format_title">Otomatik kayıt dosyası biçimi</string>
+    <string name="transcript_export_format_description">Otomatik kayıt klasörüne kaydedilen dosyaların biçimi. Zaman damgalı biçimler yalnızca transkripsiyon zaman verisi ürettiğinde yazılır.</string>
+    <string name="transcript_export_format_txt">Düz metin</string>
+    <string name="transcript_export_format_txt_timed">Zaman damgalı metin (deneysel)</string>
+    <string name="transcript_export_format_srt">SRT altyazıları (deneysel)</string>
+    <string name="transcript_export_format_vtt">WebVTT altyazıları (deneysel)</string>
+    <string name="settings_search_hint">Ayarları ara…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d eşleşme</item>
+        <item quantity="other">%1$d eşleşme</item>
+    </plurals>
+    <string name="settings_search_no_results">Eşleşen ayar yok</string>
+    <string name="settings_search_clear">Aramayı temizle</string>
+        <string name="partial_transcript_label">Kısmi transkript</string>
+    
+    <string name="decoded_of_total">%2$s içinden %1$s çözüldü</string>
+    
+    <string name="decoded_so_far">%1$s çözüldü</string>
+    <string name="language_chip_setting_title">Sonuçlarda dil rozeti</string>
+    <string name="language_chip_setting_description">Her transkriptte algılanan dili gösterir; kontrol etmek veya transkripsiyon dilini değiştirmek için dokunun</string>
+    <string name="language_chip_dialog_title">Dil</string>
+    <string name="language_chip_detected_body">Otomatik algılandı: %1$s. Yanlış dil mi? Transkripsiyon dilini değiştirip sesi yeniden dönüştürün.</string>
+    <string name="language_chip_pinned_body">Sabitlendi: %1$s. Değiştirmek için transkripsiyon dili ayarını açın.</string>
+    <string name="language_chip_open_setting">Dil ayarını aç</string>
+    <string name="curated_section_title">Diliniz için</string>
+    <string name="curated_browse_all">Tüm dilleri görüntüle</string>
+    <string name="curated_suggest_model">Diliniz için bir model önerin</string>
 </resources>

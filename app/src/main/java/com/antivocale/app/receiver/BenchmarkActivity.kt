@@ -63,13 +63,20 @@ class BenchmarkActivity : ComponentActivity() {
 
                 val taskId = "bench_${runId}"
                 val serviceIntent = Intent(this@BenchmarkActivity, InferenceService::class.java).apply {
-                    putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, "audio")
+                    putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, TaskerRequestReceiver.REQUEST_TYPE_AUDIO)
                     putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, filePath)
                     putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
                     putExtra(TaskerRequestReceiver.EXTRA_PROMPT, "")
                     putExtra(EXTRA_SOURCE, "benchmark")
                 }
-                startForegroundService(serviceIntent)
+                // F6: unified enqueue (trampoline fallback on the API 31+ restriction)
+                when (com.antivocale.app.service.InferenceEnqueue.start(this@BenchmarkActivity, serviceIntent)) {
+                    com.antivocale.app.service.InferenceEnqueue.Outcome.Started -> Unit
+                    com.antivocale.app.service.InferenceEnqueue.Outcome.FallbackNotificationPosted ->
+                        Log.w(TAG, "BENCH_ERROR: run=$runId restricted start; fallback notification posted (harness cannot tap it)")
+                    is com.antivocale.app.service.InferenceEnqueue.Outcome.Failed ->
+                        Log.e(TAG, "BENCH_ERROR: run=$runId enqueue failed")
+                }
                 Log.i(TAG, "BENCH_START: run=$runId taskId=$taskId")
             } catch (e: Exception) {
                 Log.e(TAG, "BENCH_ERROR: run=$runId", e)

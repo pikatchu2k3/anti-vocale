@@ -3,6 +3,7 @@ package com.antivocale.app.testing
 import com.antivocale.app.data.ExternalModelListJson
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalModelSource
+import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelStore
 import com.antivocale.app.data.FakePreferencesManager
 import com.antivocale.app.data.FilePin
@@ -28,10 +29,42 @@ class TestSpiOpsTest {
     private lateinit var fake: FakePreferencesManager
     private lateinit var ops: TestSpiOps
 
+    /** Captures the url and answers with a fixture record; no network in unit tests. */
+    private class FakeImporter(
+        var lastUrl: String? = null,
+        val answer: (String) -> ExternalModelRecord,
+    ) : ExternalModelImportOperations {
+        override suspend fun importFromTreeUri(
+            context: android.content.Context,
+            treeUri: android.net.Uri,
+            modelType: String?,
+            family: ModelFamily,
+            options: Map<String, String>,
+            languages: List<String>,
+            streaming: Boolean,
+        ): ExternalModelRecord = answer("tree")
+
+        override suspend fun importFromUrl(
+            url: String,
+            modelType: String?,
+            family: ModelFamily,
+            options: Map<String, String>,
+            languages: List<String>,
+            streaming: Boolean,
+            onProgress: com.antivocale.app.data.ExternalImportProgress,
+        ): ExternalModelRecord {
+            lastUrl = url
+            return answer("fromurl")
+        }
+    }
+
+    private lateinit var fakeImporter: FakeImporter
+
     @Before
     fun setUp() {
         fake = FakePreferencesManager()
-        ops = TestSpiOps(fake, ExternalModelStore(fake))
+        fakeImporter = FakeImporter(answer = { record(it) })
+        ops = TestSpiOps(fake, ExternalModelStore(fake), fakeImporter)
     }
 
     private fun record(id: String = "a1b2c3d4e5f6") = ExternalModelRecord(
@@ -142,6 +175,22 @@ class TestSpiOpsTest {
         assertTrue(
             JSONObject(ops.handle(TestSpiOps.OP_SET, key = "progressive", value = "True"))
                 .getString("error").contains("progressive"))
+    }
+
+    @Test
+    fun `set subtitle_timeout writes through and rejects non-positive values`() = runTest {
+        // TASK-515: the choice timeout pref drives the worker delay; the SPI
+        // accepts any positive int so a device test can arm a fast timeout.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_SET, key = "subtitle_timeout", value = "2"))
+        assertEquals("subtitle_timeout", json.getString("key"))
+        assertEquals(2, fake._subtitleChoiceTimeout.value)
+
+        assertTrue(
+            JSONObject(ops.handle(TestSpiOps.OP_SET, key = "subtitle_timeout", value = "0"))
+                .getString("error").contains("subtitle_timeout"))
+        assertTrue(
+            JSONObject(ops.handle(TestSpiOps.OP_SET, key = "subtitle_timeout", value = "5min"))
+                .getString("error").contains("subtitle_timeout"))
     }
 
     @Test
@@ -330,9 +379,9 @@ class TestSpiOpsTest {
             "theme" to "DEFAULT", "theme_mode" to "SYSTEM", "punctuation_prompt" to "p",
             "default_prompt" to "d",
             "summary_prompt" to "s", "external_catalog_url" to "https://x",
-            "output_folder" to "", "keep_alive" to "5", "threads" to "4",
+            "output_folder" to "", "keep_alive" to "5", "subtitle_timeout" to "5", "threads" to "4",
             "backend" to "llm", "language" to "auto", "model_path" to "/m",
-            "sherpa_path" to "/m",
+            "sherpa_path" to "/m", "transcript_export_format" to "SRT",
         )
         for (key in ops.SET_KEYS) {
             val sample = samples[key] ?: "true"
@@ -364,7 +413,7 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "import", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
@@ -375,4 +424,20 @@ class TestSpiOpsTest {
         assertFalse(ops.handle(null).contains("error"))
         assertTrue(ops.handle("bogus").contains("unknown op 'bogus'"))
     }
+
+    @Test
+    fun `import op forwards the url and answers with the imported record`() = runTest {
+        val json = JSONObject(ops.handle("import", url = "http://127.0.0.1:8080/persian-small.json"))
+        assertEquals("import", json.getString("op"))
+        assertEquals("http://127.0.0.1:8080/persian-small.json", fakeImporter.lastUrl)
+        assertEquals("external:fromurl", json.getJSONObject("record").getString("backendId"))
+    }
+
+    @Test
+    fun `import op without a url answers with an error, not a crash`() = runTest {
+        val json = JSONObject(ops.handle("import"))
+        assertEquals("import", json.getString("op"))
+        assertTrue(json.getString("error").contains("url"))
+    }
 }
+

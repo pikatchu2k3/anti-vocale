@@ -83,6 +83,20 @@ class AudioPreprocessor @Inject constructor() {
         internal fun chunkTotalSuffix(expectedChunkCount: Int, emittedChunkIndex: Int): String =
             if (expectedChunkCount > emittedChunkIndex) "/$expectedChunkCount" else ""
 
+        /**
+         * GH #18: the container extension of [path] for error messages,
+         * sanitized before it can reach a localized string: lowercase
+         * alphanumerics, 1..8 chars (the same guard the retired
+         * SharedAudioHandler whitelist message used). "" when the path has no
+         * clean extension, so callers fall back to naming the MIME alone.
+         */
+        internal fun formatToken(path: String): String {
+            val ext = path.substringAfterLast('/', path)
+                .substringAfterLast('.', "")
+                .lowercase()
+            return if (ext.length in 1..8 && ext.all { it.isLetterOrDigit() }) ext else ""
+        }
+
         private const val TARGET_SAMPLE_RATE = 16000
         private const val TARGET_CHANNELS = 1
         private const val MAX_FILE_SIZE_BYTES = 2L * 1024 * 1024 * 1024 // 2GB sanity bound
@@ -100,7 +114,16 @@ class AudioPreprocessor @Inject constructor() {
         val sampleRate: Int,
         val totalDurationSeconds: Double,
         val chunkCount: Int,
-        val isVadSegmented: Boolean = false
+        val isVadSegmented: Boolean = false,
+        /**
+         * GH #92: per-chunk [start,end) offsets in the ORIGINAL clip's
+         * coordinates, milliseconds, aligned with [chunks] BY CONSTRUCTION
+         * (index i is chunk i's span; VAD paths use merged-segment offsets,
+         * window paths use the slice offsets the chunker already computed).
+         * Empty when no timing exists. Consumers build positional cues from
+         * this and never re-derive offsets from chunk indices.
+         */
+        val chunkRangesMs: List<Pair<Long, Long>> = emptyList()
     )
 
     /**
@@ -140,12 +163,26 @@ class AudioPreprocessor @Inject constructor() {
         data object FileNotFound : PreprocessingError("Audio file not found")
         data object FileTooLarge : PreprocessingError("Audio file exceeds 2GB limit")
         data object InvalidFormat : PreprocessingError("Unable to determine audio format")
-        data class DurationTooLong(val ceilingSeconds: Long, val path: AudioDurationPolicy.DecodePath) :
+        data class DurationTooLong(val ceilingSeconds: Long, val path: AudioDurationPolicy.DecodePath, val durationSeconds: Double = 0.0) :
             PreprocessingError("Audio exceeds ${ceilingSeconds / 60} minute limit on this path")
         data object DurationUnknown : PreprocessingError("Could not determine audio duration")
         data class ConversionFailed(val reason: String) : PreprocessingError("Conversion failed: $reason")
         data class ChunkFailed(val chunkIndex: Int, val reason: String) : PreprocessingError("Chunk $chunkIndex failed: $reason")
         data object NoAudioTrack : PreprocessingError("No audio track found in file")
+
+        /**
+         * GH #18: the container parsed and holds an audio track, but this
+         * device has no decoder for the track's MIME (e.g. DTS in a shared
+         * .ts, Vorbis variants without a codec). With the copy-side extension
+         * whitelist gone, this is the "unsupported format" refusal, raised at
+         * the same MediaCodec.createDecoderByType call both decode paths
+         * already make. [format] is the sanitized container extension (""
+         * when the path carries no clean token); [mime] is the track MIME
+         * from MediaExtractor. Together they name the format and the reason
+         * in the user-facing message.
+         */
+        data class NoDecoder(val format: String, val mime: String) :
+            PreprocessingError("No decoder on this device for .$format audio ($mime)")
     }
 
     /**
@@ -185,13 +222,17 @@ class AudioPreprocessor @Inject constructor() {
         // but that matches the pre-1.12 behavior instead of capping nothing).
         if (duration > ceiling) {
             Log.e(TAG, "Audio too long (post-decode): ${duration}s > ${ceiling}s ceiling")
-            throw PreprocessingError.DurationTooLong(ceiling, AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM)
+            throw PreprocessingError.DurationTooLong(ceiling, AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM, duration)
         }
 
         Log.d(TAG, "Audio duration: ${duration}s")
 
         // Apply VAD silence stripping if enabled
         var samplesToProcess: FloatArray
+        // GH #92: original-clip offset of samplesToProcess[0]. Zero for the full
+        // decoded audio; the VAD single-segment path strips to one speech span, so
+        // its buffer starts at that span's offset instead.
+        var originMs = 0L
         if (enableVad && context != null) {
             try {
                 val floatSamples = audioData.samples
@@ -200,6 +241,10 @@ class AudioPreprocessor @Inject constructor() {
                 // as soon as the merged output exists, freeing it while the caller
                 // proceeds (TASK-340 Fix 3).
                 val segments = vadResult.speechSegments.toMutableList()
+                val rangesMs = vadResult.mergedRanges.map { (start, end) ->
+                    (start.toLong() * 1000L / audioData.sampleRate) to
+                        (end.toLong() * 1000L / audioData.sampleRate)
+                }
 
                 // Multiple segments: merge adjacent ones up to the model's per-segment
                 // limit minus a small margin (WhisperX-style; historically 28s for
@@ -208,7 +253,11 @@ class AudioPreprocessor @Inject constructor() {
                 if (segments.size > 1) {
                     val maxMergeSamples = audioData.sampleRate * vadMergeLimitSeconds(maxChunkDurationSeconds)
 
-                    val mergedSegments = mergeVadSegments(segments, maxMergeSamples)
+                    val (mergedSegments, mergedRangesMs) =
+                        mergeVadSegmentGroups(
+                            segments, maxMergeSamples,
+                            rangesMs = rangesMs, sampleRate = audioData.sampleRate,
+                        )
                     segments.clear()
 
                     Log.i(TAG, "VAD progressive: ${vadResult.speechSegments.size} raw → ${mergedSegments.size} merged segments, " +
@@ -219,7 +268,8 @@ class AudioPreprocessor @Inject constructor() {
                         sampleRate = audioData.sampleRate,
                         totalDurationSeconds = vadResult.totalSpeechDurationSeconds,
                         chunkCount = mergedSegments.size,
-                        isVadSegmented = true
+                        isVadSegmented = true,
+                        chunkRangesMs = mergedRangesMs
                     )
                 }
 
@@ -238,6 +288,9 @@ class AudioPreprocessor @Inject constructor() {
                         "${"%.1f".format(strippedDuration)}s (${vadResult.segmentCount} segments)")
 
                 samplesToProcess = merged
+                // The stripped buffer starts at the (single) speech span's offset, so
+                // window slices below stay in original-clip coordinates.
+                originMs = rangesMs.firstOrNull()?.first ?: 0L
             } catch (e: Exception) {
                 Log.e(TAG, "VAD processing failed, using full audio", e)
                 samplesToProcess = audioData.samples
@@ -254,10 +307,13 @@ class AudioPreprocessor @Inject constructor() {
                 chunks = listOf(samplesToProcess),
                 sampleRate = audioData.sampleRate,
                 totalDurationSeconds = processedDuration,
-                chunkCount = 1
+                chunkCount = 1,
+                chunkRangesMs = listOf(
+                    originMs to originMs + (processedDuration * 1000).toLong()
+                )
             )
         } else {
-            return chunkFloatAudio(samplesToProcess, audioData.sampleRate, processedDuration, maxChunkDurationSeconds)
+            return chunkFloatAudio(samplesToProcess, audioData.sampleRate, processedDuration, maxChunkDurationSeconds, originMs)
         }
     }
 
@@ -369,7 +425,7 @@ class AudioPreprocessor @Inject constructor() {
                     expectedChunkCount = expectedChunks
                 )))
 
-                val decoder = MediaCodec.createDecoderByType(mime)
+                val decoder = createDecoderOrThrow(mime, inputPath)
                 val accumulator = mutableListOf<FloatArray>()
                 var accumulatedSamples = 0
                 var chunkIndex = 0
@@ -538,7 +594,7 @@ class AudioPreprocessor @Inject constructor() {
 
             Log.d(TAG, "Input: $mime, ${inputSampleRate}Hz, $inputChannels channels")
 
-            val decoder = MediaCodec.createDecoderByType(mime)
+            val decoder = createDecoderOrThrow(mime, inputPath)
             // TASK-416: resample per decode chunk through the streaming resampler so
             // the input-rate signal is never held whole (the old collect-then-merge
             // held chunks + merged copy, ~230MB for a 10-minute 48kHz file: the
@@ -664,8 +720,25 @@ class AudioPreprocessor @Inject constructor() {
      * allocation instead of an O(N²) chain of intermediate arrays
      * (TASK-340 Fix 3).
      */
-    internal fun mergeVadSegments(segments: List<FloatArray>, maxMergeSamples: Int): List<FloatArray> {
+    /**
+     * Groups adjacent VAD segments up to the per-chunk sample limit. When
+     * [rangesMs] holds each input segment's original-clip offsets in ms
+     * (GH #92), the returned ranges follow the SAME grouping so output chunk
+     * i's cue is output range i: a group of segments spans first-start to
+     * last-end, and a split of one long segment slices that segment's range
+     * proportionally. Empty [rangesMs] yields empty grouped ranges. Callers
+     * without ranges omit [rangesMs] and [sampleRate] (the sample rate only
+     * converts split offsets, so it is never used without ranges).
+     */
+    internal fun mergeVadSegmentGroups(
+        segments: List<FloatArray>,
+        maxMergeSamples: Int,
+        rangesMs: List<Pair<Long, Long>> = emptyList(),
+        sampleRate: Int = 1,
+    ): Pair<List<FloatArray>, List<Pair<Long, Long>>> {
         val merged = mutableListOf<FloatArray>()
+        val rs = rangesMs
+        val mergedRanges = mutableListOf<Pair<Long, Long>>()
         var start = 0
         while (start < segments.size) {
             // Pass 1: find the extent of this group and its total size.
@@ -682,14 +755,22 @@ class AudioPreprocessor @Inject constructor() {
                 // speech): split it at the limit so it cannot bypass the model's
                 // per-segment cap (GH #50 review finding).
                 val seg = segments[start]
+                val segRange = rs.getOrNull(start)
                 var offset = 0
                 while (offset < seg.size) {
                     val len = minOf(maxMergeSamples, seg.size - offset)
                     merged.add(seg.copyOfRange(offset, offset + len))
+                    if (segRange != null) {
+                        val pieceStartMs = segRange.first + offset.toLong() * 1000L / sampleRate
+                        val pieceEndMs = pieceStartMs + len.toLong() * 1000L / sampleRate
+                        mergedRanges.add(pieceStartMs to pieceEndMs)
+                    }
                     offset += len
                 }
             } else if (end == start) {
                 merged.add(segments[start])
+                val segRange = rs.getOrNull(start)
+                if (segRange != null) mergedRanges.add(segRange)
             } else {
                 val combined = FloatArray(groupSize)
                 var offset = 0
@@ -698,10 +779,13 @@ class AudioPreprocessor @Inject constructor() {
                     offset += segments[i].size
                 }
                 merged.add(combined)
+                // Range-free callers pass an empty list: the ranges pair with
+                // the input segments, so index them only when provided.
+                if (rs.isNotEmpty()) mergedRanges.add(rs[start].first to rs[end].second)
             }
             start = end + 1
         }
-        return merged
+        return merged to mergedRanges
     }
 
     /**
@@ -768,7 +852,7 @@ class AudioPreprocessor @Inject constructor() {
         if (duration <= 0.0) return
         if (duration > ceilingSeconds) {
             Log.e(TAG, "Audio too long: ${duration}s > ${ceilingSeconds}s ceiling on $path")
-            throw PreprocessingError.DurationTooLong(ceilingSeconds, path)
+            throw PreprocessingError.DurationTooLong(ceilingSeconds, path, duration)
         }
     }
 
@@ -778,6 +862,52 @@ class AudioPreprocessor @Inject constructor() {
             if (mime?.startsWith("audio/") == true) return i
         }
         throw PreprocessingError.NoAudioTrack
+    }
+
+    /**
+     * GH #18: decoder creation is the device-support decision point now that
+     * the copy path accepts every file. createDecoderByType fails exactly
+     * when no codec exists for the track MIME, so both decode paths and the
+     * share-time probe route through this helper and raise the same typed
+     * [PreprocessingError.NoDecoder] instead of a generic ConversionFailed.
+     */
+    private fun createDecoderOrThrow(mime: String, inputPath: String): MediaCodec =
+        try {
+            MediaCodec.createDecoderByType(mime)
+        } catch (e: Exception) {
+            Log.e(TAG, "No decoder on this device for $mime ($inputPath)", e)
+            throw PreprocessingError.NoDecoder(formatToken(inputPath), mime)
+        }
+
+    /**
+     * GH #18 share-time support probe. The copy path no longer rejects any
+     * format, so the decoder is the arbiter; this parses the container header
+     * and asks the same decoder-creation question the decode paths ask,
+     * WITHOUT decoding PCM, so the share flow can fail fast with a typed,
+     * localized error naming the format and the reason, instead of starting a
+     * transcription that dies in the service seconds later.
+     *
+     * Returns null when the file is decodable; otherwise the container,
+     * track, or decoder failure as a [PreprocessingError] (a subset of what
+     * full preprocessing validates: duration and size ceilings stay the
+     * service's authority). Runs in milliseconds; safe on Dispatchers.IO.
+     */
+    fun probeDecodable(inputPath: String): PreprocessingError? {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(inputPath)
+            val audioTrackIndex = findAudioTrack(extractor)
+            val mime = extractor.getTrackFormat(audioTrackIndex).getString(MediaFormat.KEY_MIME)!!
+            createDecoderOrThrow(mime, inputPath).release()
+            null
+        } catch (e: PreprocessingError) {
+            e
+        } catch (e: Exception) {
+            // A non-media file (PDF, zip, text) fails at setDataSource;
+            // the localized InvalidFormat beats raw framework noise.
+            PreprocessingError.InvalidFormat} finally {
+            extractor.release()
+        }
     }
 
     /**
@@ -866,21 +996,31 @@ class AudioPreprocessor @Inject constructor() {
 
     /**
      * Chunks float audio data into segments of specified duration.
+     * [originMs] is the original-clip offset of `samples[0]` (nonzero when the
+     * buffer is a stripped single VAD span); slice offsets are computed here, in
+     * the slicing loop that already knows them, so the emitted chunk ranges are
+     * exact including the shorter final window (GH #92).
      */
     private fun chunkFloatAudio(
         samples: FloatArray,
         sampleRate: Int,
         duration: Double,
-        maxChunkDurationSeconds: Int
+        maxChunkDurationSeconds: Int,
+        originMs: Long = 0L
     ): PreprocessingResult {
         val samplesPerChunk = sampleRate * maxChunkDurationSeconds
         val chunks = mutableListOf<FloatArray>()
+        val rangesMs = mutableListOf<Pair<Long, Long>>()
         var offset = 0
         var chunkIndex = 0
 
         while (offset < samples.size) {
             val chunkSize = minOf(samplesPerChunk, samples.size - offset)
             chunks.add(samples.copyOfRange(offset, offset + chunkSize))
+            rangesMs.add(
+                (originMs + offset.toLong() * 1000L / sampleRate) to
+                    (originMs + (offset + chunkSize).toLong() * 1000L / sampleRate)
+            )
 
             Log.d(TAG, "Created chunk $chunkIndex: $chunkSize samples")
 
@@ -892,7 +1032,8 @@ class AudioPreprocessor @Inject constructor() {
             chunks = chunks,
             sampleRate = sampleRate,
             totalDurationSeconds = duration,
-            chunkCount = chunks.size
+            chunkCount = chunks.size,
+            chunkRangesMs = rangesMs
         )
     }
 

@@ -100,13 +100,20 @@
     <string name="tour_title_browse">Или выберите файл</string>
     <string name="tour_body_history">Поделитесь голосовым сообщением из любого мессенджера. Расшифровка появится здесь, с уведомлением по готовности.</string>
     <string name="tour_title_history">Отправьте голосовое сообщение</string>
-    <string name="tour_body_models">Сначала скачайте модель расшифровки во вкладке Модели. Parakeet, рекомендуемый вариант по умолчанию.</string>
+    <string name="tour_body_models">Сначала скачайте модель расшифровки во вкладке Модели. Parakeet, рекомендуемый вариант по умолчанию. Модели большие, до нескольких ГБ, но каждая скачивается только один раз. Обновления приложения никогда не требуют повторной загрузки.</string>
     <string name="tour_title_models">Скачайте модель</string>
     <string name="tour_body_welcome">Расшифровка выполняется полностью на этом телефоне; ваше аудио его никогда не покидает. Три короткие подсказки перед началом.</string>
     <string name="tour_title_welcome">Добро пожаловать в Anti-Vocale</string>
     <string name="voice_message_duration">голосовое сообщение</string>
     <string name="source_was_video">Источник: видеофайл</string>
     <string name="processed_in">Обработано за %1$s</string>
+    <string name="transcript_render_capped">Показаны первые %1$d символов, ещё %2$d. Используйте «Копировать», чтобы получить полный текст.</string>
+    <string name="transcript_capped_autosave_hint">Полная расшифровка в автосохранении: Настройки → Сохранить в папку</string>
+    <string name="transcript_capped_autosave_saved">Полная расшифровка автоматически сохранена в вашей папке</string>
+    <string name="export_settings_title">Автосохранение и экспорт</string>
+    <string name="export_settings_description">Выберите папку и формат файлов для сохранённых расшифровок</string>
+    <string name="error_folder_not_writable">Эта папка не может получать файлы. Выберите папку из хранилища устройства (не ярлык Загрузок).</string>
+    <string name="language_phone_option">Язык телефона (%1$s)</string>
     <string name="today">Сегодня</string>
     <string name="yesterday">Вчера, %1$s</string>
     <string name="yesterday_label">Вчера</string>
@@ -242,6 +249,7 @@
     <string name="error_file_not_found">Аудиофайл не найден</string>
     <string name="error_invalid_format">Не удалось определить формат аудио</string>
     <string name="error_no_audio_track">В файле не найдена аудиодорожка</string>
+    <string name="error_no_decoder">На этом устройстве нет декодера для этого аудио: %1$s</string>
     <string name="error_duration_unknown">Не удалось определить длительность аудио</string>
     <string name="error_conversion_failed">Ошибка конвертации: %1$s</string>
     <string name="error_chunk_failed">Сегмент %1$d завершился с ошибкой: %2$s</string>
@@ -268,8 +276,6 @@
     <string name="confidence_low">Низкая уверенность</string>
     <string name="no_audio_file">Аудиофайл не получен</string>
     <string name="failed_to_process_audio">Не удалось обработать аудиофайл</string>
-    <string name="unsupported_audio_format">Поддерживаются голосовые сообщения из мессенджеров; формат .%1$s не поддерживается.</string>
-    <string name="unknown_audio_format">Не удалось определить формат аудио. Поделитесь аудио из мессенджера.</string>
     <string name="transcription_started">Распознавание начато…</string>
     <string name="processing_segment_progress">Сегмент %1$d из %2$d…</string>
     <string name="progressive_initial">Подготовка текста; финальный результат после завершения</string>
@@ -996,5 +1002,38 @@
     <string name="a11y_back">Назад</string>
     <string name="litertlm_importing">Импорт…</string>
     <string name="model_ram_warning">У %1$s может не хватить памяти на этом устройстве. Загрузка может завершиться неудачей; более лёгкие модели надёжнее.</string>
-    <string name="error_oom_transcription">Недостаточно памяти для распознавания этого аудио. Попробуйте более короткий файл, более лёгкую модель или закройте другие приложения.</string>
+    <string name="error_oom_transcription">Недостаточно памяти для распознавания этого аудио. Попробуйте более короткий файл, более лёгкую модель или закройте другие приложения. Если не поможет, Настройки > Дополнительно > Принудительная загрузка модели может обойти эту проверку.</string>
+    <string name="external_family_detected">Обнаружено: %1$s</string>
+    <string name="external_family_pick_title">К какому семейству относится эта модель?</string>
+    <string name="subtitle_timeout_title">Таймаут автоматического выбора</string>
+    <string name="subtitle_timeout_description">Сколько ждёт уведомление с выбором для видео с субтитрами, прежде чем начать расшифровку самостоятельно.</string>
+    <string name="transcript_export_format_title">Формат автосохранения</string>
+    <string name="transcript_export_format_description">Формат файлов, сохраняемых в папку автосохранения. Форматы с метками времени записываются, только если расшифровка выдала данные о времени.</string>
+    <string name="transcript_export_format_txt">Простой текст</string>
+    <string name="transcript_export_format_txt_timed">Текст с метками времени (экспериментально)</string>
+    <string name="transcript_export_format_srt">Субтитры SRT (экспериментально)</string>
+    <string name="transcript_export_format_vtt">Субтитры WebVTT (экспериментально)</string>
+    <string name="settings_search_hint">Поиск в настройках…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d совпадение</item>
+        <item quantity="few">%1$d совпадения</item>
+        <item quantity="many">%1$d совпадений</item>
+        <item quantity="other">%1$d совпадения</item>
+    </plurals>
+    <string name="settings_search_no_results">Подходящих настроек не найдено</string>
+    <string name="settings_search_clear">Очистить поиск</string>
+        <string name="partial_transcript_label">Частичная расшифровка</string>
+    
+    <string name="decoded_of_total">Распознано %1$s из %2$s</string>
+    
+    <string name="decoded_so_far">Распознано %1$s</string>
+    <string name="language_chip_setting_title">Язык на результатах</string>
+    <string name="language_chip_setting_description">Показывать определённый язык у каждой расшифровки; нажмите, чтобы проверить или сменить язык расшифровки</string>
+    <string name="language_chip_dialog_title">Язык</string>
+    <string name="language_chip_detected_body">Определён автоматически: %1$s. Не тот язык? Смените язык расшифровки и расшифруйте аудио заново.</string>
+    <string name="language_chip_pinned_body">Закреплён: %1$s. Чтобы сменить, откройте настройку языка расшифровки.</string>
+    <string name="language_chip_open_setting">Открыть настройку языка</string>
+    <string name="curated_section_title">Для вашего языка</string>
+    <string name="curated_browse_all">Показать все языки</string>
+    <string name="curated_suggest_model">Предложить модель для вашего языка</string>
 </resources>

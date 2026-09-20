@@ -82,13 +82,20 @@
     <string name="tour_title_browse">Ou escolha um arquivo</string>
     <string name="tour_body_history">Compartilhe uma mensagem de voz de qualquer mensageiro. A transcrição aparece aqui, com uma notificação quando estiver pronta.</string>
     <string name="tour_title_history">Envie uma mensagem de voz</string>
-    <string name="tour_body_models">Primeiro baixe um modelo de transcrição na aba Modelos. Parakeet é o padrão recomendado.</string>
+    <string name="tour_body_models">Primeiro baixe um modelo de transcrição na aba Modelos. Parakeet é o padrão recomendado. Os modelos são grandes, até alguns GB, mas cada um é baixado apenas uma vez. Atualizações do app nunca exigem baixá-los de novo.</string>
     <string name="tour_title_models">Baixe um modelo</string>
     <string name="tour_body_welcome">A transcrição acontece inteiramente neste telefone; seu áudio nunca sai dele. Três dicas rápidas antes de começar.</string>
     <string name="tour_title_welcome">Boas-vindas ao Anti-Vocale</string>
     <string name="voice_message_duration">mensagem de voz</string>
     <string name="source_was_video">Origem: arquivo de vídeo</string>
     <string name="processed_in">Processado em %1$s</string>
+    <string name="transcript_render_capped">Exibindo os primeiros %1$d caracteres, faltam %2$d. Use Copiar para o texto completo.</string>
+    <string name="transcript_capped_autosave_hint">Transcrição completa no salvamento automático: Configurações → Salvar na pasta</string>
+    <string name="transcript_capped_autosave_saved">Transcrição completa salva automaticamente na sua pasta</string>
+    <string name="export_settings_title">Salvamento automático e exportação</string>
+    <string name="export_settings_description">Escolher a pasta e o formato dos arquivos salvos</string>
+    <string name="error_folder_not_writable">Esta pasta não pode receber arquivos. Escolha uma pasta do armazenamento do dispositivo (não o atalho de Downloads).</string>
+    <string name="language_phone_option">Idioma do telefone (%1$s)</string>
     <string name="today">Hoje</string>
     <string name="yesterday">Ontem, %1$s</string>
     <string name="yesterday_label">Ontem</string>
@@ -202,6 +209,7 @@
     <string name="error_file_not_found">Arquivo de áudio não encontrado</string>
     <string name="error_invalid_format">Não foi possível determinar o formato do áudio</string>
     <string name="error_no_audio_track">Nenhuma faixa de áudio encontrada no arquivo</string>
+    <string name="error_no_decoder">Este dispositivo não tem decodificador para este áudio: %1$s</string>
     <string name="error_duration_unknown">Não foi possível determinar a duração do áudio</string>
     <string name="error_conversion_failed">Falha na conversão: %1$s</string>
     <string name="error_chunk_failed">O segmento %1$d falhou: %2$s</string>
@@ -228,8 +236,6 @@
     <string name="confidence_low">Confiança baixa</string>
     <string name="no_audio_file">Nenhum arquivo de áudio recebido</string>
     <string name="failed_to_process_audio">Falha ao processar arquivo de áudio</string>
-    <string name="unsupported_audio_format">Mensagens de voz de apps de mensageria são suportadas; .%1$s não é um formato compatível.</string>
-    <string name="unknown_audio_format">Não foi possível identificar o formato de áudio. Compartilhe o áudio de um app de mensageria.</string>
     <string name="transcription_started">Transcrição iniciada…</string>
     <string name="processing_segment_progress">Segmento %1$d de %2$d…</string>
     <string name="progressive_initial">Preparando o texto; resultado final ao concluir</string>
@@ -844,5 +850,36 @@
     <string name="a11y_back">Voltar</string>
     <string name="litertlm_importing">Importando…</string>
     <string name="model_ram_warning">%1$s pode não ter memória suficiente neste dispositivo. Pode falhar ao carregar ou fechar; modelos mais leves são mais seguros.</string>
-    <string name="error_oom_transcription">Memória insuficiente para transcrever este áudio. Tente um arquivo mais curto, um modelo menor, ou feche outros apps.</string>
+    <string name="error_oom_transcription">Memória insuficiente para transcrever este áudio. Tente um arquivo mais curto, um modelo menor, ou feche outros apps. Se ainda falhar, Configurações > Avançado > Forçar carregamento do modelo pode ignorar esta verificação.</string>
+    <string name="external_family_detected">Detectado: %1$s</string>
+    <string name="external_family_pick_title">A qual família este modelo pertence?</string>
+    <string name="subtitle_timeout_title">Prazo da escolha automática</string>
+    <string name="subtitle_timeout_description">Quanto tempo a notificação de escolha de um vídeo com legendas espera antes de transcrever sozinha.</string>
+    <string name="transcript_export_format_title">Formato de salvamento automático</string>
+    <string name="transcript_export_format_description">Formato dos arquivos salvos na pasta de salvamento automático. Os formatos com carimbo de tempo só são gravados quando a transcrição gerou dados de tempo.</string>
+    <string name="transcript_export_format_txt">Texto simples</string>
+    <string name="transcript_export_format_txt_timed">Texto com marcações de tempo (experimental)</string>
+    <string name="transcript_export_format_srt">Legendas SRT (experimental)</string>
+    <string name="transcript_export_format_vtt">Legendas WebVTT (experimental)</string>
+    <string name="settings_search_hint">Pesquisar configurações…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d correspondência</item>
+        <item quantity="other">%1$d correspondências</item>
+    </plurals>
+    <string name="settings_search_no_results">Nenhuma configuração encontrada</string>
+    <string name="settings_search_clear">Limpar pesquisa</string>
+        <string name="partial_transcript_label">Transcrição parcial</string>
+    
+    <string name="decoded_of_total">Decodificados %1$s de %2$s</string>
+    
+    <string name="decoded_so_far">Decodificados %1$s</string>
+    <string name="language_chip_setting_title">Selo de idioma nos resultados</string>
+    <string name="language_chip_setting_description">Mostra o idioma detectado em cada transcrição; toque para conferir ou mudar o idioma de transcrição</string>
+    <string name="language_chip_dialog_title">Idioma</string>
+    <string name="language_chip_detected_body">Detectado automaticamente: %1$s. Idioma errado? Mude o idioma de transcrição e transcreva o áudio de novo.</string>
+    <string name="language_chip_pinned_body">Definido: %1$s. Para mudar, abra a configuração do idioma de transcrição.</string>
+    <string name="language_chip_open_setting">Abrir configuração de idioma</string>
+    <string name="curated_section_title">Para o seu idioma</string>
+    <string name="curated_browse_all">Ver todos os idiomas</string>
+    <string name="curated_suggest_model">Sugira um modelo para o seu idioma</string>
 </resources>

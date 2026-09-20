@@ -23,6 +23,7 @@ import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.local.LogDao
 import com.antivocale.app.receiver.TaskerRequestReceiver
+import com.antivocale.app.transcription.TimedSegment
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.TranscriptionOrchestrator
 import com.antivocale.app.util.CrashReporter
@@ -558,21 +559,22 @@ class InferenceService : Service(), TranscriptionListener {
         detectedLanguage: String?,
         isPartial: Boolean,
         failedChunkCount: Int,
-        streamedWithoutVad: Boolean
+        streamedWithoutVad: Boolean,
+        segments: List<TimedSegment>
     ) {
         sendSuccessReply(taskId, resultText)
         // Every completed task moves the model-recency source: re-derive the
         // launcher's dynamic share shortcuts. Metadata-only side effect on the
         // service scope (IO), must never reach the result path.
         serviceScope.launch { shareShortcutManager.refresh() }
-        // Always surface the result notification (share AND automation/broadcast
+        // Fork: Always surface the result notification (share AND automation/broadcast
         // paths). Previously gated behind isShareRequest, so Tasker/broadcast
         // transcriptions never produced a visible status-bar result. The race
         // protection in pendingResultNotifications still applies.
         pendingResultNotifications.add(serviceScope.launch {
             try {
                 val copied = autoCopyIfEnabled(resultText, sourcePackage)
-                saveTranscriptToFileIfEnabled(resultText, sourcePackage)
+                saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
                 showResultNotification(resultText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied, streamedWithoutVad = streamedWithoutVad)
             } finally {
                 pendingResultNotifications.remove(coroutineContext[Job])
@@ -658,11 +660,19 @@ class InferenceService : Service(), TranscriptionListener {
 
     // ---- Auto-save to folder (issue #14) ----
 
-    private suspend fun saveTranscriptToFileIfEnabled(text: String, sourcePackage: String?) {
-        val treeUriStr = preferencesManager.outputFolderUri.first() ?: return
-        val treeUri = Uri.parse(treeUriStr)
+    private suspend fun saveTranscriptToFileIfEnabled(
+        text: String,
+        sourcePackage: String?,
+        segments: List<TimedSegment>,
+        failedChunkCount: Int
+    ) {
         val name = withContext(Dispatchers.IO) {
-            TranscriptFileSaver.save(this@InferenceService, treeUri, text, sourcePackage)
+            TranscriptFileSaver.saveAuto(
+                this@InferenceService,
+                preferencesManager.outputFolderUri.first(),
+                preferencesManager.transcriptExportFormat.first(),
+                text, segments, failedChunkCount, sourcePackage,
+            )
         }
         if (name != null) {
             Log.i(TAG, "Saved transcript to output folder: $name")

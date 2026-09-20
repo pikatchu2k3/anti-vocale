@@ -2,6 +2,7 @@ package com.antivocale.app.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
 
 /**
@@ -20,6 +21,7 @@ internal class FakePreferencesManager : PreferencesManager {
 
     val _modelPath = MutableStateFlow<String?>(null)
     val _keepAliveTimeout = MutableStateFlow(5)
+    val _subtitleChoiceTimeout = MutableStateFlow(5)
     val _themePreference = MutableStateFlow("DEFAULT")
     val _themeMode = MutableStateFlow("SYSTEM")
     val _transcriptionBackend = MutableStateFlow(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
@@ -52,6 +54,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _showRetranscribeButton = MutableStateFlow(true)
     val _forceModelLoad = MutableStateFlow(false)
     val _compactResultActions = MutableStateFlow(PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
+    val _languageChipEnabled = MutableStateFlow(PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED)
     val _externalModelsJson = MutableStateFlow<String?>(null)
     val _partialTranscriptionText = MutableStateFlow<String?>(null)
     val _partialTranscriptionTimestamp = MutableStateFlow<Long?>(null)
@@ -59,6 +62,7 @@ internal class FakePreferencesManager : PreferencesManager {
 
     override val modelPath: Flow<String?> get() = _modelPath
     override val keepAliveTimeout: Flow<Int> get() = _keepAliveTimeout
+    override val subtitleChoiceTimeoutMinutes: Flow<Int> get() = _subtitleChoiceTimeout
     override val themePreference: Flow<String> get() = _themePreference
     override val themeMode: Flow<String> get() = _themeMode
     override val transcriptionBackend: Flow<String> get() = _transcriptionBackend
@@ -72,6 +76,8 @@ internal class FakePreferencesManager : PreferencesManager {
     override val ggufModelPath: Flow<String?> get() = _ggufModelPath
     override val autoCopyEnabled: Flow<Boolean> get() = _autoCopyEnabled
     override val outputFolderUri: Flow<String?> get() = _outputFolderUri
+    private val _transcriptExportFormat = MutableStateFlow(PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT)
+    override val transcriptExportFormat: Flow<String> get() = _transcriptExportFormat
     override val vadEnabled: Flow<Boolean> get() = _vadEnabled
     override val vadAdvisoryDismissed: Flow<Boolean> get() = _vadAdvisoryDismissed
     private val _onboardingCompleted = MutableStateFlow(false)
@@ -92,6 +98,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
     override val forceModelLoad: Flow<Boolean> get() = _forceModelLoad
     override val compactResultActions: Flow<Boolean> get() = _compactResultActions
+    override val languageChipEnabled: Flow<Boolean> get() = _languageChipEnabled
     override val externalModelsJson: Flow<String?> get() = _externalModelsJson
     override val partialTranscriptionText: Flow<String?> get() = _partialTranscriptionText
     override val partialTranscriptionTimestamp: Flow<Long?> get() = _partialTranscriptionTimestamp
@@ -100,6 +107,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveModelPath(path: String) { _modelPath.value = path }
     override suspend fun clearModelPath() { _modelPath.value = null }
     override suspend fun saveKeepAliveTimeout(minutes: Int) { _keepAliveTimeout.value = minutes }
+    override suspend fun saveSubtitleChoiceTimeoutMinutes(minutes: Int) { _subtitleChoiceTimeout.value = minutes }
     override suspend fun saveThemePreference(theme: String) { _themePreference.value = theme }
     override suspend fun saveThemeMode(mode: String) { _themeMode.value = mode }
     override suspend fun saveTranscriptionBackend(backendId: String) { _transcriptionBackend.value = backendId }
@@ -110,6 +118,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun clearGgufModelPath() { _ggufModelPath.value = null }
     override suspend fun saveAutoCopyEnabled(enabled: Boolean) { _autoCopyEnabled.value = enabled }
     override suspend fun saveOutputFolderUri(uri: String?) { _outputFolderUri.value = uri }
+    override suspend fun saveTranscriptExportFormat(format: String) { _transcriptExportFormat.value = format }
     override suspend fun saveVadEnabled(enabled: Boolean) { _vadEnabled.value = enabled }
     override suspend fun saveVadAdvisoryDismissed(dismissed: Boolean) { _vadAdvisoryDismissed.value = dismissed }
     override suspend fun saveOnboardingCompleted(completed: Boolean) { _onboardingCompleted.value = completed }
@@ -127,6 +136,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
     override suspend fun saveForceModelLoad(enabled: Boolean) { _forceModelLoad.value = enabled }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
+    override suspend fun saveLanguageChipEnabled(enabled: Boolean) { _languageChipEnabled.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }
     override suspend fun savePartialTranscriptionState(text: String) {
         _partialTranscriptionText.value = text
@@ -153,5 +163,23 @@ internal class FakePreferencesManager : PreferencesManager {
 
     override suspend fun clearAllBenchmarkResults() {
         _benchmarkResults.value = emptyMap()
+    }
+
+    // TASK-575: in-memory stand-in; the merge mirrors the Impl's transaction.
+    val _measuredModelMemory = MutableStateFlow<Map<String, com.antivocale.app.transcription.MeasuredModelMemory.Record>>(emptyMap())
+    override val measuredModelMemory: Flow<Map<String, com.antivocale.app.transcription.MeasuredModelMemory.Record>> = _measuredModelMemory
+    override suspend fun mergeMeasuredModelMemorySample(
+        key: String,
+        loadDeltaBytes: Long,
+        modelSizeBytes: Long,
+    ) {
+        val m = com.antivocale.app.transcription.MeasuredModelMemory
+        _measuredModelMemory.update { records ->
+            m.merge(records[key], loadDeltaBytes, modelSizeBytes, 0L)?.let { records + (key to it) } ?: records
+        }
+    }
+
+    override suspend fun pruneMeasuredModelMemory(validKeys: Set<String>) {
+        _measuredModelMemory.update { it.filterKeys { k -> k in validKeys } }
     }
 }

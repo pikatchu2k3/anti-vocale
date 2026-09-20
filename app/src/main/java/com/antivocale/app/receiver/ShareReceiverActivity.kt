@@ -15,30 +15,24 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OutOfQuotaPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import com.antivocale.app.R
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.receiver.ChooserBroadcastReceiver
+import com.antivocale.app.service.InferenceEnqueue
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.service.ResultNotificationFactory
 import com.antivocale.app.transcription.BackendRegistry
-import com.antivocale.app.transcription.SubtitleExtractor
-import com.antivocale.app.transcription.SubtitleTrack
-import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.SharedAudioHandler
-import com.antivocale.app.work.SubtitleChoiceTimeoutWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import java.util.concurrent.TimeUnit
+import java.io.File
 
 /**
  * Transparent activity for receiving shared audio files.
@@ -72,6 +66,21 @@ interface BackendRegistryEntryPoint {
     fun backendRegistry(): BackendRegistry
     /** The chooser reads valid external records; same no-@AndroidEntryPoint situation. */
     fun externalModelStore(): com.antivocale.app.data.ExternalModelStore
+
+    /**
+     * GH #18: the share-time decode probe. The copy path accepts every file,
+     * so this is how the share flow learns whether the device can actually
+     * decode the container before dispatching transcription.
+     */
+    fun audioPreprocessor(): com.antivocale.app.audio.AudioPreprocessor
+
+    /**
+     * The process-lifetime scope (TASK-438 rule: no hand-built scopes). The
+     * share flow's copy-and-dispatch work must run to completion even after
+     * this activity finishes, so it outlives the activity by design.
+     */
+    @com.antivocale.app.di.ApplicationScope
+    fun applicationScope(): CoroutineScope
 }
 
 /**
@@ -101,10 +110,14 @@ class ShareReceiverActivity : Activity() {
 
         // The choice prompt auto-resolves to ASR after this delay if the user does nothing.
         // Keeps a shared video from silently hanging when the notification is ignored.
-        internal const val SUBTITLE_CHOICE_TIMEOUT_MINUTES = 5L
 
         // Request code of the shortcut flow's SAF audio pick ([launchAudioPicker]).
         private const val REQUEST_PICK_AUDIO = 1
+
+        // Saved-state stamp written by [onSaveInstanceState] once the
+        // copy-and-dispatch coroutine has started: the pid of the process
+        // that started it; see the recreation guard in onCreate.
+        private const val STATE_DISPATCH_PID = "dispatch_pid"
 
         // Reserved-range contract (TASK-440): the subtitle-choice prompt and
         // the share-error notification each own a SUB-BAND of the 2401..2500
@@ -156,6 +169,20 @@ class ShareReceiverActivity : Activity() {
     private var detectionTimeoutHandler: Handler? = null
     private var detectionTimeoutRunnable: Runnable? = null
 
+    /** Set when the copy-and-dispatch coroutine starts; the only state the
+     *  recreation guard needs (see [onSaveInstanceState]). */
+    private var dispatchStarted = false
+
+    /** The app-wide entry point, resolved once per instance; [appScope] and
+     *  the registry/store reads all derive from it. */
+    private val appEntryPoint by lazy {
+        EntryPointAccessors.fromApplication(applicationContext, BackendRegistryEntryPoint::class.java)
+    }
+
+    /** The process-lifetime scope (TASK-438 rule: no hand-built scopes). The
+     *  share flow must run to completion even after finish(). */
+    private val appScope: CoroutineScope get() = appEntryPoint.applicationScope()
+
     /**
      * SAF audio picker for the shortcut flow: the same OpenDocument contract
      * the ModelTab file picker uses, driven via createIntent/parseResult
@@ -179,6 +206,22 @@ class ShareReceiverActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // A recreation redelivers the share intent to a NEW instance. A
+        // saved stamp from THIS process means the original instance's
+        // copy-and-dispatch coroutine is still alive on the app scope:
+        // re-running would copy and transcribe twice, so end the flow here.
+        // A stamp from ANOTHER process means that process died mid-flow
+        // (its coroutine died with it); re-running the redelivered intent
+        // is the recovery, so the guard lets it through. First launch
+        // (no stamp) and a recreation while the SAF picker merely waits
+        // (nothing dispatched yet) also run the normal flow.
+        val savedPid = savedInstanceState?.getInt(STATE_DISPATCH_PID, -1)
+        if (savedPid == android.os.Process.myPid()) {
+            Log.i(TAG, "Share flow already dispatched by this process; skipping re-dispatch")
+            finish()
+            return
+        }
 
         Log.i(TAG, "Share received: action=${intent?.action}, type=${intent?.type}")
 
@@ -312,66 +355,77 @@ class ShareReceiverActivity : Activity() {
 
     /**
      * The shared copy-and-dispatch flow for both audio sources: an EXTRA_STREAM
-     * share and a shortcut-picker pick. Copies while the URI grant is held,
-     * resolves the alias backend override from the LAUNCH intent's component
-     * (the picker result returns to the same instance, so the shortcut's alias
-     * is still this.intent's component), then routes to the external chooser or
-     * the subtitle/ASR dispatch.
+     * share and a shortcut-picker pick. Copies while the URI grant is held
+     * (on IO: the copy is blocking work on potentially GB-scale videos and
+     * must not sit on the MAIN thread), resolves the alias backend override
+     * from the LAUNCH intent's component (the picker result returns to the
+     * same instance, so the shortcut's alias is still this.intent's
+     * component), then routes to the external chooser or the subtitle/ASR
+     * dispatch. Runs on the process-lifetime @ApplicationScope (TASK-438: no
+     * hand-built scopes; the flow must complete even after finish()).
      */
     private fun processSharedAudio(uri: Uri, mimeType: String?) {
-        // Copy file while Activity has URI permission
-        // Content URI permissions are tied to this Activity instance
-        val result = SharedAudioHandler.copyToAppStorage(
-            applicationContext,
-            uri,
-            mimeType
-        )
-
-        val localPath: String = when (result) {
-            is SharedAudioHandler.CopyResult.Success -> result.path
-            // One message definition for every caller (the History browse FAB
-            // shares it); the copy itself already logged the specific cause.
-            else -> {
-                showErrorToast(result.userMessage(this))
-                cleanup()
-                finish()
-                return
+        dispatchStarted = true
+        appScope.launch(Dispatchers.Main) {
+            val result = withContext(Dispatchers.IO) {
+                SharedAudioHandler.copyToAppStorage(applicationContext, uri, mimeType)
             }
-        }
 
-        Log.i(TAG, "Copied to: $localPath")
-
-        // Start service with file path and detected package
-        val taskId = "share_${System.currentTimeMillis()}"
-
-        // Resolve the backend override once (applies to both the ASR path and the subtitle
-        // choice's "Transcribe audio" action). A share-target alias forces a specific backend.
-        // The entry point is resolved once here and handed to the external chooser, which
-        // needs the same store from the same app-wide singleton.
-        val entryPoint = EntryPointAccessors.fromApplication(applicationContext, BackendRegistryEntryPoint::class.java)
-        val backendOverride: String? = intent?.component?.className?.let { alias ->
-            backendIdForAlias(alias, entryPoint.backendRegistry())?.also { backendId ->
-                Log.i(TAG, "Share target alias detected: $alias -> backend: $backendId")
+            val localPath: String = when (result) {
+                is SharedAudioHandler.CopyResult.Success -> result.path
+                // One message definition for every caller (the History browse FAB
+                // shares it); the copy itself already logged the specific cause.
+                else -> {
+                    showErrorToast(result.userMessage(this@ShareReceiverActivity))
+                    cleanup()
+                    finish()
+                    return@launch
+                }
             }
-        }
 
-        // External-family share target: the sentinel must become a concrete external:<id>
-        // BEFORE any consumer (subtitle branch, timeout worker, service intent) sees it.
-        if (backendOverride == EXTERNAL_FAMILY_BACKEND_ID) {
-            showExternalModelChooser(taskId, localPath, entryPoint.externalModelStore())
-            return
-        }
+            Log.i(TAG, "Copied to: $localPath")
 
-        dispatch(taskId, localPath, backendOverride)
+            // Start service with file path and detected package
+            val taskId = "share_${System.currentTimeMillis()}"
+
+            // Resolve the backend override once (applies to both the ASR path and the subtitle
+            // choice's "Transcribe audio" action). A share-target alias forces a specific backend.
+            val backendOverride: String? = intent?.component?.className?.let { alias ->
+                backendIdForAlias(alias, appEntryPoint.backendRegistry())?.also { backendId ->
+                    Log.i(TAG, "Share target alias detected: $alias -> backend: $backendId")
+                }
+            }
+
+            // External-family share target: the sentinel must become a concrete external:<id>
+            // BEFORE any consumer (subtitle branch, timeout worker, service intent) sees it.
+            if (backendOverride == EXTERNAL_FAMILY_BACKEND_ID) {
+                showExternalModelChooser(taskId, localPath, appEntryPoint.externalModelStore())
+                return@launch
+            }
+
+            dispatch(taskId, localPath, backendOverride)
+        }
     }
 
     /**
      * Chooser for the ShareExternal family alias: a platform AlertDialog (this Activity is
      * deliberately not a ComponentActivity, so no Compose). Blocks until the user picks an
      * imported model, then continues the normal flow with the concrete external backend id.
+     * Suspending: the record read is a DataStore access and must not park the
+     * main thread (the TASK-517 rule); the caller already runs on Main.
      */
-    private fun showExternalModelChooser(taskId: String, localPath: String, store: com.antivocale.app.data.ExternalModelStore) {
-        val records = kotlinx.coroutines.runBlocking { store.validRecords() }
+    private suspend fun showExternalModelChooser(taskId: String, localPath: String, store: com.antivocale.app.data.ExternalModelStore) {
+        // The copy runs on the app scope and can outlive this Activity: a
+        // recreation (or the recreation guard's finish()) between copy and
+        // chooser leaves no window to attach a dialog to. The share is
+        // dropped, but NOT silently: the same toast + error notification as
+        // every other failure path (TASK-385's loss class).
+        if (isFinishing || isDestroyed) {
+            Log.w(TAG, "Activity gone before the external chooser could show; dropping share for $taskId")
+            showErrorToast(getString(R.string.transcription_failed))
+            return
+        }
+        val records = store.validRecords()
 
         if (records.isEmpty()) {
             // Unreachable in production (the alias component is disabled with no records),
@@ -391,7 +445,9 @@ class ShareReceiverActivity : Activity() {
             .setItems(labels) { _, which ->
                 val chosen = records[which]
                 Log.i(TAG, "External model chosen via share chooser: ${chosen.backendId}")
-                dispatch(taskId, localPath, chosen.backendId)
+                appScope.launch(Dispatchers.Main) {
+                    dispatch(taskId, localPath, chosen.backendId)
+                }
             }
             .setOnCancelListener {
                 cleanup()
@@ -400,44 +456,74 @@ class ShareReceiverActivity : Activity() {
             .show()
     }
 
-    /** The subtitle probe branch plus the default ASR path, shared by every entry. */
-    private fun dispatch(taskId: String, localPath: String, backendOverride: String?) {
-        // ---- Subtitle probe branch ----
-        // If the shared file is a video with readable text subtitle tracks, surface a choice
-        // notification instead of starting ASR. The 5-min timeout worker falls back to ASR
-        // if the user ignores the prompt; either tap cancels the worker.
-        if (SharedAudioHandler.isVideoFile(localPath)) {
-            val tracks = try {
-                SubtitleExtractor.probe(localPath)
-            } catch (e: Exception) {
-                Log.w(TAG, "Subtitle probe failed for $localPath — proceeding to ASR", e)
-                emptyList()
-            }
-            if (tracks.isNotEmpty()) {
-                val track = pickBestTrack(tracks)
-                postSubtitleChoiceNotification(taskId, localPath, track, backendOverride)
-                enqueueChoiceTimeoutWorker(taskId, localPath, backendOverride)
+    /** The subtitle probe branch plus the default ASR path, shared by every
+     *  entry. Suspending: callers run it inside their own coroutine on Main
+     *  (no nested launch hop). */
+    private suspend fun dispatch(taskId: String, localPath: String, backendOverride: String?) {
+        // TASK-517: the subtitle probe (MediaExtractor on potentially
+        // GB-scale videos) and the preference reads inside offerIfTracks
+        // are blocking IO; they ran on this Activity's MAIN thread, in ANR
+        // territory for large files. The probe runs on Dispatchers.IO;
+        // the toast/service/finish on the main thread after it resolves.
+        val offered = withContext(Dispatchers.IO) {
+            SubtitleChoice.offerIfTracks(
+                this@ShareReceiverActivity, taskId, localPath,
+                source = InferenceService.SOURCE_SHARE,
+                sourcePackage = sourcePackage,
+                backendOverride = backendOverride)
+        }
 
-                com.antivocale.app.util.ToastCompat.show(this, R.string.subtitles_found_title)
-                Log.i(TAG, "Subtitles found (${tracks.size} tracks) — posted choice notification for taskId: $taskId")
-                cleanup()
-                finish()
-                return
-            }
-            Log.i(TAG, "Video shared but no text subtitle tracks — starting ASR")
+        // GH #18: the decode probe gates only the ASR path; subtitle-only
+        // shares were handled above (offered) and never reach here.
+        val decodeError = withContext(Dispatchers.IO) {
+            appEntryPoint.audioPreprocessor().probeDecodable(localPath)
+        }
+        if (decodeError != null) {
+            showErrorToast(
+                com.antivocale.app.audio.PreprocessingErrorMessages.localize(
+                    this@ShareReceiverActivity, decodeError))
+            // GH #18 review: the just-copied file is undecodable garbage;
+            // delete it now, not at the 24h sweep.
+            withContext(Dispatchers.IO) { File(localPath).delete() }
+            cleanup()
+            finish()
+            return
+        }
+
+        if (offered) {
+            // F5: the shared probe+offer (the same code the History browse
+            // FAB runs); when a choice prompt is posted it owns the request
+            // and the share flow ends here. The timed fallback worker
+            // (user-configured timeout) falls back to ASR if the user
+            // ignores the prompt; either tap cancels the worker.
+            com.antivocale.app.util.ToastCompat.show(this, R.string.subtitles_found_title)
+            cleanup()
+            finish()
+            return
         }
 
         // ---- Default ASR path ----
-        val serviceIntent = buildServiceIntent(taskId, localPath, requestType = "audio", trackIndex = -1, backendOverride = backendOverride)
+        val serviceIntent = buildServiceIntent(taskId, localPath, requestType = TaskerRequestReceiver.REQUEST_TYPE_AUDIO, trackIndex = -1, backendOverride = backendOverride)
 
-        startForegroundService(serviceIntent)
-        Log.i(TAG, "Started InferenceService for taskId: $taskId, source: $sourcePackage")
-
-        val toastRes = if (InferenceService.isTranscribing.value)
-            R.string.added_to_queue
-        else
-            R.string.transcription_started
-        com.antivocale.app.util.ToastCompat.show(this, toastRes)
+        // F6: unified enqueue (trampoline fallback on the API 31+
+        // restriction). The Failed branch is the no-signal case (e.g.
+        // FGS restricted AND notifications unavailable): say so instead of
+        // toasting "transcription started" over a lost request.
+        when (InferenceEnqueue.start(this, serviceIntent)) {
+            InferenceEnqueue.Outcome.Started,
+            InferenceEnqueue.Outcome.FallbackNotificationPosted -> {
+                Log.i(TAG, "Enqueued InferenceService for taskId: $taskId, source: $sourcePackage")
+                val toastRes = if (InferenceService.isTranscribing.value)
+                    R.string.added_to_queue
+                else
+                    R.string.transcription_started
+                com.antivocale.app.util.ToastCompat.show(this, toastRes)
+            }
+            is InferenceEnqueue.Outcome.Failed -> {
+                Log.e(TAG, "Could not enqueue transcription for taskId: $taskId")
+                showErrorToast(getString(R.string.transcription_failed))
+            }
+        }
 
         cleanup()
         finish()
@@ -461,170 +547,11 @@ class ShareReceiverActivity : Activity() {
         // Don't pass a prompt - let InferenceService use the default from settings
         putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_SHARE)
         backendOverride?.let { putExtra(InferenceService.EXTRA_BACKEND_OVERRIDE, it) }
-        if (requestType == "subtitles") {
+        if (requestType == TaskerRequestReceiver.REQUEST_TYPE_SUBTITLES) {
             putExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, trackIndex)
         }
     }
 
-    /**
-     * Picks the best subtitle track: the one whose language matches the user's transcription
-     * language preference, else the first track. Languages are matched on the leading
-     * ISO code (e.g. "it" in "it-IT" / "ita").
-     */
-    private fun pickBestTrack(tracks: List<SubtitleTrack>): SubtitleTrack {
-        val preferred = try {
-            val preferencesManager = EntryPointAccessors.fromApplication(
-                applicationContext, SubtitlePrefsEntryPoint::class.java
-            ).preferencesManager
-            runBlocking { preferencesManager.transcriptionLanguage.first() }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not read transcription language pref, using first track", e)
-            return tracks.first()
-        }
-        if (preferred.isBlank() ||
-            preferred == TranscriptionLanguagePolicy.PREF_AUTO ||
-            preferred == TranscriptionLanguagePolicy.PREF_SYSTEM
-        ) {
-            return tracks.first()
-        }
-        return tracks.firstOrNull { track ->
-            track.language != null && (
-                track.language.equals(preferred, ignoreCase = true) ||
-                track.language.startsWith(preferred, ignoreCase = true) ||
-                preferred.startsWith(track.language, ignoreCase = true)
-            )
-        } ?: tracks.first()
-    }
-
-    /**
-     * Posts the high-priority choice notification with two actions: "Use subtitles" and
-     * "Transcribe audio". Each action broadcasts to [NotificationActionReceiver], which
-     * cancels the timeout worker and starts [InferenceService] with the right request type.
-     */
-    private fun postSubtitleChoiceNotification(
-        taskId: String,
-        localPath: String,
-        track: SubtitleTrack,
-        backendOverride: String?
-    ) {
-        AppNotificationChannel.TRANSCRIPTION_RESULT.create(this)
-
-        val languageLabel = track.language
-            ?.takeIf { it.isNotBlank() }
-            ?: getString(R.string.subtitles_language_unknown)
-
-        val baseExtras = Intent().apply {
-            putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, localPath)
-            putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
-            putExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, track.trackIndex)
-            sourcePackage?.let { putExtra(EXTRA_SOURCE_PACKAGE, it) }
-            putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_SHARE)
-            backendOverride?.let { putExtra(InferenceService.EXTRA_BACKEND_OVERRIDE, it) }
-        }
-
-        fun choiceAction(action: String): PendingIntent {
-            val actionIntent = Intent(this, NotificationActionReceiver::class.java).apply {
-                this.action = action
-                putExtras(baseExtras)
-            }
-            return PendingIntent.getBroadcast(
-                this,
-                // Unique request codes per (action, taskId) so both actions coexist.
-                (action + taskId).hashCode(),
-                actionIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-
-        // The text discloses the timed fallback (TASK-378): partial SC 2.2.1
-        // disclosure only - adjust/extend mechanisms remain future scope.
-        // BigTextStyle keeps the disclosure sentence visible in the collapsed
-        // shade and heads-up, where the base template ellipsizes it away.
-        val choiceText = getString(
-            R.string.subtitles_found_text,
-            languageLabel,
-            resources.getQuantityString(
-                R.plurals.timeout_minutes,
-                SUBTITLE_CHOICE_TIMEOUT_MINUTES.toInt(),
-                SUBTITLE_CHOICE_TIMEOUT_MINUTES.toInt(),
-            ),
-        )
-        // Swipe-dismiss means "not interested": cancel the pending fallback
-        // instead of letting it transcribe five minutes after the user
-        // declined the prompt.
-        val dismissIntent = PendingIntent.getBroadcast(
-            this,
-            ("dismiss" + taskId).hashCode(),
-            Intent(this, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_DISMISS_CHOICE
-                putExtras(baseExtras)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        // Body tap opens the app like every other notification here: the
-        // choice itself stays on the explicit buttons, so an accidental
-        // heads-up tap cannot irreversibly start transcription (TASK-378).
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            ("open" + taskId).hashCode(),
-            Intent(this, com.antivocale.app.MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
-            .setContentTitle(getString(R.string.subtitles_found_title))
-            .setContentText(choiceText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(choiceText))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(contentIntent)
-            .setDeleteIntent(dismissIntent)
-            .addAction(
-                android.R.drawable.ic_menu_edit,
-                getString(R.string.action_use_subtitles),
-                choiceAction(NotificationActionReceiver.ACTION_USE_SUBTITLES)
-            )
-            .addAction(
-                android.R.drawable.ic_media_play,
-                getString(R.string.action_transcribe_audio),
-                choiceAction(NotificationActionReceiver.ACTION_TRANSCRIBE_AUDIO)
-            )
-            .build()
-
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(choiceNotificationId(taskId), notification)
-        Log.i(TAG, "Posted subtitle choice notification (taskId=$taskId, language=${track.language})")
-    }
-
-    /**
-     * Enqueues the expedited timeout worker that falls back to ASR if the user does not
-     * tap either choice within [SUBTITLE_CHOICE_TIMEOUT_MINUTES]. UNIQUE per taskId so a
-     * re-share replaces the previous pending timeout; cancelled by either notification tap.
-     */
-    private fun enqueueChoiceTimeoutWorker(
-        taskId: String,
-        localPath: String,
-        backendOverride: String?
-    ) {
-        val request = OneTimeWorkRequestBuilder<SubtitleChoiceTimeoutWorker>()
-            .setInitialDelay(SUBTITLE_CHOICE_TIMEOUT_MINUTES, TimeUnit.MINUTES)
-            .setInputData(
-                workDataOf(
-                    SubtitleChoiceTimeoutWorker.KEY_FILE_PATH to localPath,
-                    SubtitleChoiceTimeoutWorker.KEY_TASK_ID to taskId,
-                    SubtitleChoiceTimeoutWorker.KEY_SOURCE_PACKAGE to sourcePackage,
-                    SubtitleChoiceTimeoutWorker.KEY_BACKEND_OVERRIDE to backendOverride
-                )
-            )
-            .build()
-
-        WorkManager.getInstance(this).enqueueUniqueWork(
-            "subtitle-choice-$taskId",
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
-        Log.i(TAG, "Enqueued subtitle choice timeout worker (${SUBTITLE_CHOICE_TIMEOUT_MINUTES} min) for taskId: $taskId")
-    }
 
     private fun cleanup() {
         // Unregister receiver and cancel timeout
@@ -634,6 +561,14 @@ class ShareReceiverActivity : Activity() {
         } catch (e: Exception) {
             Log.d(TAG, "Cleanup: receiver already unregistered or never registered")
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // The pid, not a boolean: a relaunch after process death must be
+        // able to tell its stamp (dead coroutine, re-run to recover) from
+        // an in-process recreation's stamp (live coroutine, skip).
+        if (dispatchStarted) outState.putInt(STATE_DISPATCH_PID, android.os.Process.myPid())
     }
 
     override fun onDestroy() {

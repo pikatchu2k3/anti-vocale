@@ -29,6 +29,16 @@ data class SubtitleTrack(val trackIndex: Int, val language: String?, val mime: S
 object SubtitleExtractor {
 
     /**
+     * Vocabulary shared with the write side ([com.antivocale.app.util.SubtitleFormatter]):
+     * this object recognizes subtitle files, that one emits them; the literals live
+     * here once so the two sides cannot drift apart.
+     */
+    const val MIME_SUBRIP = "application/x-subrip"
+    const val MIME_VTT = "text/vtt"
+    const val CUE_TIME_SEPARATOR = "-->"
+    const val VTT_HEADER = "WEBVTT"
+
+    /**
      * MIME types (and the `text/` prefix family) we treat as readable text subtitle tracks.
      *
      * Tunable: extend this set from on-device findings if a container reports a new text MIME
@@ -36,9 +46,9 @@ object SubtitleExtractor {
      * (VobSub `image/x-mpsub`, PGS) are intentionally absent — they do not decode to plain text.
      */
     private val TEXT_SUBTITLE_MIME_HINTS: Set<String> = setOf(
-        "application/x-subrip",
+        MIME_SUBRIP,
         "application/x-srt",
-        "text/vtt",
+        MIME_VTT,
         "application/webvtt",
         // MP4 mov-text family: encoders sometimes report these for the 3GPP TX3G subtitle track.
         "application/x-mpeghtml",
@@ -184,10 +194,10 @@ object SubtitleExtractor {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .filter { line ->
-                !line.contains("-->") &&
+                !line.contains(CUE_TIME_SEPARATOR) &&
                     !CUE_INDEX_REGEX.matches(line) &&
                     !STANDALONE_TIMESTAMP_REGEX.matches(line) &&
-                    line != "WEBVTT"
+                    line != VTT_HEADER
             }
             .toList()
 

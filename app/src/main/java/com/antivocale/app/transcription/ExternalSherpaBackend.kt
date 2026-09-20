@@ -262,14 +262,16 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 val detectedLang = result.lang.ifBlank { null }
 
                 if (transcription.isBlank()) {
-                    Result.failure(TranscriptionException.NoTranscriptionProduced())
+                    // GH #96: silence windows decode blank; see SherpaBackend.
+                    Result.success(TranscriptionResult(text = ""))
                 } else {
                     // Words-per-second heuristic: keep the original length, not the padded one.
                     val confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate)
                     Result.success(TranscriptionResult(
                         text = transcription,
                         confidence = confidence,
-                        detectedLanguage = detectedLang
+                        detectedLanguage = detectedLang,
+                        tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, result.durations),
                     ))
                 }
             } catch (e: Exception) {
@@ -304,13 +306,15 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
             while (rec.isReady(stream)) rec.decode(stream)
             stream.inputFinished()
             while (rec.isReady(stream)) rec.decode(stream)
-            val transcription = rec.getResult(stream).text
+            val result = rec.getResult(stream)
+            val transcription = result.text
             if (transcription.isBlank()) {
                 return Result.failure(TranscriptionException.NoTranscriptionProduced())
             }
             return Result.success(TranscriptionResult(
                 text = transcription,
                 confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate),
+                tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, FloatArray(0)),
             ))
         } catch (e: Exception) {
             Log.e(TAG, "External streaming transcription failed", e)

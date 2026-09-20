@@ -6,6 +6,10 @@ interface PreferencesManager {
 
     val modelPath: Flow<String?>
     val keepAliveTimeout: Flow<Int>
+
+    /** TASK-515: minutes the subtitles-or-transcribe choice waits before the
+     *  timed WorkManager fallback transcribes automatically. */
+    val subtitleChoiceTimeoutMinutes: Flow<Int>
     val themePreference: Flow<String>
     val themeMode: Flow<String>
     val transcriptionBackend: Flow<String>
@@ -29,6 +33,8 @@ interface PreferencesManager {
     val ggufModelPath: Flow<String?>
     val autoCopyEnabled: Flow<Boolean>
     val outputFolderUri: Flow<String?>
+    /** GH #92: auto-save file format, a [SubtitleFormatter.Format] name. Default TXT. */
+    val transcriptExportFormat: Flow<String>
     val vadEnabled: Flow<Boolean>
     val vadAdvisoryDismissed: Flow<Boolean>
 
@@ -59,6 +65,8 @@ interface PreferencesManager {
     val showRetranscribeButton: Flow<Boolean>
     val forceModelLoad: Flow<Boolean>
     val compactResultActions: Flow<Boolean>
+    /** TASK-546: show the detected-language chip on results. */
+    val languageChipEnabled: Flow<Boolean>
 
     val externalModelsJson: Flow<String?>
     suspend fun saveExternalModelsJson(json: String)
@@ -66,6 +74,9 @@ interface PreferencesManager {
     suspend fun saveModelPath(path: String)
     suspend fun clearModelPath()
     suspend fun saveKeepAliveTimeout(minutes: Int)
+
+    /** TASK-515: see [subtitleChoiceTimeoutMinutes]. */
+    suspend fun saveSubtitleChoiceTimeoutMinutes(minutes: Int)
     suspend fun saveThemePreference(theme: String)
     suspend fun saveThemeMode(mode: String)
     suspend fun saveTranscriptionBackend(backendId: String)
@@ -78,6 +89,8 @@ interface PreferencesManager {
     suspend fun clearGgufModelPath()
     suspend fun saveAutoCopyEnabled(enabled: Boolean)
     suspend fun saveOutputFolderUri(uri: String?)
+    /** GH #92: see [transcriptExportFormat]. */
+    suspend fun saveTranscriptExportFormat(format: String)
     suspend fun saveVadEnabled(enabled: Boolean)
     suspend fun saveVadAdvisoryDismissed(dismissed: Boolean)
 
@@ -98,12 +111,34 @@ interface PreferencesManager {
     suspend fun saveShowRetranscribeButton(enabled: Boolean)
     suspend fun saveForceModelLoad(enabled: Boolean)
     suspend fun saveCompactResultActions(enabled: Boolean)
+    suspend fun saveLanguageChipEnabled(enabled: Boolean)
 
     suspend fun saveBenchmarkResult(modelId: String, jsonResult: String)
     fun getBenchmarkResult(modelId: String): Flow<String?>
     fun getAllBenchmarkResults(): Flow<Map<String, String>>
     suspend fun clearBenchmarkResult(modelId: String)
     suspend fun clearAllBenchmarkResults()
+
+    /**
+     * TASK-575 / GH #106: measured per-model load footprints (model key ->
+     * record). The load pre-flight prefers these over the disk-size estimate
+     * once a model has run on this device.
+     */
+    val measuredModelMemory: Flow<Map<String, com.antivocale.app.transcription.MeasuredModelMemory.Record>>
+
+    /**
+     * Merges one load sample into the record for [key] INSIDE the storage
+     * transaction (read-modify-write races would silently lose the max;
+     * review F5). No-op when the sample proves nothing (warm no-op load).
+     */
+    suspend fun mergeMeasuredModelMemorySample(
+        key: String,
+        loadDeltaBytes: Long,
+        modelSizeBytes: Long,
+    )
+
+    /** Drops records whose key is not in [validKeys] (dead model dirs; review F3). */
+    suspend fun pruneMeasuredModelMemory(validKeys: Set<String>)
 
     suspend fun getLegacyLanguagePreference(): String
 
@@ -114,8 +149,13 @@ interface PreferencesManager {
 
     companion object {
         const val DEFAULT_KEEP_ALIVE_TIMEOUT = 5
+        /** TASK-515: the stored default; the dropdown's offered set is
+         *  presentation data and lives on SettingsViewModel. */
+        const val DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES = 5
         val DEFAULT_THREAD_COUNT = maxOf(2, Runtime.getRuntime().availableProcessors() - 2).coerceAtMost(8)
         const val DEFAULT_AUTO_COPY_ENABLED = false
+        /** GH #92: plain .txt is the default; timed formats are strictly opt-in. */
+        const val DEFAULT_TRANSCRIPT_EXPORT_FORMAT = "TXT"
         const val DEFAULT_VAD_ENABLED = false
         const val DEFAULT_PROGRESSIVE_TRANSCRIPTION = true
         const val DEFAULT_PROMPT_VALUE = ""
@@ -156,6 +196,8 @@ interface PreferencesManager {
         const val DEFAULT_SHOW_RETRANSCRIBE_BUTTON = true
         const val DEFAULT_FORCE_MODEL_LOAD = false
         const val DEFAULT_COMPACT_RESULT_ACTIONS = true
+        /** TASK-546: the chip mitigates invisible wrong-language detection; on by default. */
+        const val DEFAULT_LANGUAGE_CHIP_ENABLED = true
 
         /** The maintained community index, published from this repo. */
         const val DEFAULT_EXTERNAL_CATALOG_URL =

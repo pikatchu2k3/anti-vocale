@@ -40,6 +40,25 @@ data class LogEntity(
      *  pre-v7 rows, on every clean skip (toggle, short transcript), and on
      *  success. */
     val summarySkipReason: String? = null,
+    /** GH #92: JSON-serialized [TimedSegment] cues (see [TimedSegmentsConverter]);
+     *  null when the request produced no honest timing or predates v8. */
+    val segments: String? = null,
+    /** TASK-570: structured failure diagnostics (FailureContextJson):
+     *  error class, backend, provider, app version, chunk coverage,
+     *  metadata-vs-decoded duration at the failure point. Null on
+     *  pre-v9 rows and on every non-ERROR write. */
+    val failureContext: String? = null,
+    /** TASK-512: JSON processing context of a SUCCESS run (decode path,
+     *  chunk coverage, cap, RAM; see ProcessingContextConverter). Null on
+     *  pre-v10 rows and on text-only entries. */
+    val processingContext: String? = null,
+    /** TASK-546: what the backend reported it heard (null when the model
+     *  does not report detection, on text entries, and pre-v11 rows). */
+    val detectedLanguage: String? = null,
+    /** TASK-546/545: the language pin in force at transcription time,
+     *  policy-resolved ("auto" when the preference was untouched; the
+     *  resolved phone language for the phone pin; the code when pinned). */
+    val languagePin: String? = null,
 )
 
 fun LogEntity.toLogEntry(): LogEntry = LogEntry(
@@ -63,7 +82,12 @@ fun LogEntity.toLogEntry(): LogEntry = LogEntry(
     modelName = modelName,
     rawTranscript = rawTranscript,
     summary = summary,
-    summarySkipReason = summarySkipReason
+    summarySkipReason = summarySkipReason,
+    segments = segments,
+    failureContext = failureContext,
+    processingContext = processingContext,
+    detectedLanguage = detectedLanguage,
+    languagePin = languagePin
 )
 
 fun LogEntry.toEntity(): LogEntity = LogEntity(
@@ -84,5 +108,10 @@ fun LogEntry.toEntity(): LogEntity = LogEntity(
     modelName = modelName,
     rawTranscript = rawTranscript,
     summary = summary,
-    summarySkipReason = summarySkipReason
+    summarySkipReason = summarySkipReason,
+    segments = segments,
+    failureContext = failureContext,
+    processingContext = processingContext,
+    detectedLanguage = detectedLanguage,
+    languagePin = languagePin
 )

@@ -56,37 +56,42 @@ class NotificationActionReceiver : BroadcastReceiver() {
             ACTION_COPY_TRANSCRIPTION -> handleCopyAction(context, intent)
             ACTION_SHARE_TRANSCRIPTION -> handleShareAction(context, intent)
             ACTION_SHARE_BACK -> handleShareBackAction(context, intent)
-            ACTION_USE_SUBTITLES -> handleSubtitleChoice(context, intent, requestType = "subtitles")
+            ACTION_USE_SUBTITLES -> handleSubtitleChoice(context, intent, requestType = TaskerRequestReceiver.REQUEST_TYPE_SUBTITLES)
             ACTION_DISMISS_CHOICE -> handleDismissChoice(context, intent)
-            ACTION_TRANSCRIBE_AUDIO -> handleSubtitleChoice(context, intent, requestType = "audio")
+            ACTION_TRANSCRIBE_AUDIO -> handleSubtitleChoice(context, intent, requestType = TaskerRequestReceiver.REQUEST_TYPE_AUDIO)
             ACTION_PAGE_PREV, ACTION_PAGE_NEXT -> handlePageAction(context, intent)
             else -> Log.d(TAG, "Unknown action: ${intent.action}")
         }
     }
 
     /**
-     * Handles a subtitle-choice notification tap: cancels the 5-minute timeout worker
+     * Handles a subtitle-choice notification tap: cancels the timed fallback worker
      * (either action resolves the prompt), then forwards the request to [InferenceService]
      * with the chosen [requestType] ("subtitles" or "audio"). All extras set by
      * [com.antivocale.app.receiver.ShareReceiverActivity] are passed through verbatim.
      *
      * The notification tap is user-initiated, which on Android 12+ permits starting a
-     * foreground service from this broadcast context. If the OEM still blocks it, the
-     * worst case is the request does not run — the user can re-share. (The timeout worker
-     * is cancelled here precisely so it does not double-run.)
+     * foreground service from this broadcast context; a still-restricted start rides the
+     * InferenceEnqueue trampoline notification, so the request survives either way. (The
+     * timeout worker is cancelled here precisely so it does not double-run.)
      */
     private fun handleSubtitleChoice(context: Context, intent: Intent, requestType: String) {
         val taskId = intent.getStringExtra(TaskerRequestReceiver.EXTRA_TASK_ID)
         if (taskId != null) {
+            // Dual-cancel (code review): the path-derived name this build
+            // arms, plus the legacy per-taskId name a pre-update worker may
+            // still hold (in-window app update, the same window the legacy
+            // notification id below already covers).
+            intent.getStringExtra(TaskerRequestReceiver.EXTRA_FILE_PATH)?.let {
+                WorkManager.getInstance(context).cancelUniqueWork(SubtitleChoice.uniqueWorkName(it))
+            }
             WorkManager.getInstance(context).cancelUniqueWork("subtitle-choice-$taskId")
-            // Cancel the "Subtitles found" choice notification so it doesn't linger after the
-            // user picked an action (its id is derived from taskId, same as ShareReceiverActivity posts).
-            // The legacy raw-hash id too: a prompt posted by a pre-TASK-440 build
-            // survives an in-window app update (the worker does), and without this
-            // the stale prompt's actions could still start a transcription.
-            val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
-            notificationManager.cancel(ShareReceiverActivity.choiceNotificationId(taskId))
-            notificationManager.cancel(taskId.hashCode())
+            // The ONE prompt cancel (SubtitleChoice.cancelPrompt): the prompt
+            // posts under the PATH-keyed id; the taskId ids are pre-TASK-440
+            // legacy (round 3: this site cancelled only the legacy ids, so
+            // the prompt survived its own tap with live buttons).
+            SubtitleChoice.cancelPrompt(context,
+                intent.getStringExtra(TaskerRequestReceiver.EXTRA_FILE_PATH), taskId)
         }
 
         val serviceIntent = Intent(context, InferenceService::class.java).apply {
@@ -106,22 +111,29 @@ class NotificationActionReceiver : BroadcastReceiver() {
             intent.getStringExtra(InferenceService.EXTRA_BACKEND_OVERRIDE)?.let {
                 putExtra(InferenceService.EXTRA_BACKEND_OVERRIDE, it)
             }
-            if (requestType == "subtitles") {
+            if (requestType == TaskerRequestReceiver.REQUEST_TYPE_SUBTITLES) {
                 putExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, trackIndexFromIntent(intent))
             }
         }
 
-        try {
-            context.startForegroundService(serviceIntent)
-            Log.i(TAG, "Subtitle choice '$requestType' → started InferenceService (taskId=$taskId)")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start InferenceService for subtitle choice '$requestType'", e)
+        // F6: unified enqueue; start is total (Outcome.Failed instead of throw)
+        when (com.antivocale.app.service.InferenceEnqueue.start(context, serviceIntent)) {
+            com.antivocale.app.service.InferenceEnqueue.Outcome.Started,
+            com.antivocale.app.service.InferenceEnqueue.Outcome.FallbackNotificationPosted ->
+                Log.i(TAG, "Subtitle choice '$requestType' -> enqueued InferenceService (taskId=$taskId)")
+            is com.antivocale.app.service.InferenceEnqueue.Outcome.Failed -> {
+                // The user explicitly tapped an action; a Log.e-only branch
+                // would drop the request exactly as silently as the failure
+                // mode the Outcome gate exists to expose.
+                Log.e(TAG, "Subtitle choice '$requestType' enqueue FAILED (taskId=$taskId): request lost")
+                Toast.makeText(context, context.getString(R.string.transcription_failed), Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     /**
      * Swipe-dismiss of the subtitle-choice prompt (TASK-378): the user
-     * declined the choice, so the pending 5-minute fallback is cancelled and
+     * declined the choice, so the pending timed fallback is cancelled and
      * nothing is transcribed. No service start: a delete intent must be safe
      * to fire from anywhere.
      */
@@ -131,8 +143,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
             Log.d(TAG, "Dismiss choice without taskId; nothing to cancel")
             return
         }
-        WorkManager.getInstance(context)
-            .cancelUniqueWork("subtitle-choice-$taskId")
+        intent.getStringExtra(TaskerRequestReceiver.EXTRA_FILE_PATH)?.let {
+            WorkManager.getInstance(context).cancelUniqueWork(SubtitleChoice.uniqueWorkName(it))
+        }
+        WorkManager.getInstance(context).cancelUniqueWork("subtitle-choice-$taskId")
         Log.i(TAG, "Subtitle choice dismissed by user; cancelled fallback for taskId=$taskId")
     }
 

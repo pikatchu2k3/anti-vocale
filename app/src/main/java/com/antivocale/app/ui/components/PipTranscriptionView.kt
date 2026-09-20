@@ -35,14 +35,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.antivocale.app.R
-import com.antivocale.app.ui.viewmodel.LogsViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.antivocale.app.R
+import com.antivocale.app.ui.MAX_RENDERED_TRANSCRIPT_CHARS
+import com.antivocale.app.ui.viewmodel.LogsViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
@@ -132,12 +133,37 @@ fun PipTranscriptionView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
+                val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                val pipRenderCap = remember(displayText, fontScale) {
+                    (MAX_RENDERED_TRANSCRIPT_CHARS / fontScale.coerceAtLeast(1f)).toInt()
+                        .coerceAtLeast(1_000)
+                }
+                // GH #94: the position-indicator modifier on the scrollable
+                // text itself; the auto-scroll keeps the thumb on the bottom
+                // while the stream grows, and when the user scrolls back to
+                // read it shows where they are. No reading-progress line here:
+                // the pane is too small and the streaming tail makes "seen"
+                // meaningless.
                 Text(
-                    text = displayText,
+                    // TASK-506 /simplify F-B: the SHARED render cap, as
+                    // takeLast so a growing stream keeps its LIVE tail
+                    // (code review: take() froze the oldest prefix and the
+                    // pane stopped following the stream), scaled by
+                    // fontScale so huge accessibility text cannot re-breach
+                    // the 262142px Constraints ceiling in the narrow PiP.
+                    text = displayText.takeLast(pipRenderCap),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .fillMaxSize()
+                        // GH #94: BEFORE verticalScroll. A draw modifier after
+                        // the scroll sits inside its translated layer: it
+                        // self-measures the content height (not the viewport)
+                        // and the drawing scrolls away with the text.
+                        .transcriptPositionIndicator(
+                            scrollState,
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         .verticalScroll(scrollState),
                     lineHeight = 16.sp
                 )

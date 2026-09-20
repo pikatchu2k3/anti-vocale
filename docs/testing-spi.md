@@ -18,7 +18,7 @@ This SPI is deliberately separate from the production exported receivers (`PROCE
 
 ```text
 Action: com.antivocale.app.TEST_SPI   (string extras, one op per broadcast)
-  op     get | set | records | help   (missing or unknown op answers with help)
+  op     get | set | records | import | help   (missing or unknown op answers with help)
   key    one of the set keys below    (op=set)
   value  the new value                (op=set)
   entry  catalog entry id             (op=set, only for key=sherpa_path)
@@ -26,9 +26,10 @@ Action: com.antivocale.app.TEST_SPI   (string extras, one op per broadcast)
 
 | Op | Extras | Response |
 |---|---|---|
-| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `forceModelLoad`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `externalCatalogUrl` |
+| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `subtitleChoiceTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `forceModelLoad`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `transcriptExportFormat`, `externalCatalogUrl`, `measuredModelMemory` (TASK-575: read-only key=runs join of the measured load footprints) |
 | `set` | `key`, `value`, plus `entry` for `sherpa_path` | confirmation JSON echoing `key`/`value` (`entry` too when used), or an error object with `error` and the full `supportedKeys` list |
 | `nav` | `dest` | JSON ack echoing the destination, or an error naming the valid tokens. Starts the app and routes to the destination: `tab:history`, `tab:models`, `tab:settings`, `settings:<section>` (transcription, appearance, advanced, feedback: expands and scrolls), `settings:<subpage>` (icon_picker, prompt, per_app), `models:import` (opens the community-catalog import dialog). One broadcast replaces the swipe-and-dump slog through Settings (TASK-486). |
+| `import` | `url` | JSON with the imported `record` (same shape as `records` elements, plus the derived `backendId`); runs the same url-classifying import the dialog uses (catalog-entry JSON or HuggingFace repo url). Added for the TASK-550 device pass so imports need no UI driving |
 | `records` | none | JSON array of the imported external models; each element is the record's persisted JSON plus the derived `backendId`. All records are listed, including dangling ones whose directory no longer exists, because dangling state is precisely what a debugging session needs to see |
 | `help` | none | the op list, the set keys, the usage line, and the `PROCESS_REQUEST` pointer |
 
@@ -40,6 +41,7 @@ Set keys and value formats:
 | `punctuation` | `savePunctuationMode` | `off`, `auto`, `always` (the settings dropdown's exact set; anything else is rejected) |
 | `punctuation_prompt` | `savePunctuationPrompt` | free text, 500-char cap; blank = the localized built-in prompt |
 | `keep_alive` | `saveKeepAliveTimeout` | positive integer (minutes); 0/negative rejected (would silently fall back to the default) |
+| `subtitle_timeout` | `saveSubtitleChoiceTimeoutMinutes` | positive integer (minutes); TASK-515: the subtitles-or-transcribe choice timeout |
 | `progressive` | `saveProgressiveTranscription` | `true` or `false` (strict); gates the interim chunk notifications and the chunk nav (added after the 2026-09-04 session burned six UI taps on this toggle) |
 | `threads` | `saveThreadCount` | integer (for example `4`) |
 | `provider` | `saveInferenceProvider` | `auto`, `nnapi`, `cpu` (the settings dropdown's exact set; anything else is rejected because the app would silently run it as CPU) |
@@ -47,6 +49,7 @@ Set keys and value formats:
 | `advanced_sharing` | `saveAdvancedSharingEnabled` | `true` or `false` (strict) |
 | `auto_copy` | `saveAutoCopyEnabled` | `true` or `false` (strict) |
 | `compact_result_actions` | `saveCompactResultActions` | `true` or `false` (strict) |
+| `language_chip` | `saveLanguageChipEnabled` | `true` or `false` (strict); TASK-546: gates the detected-language chip on results |
 | `force_model_load` | `saveForceModelLoad` | `true` or `false` (strict) |
 | `group_logs` | `saveGroupLogsByConversation` | `true` or `false` (strict) |
 | `show_retranscribe` | `saveShowRetranscribeButton` | `true` or `false` (strict) |
@@ -54,6 +57,7 @@ Set keys and value formats:
 | `theme_mode` | `saveThemeMode` | `SYSTEM`, `DARK`, or `LIGHT` (ThemeMode names) |
 | `onboarding` | `saveOnboardingCompleted` | `true` or `false` (strict); TASK-491: `false` re-arms the welcome tour |
 | `vad_advisory` | `saveVadAdvisoryDismissed` | `true` or `false` (strict); polarity is inverted: `true` = dismissed |
+| `transcript_export_format` | `saveTranscriptExportFormat` | `TXT`, `TXT_TIMED`, `SRT`, or `VTT` (GH #92; the settings dropdown's exact set, anything else rejected) |
 | `language` | `saveTranscriptionLanguage` | BCP-47 tag, `system`, or `auto`; written as given, no validation (the Settings picker normally constrains this to the catalog's languages) |
 | `model_path` | `saveModelPath` | path (llm backend's model file) |
 | `sherpa_path` | `saveSherpaModelPath(entry, path)` | path, with `entry=<catalog id>` naming which backend's keyed preference is written |

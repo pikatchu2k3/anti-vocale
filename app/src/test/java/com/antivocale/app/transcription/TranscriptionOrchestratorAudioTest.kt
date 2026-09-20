@@ -111,14 +111,23 @@ class TranscriptionOrchestratorAudioTest : TranscriptionOrchestratorTestBase() {
         stubSingleChunkStream()
 
         coEvery { backend.transcribeAudio(any(), any(), any()) } returns Result.success(TranscriptionResult(text = "  Hello world  "))
+        coEvery { logDao.getByTaskId("test-1") } returns com.antivocale.app.data.local.LogEntity(
+            id = "1", timestamp = 0L, taskId = "test-1",
+            type = "AUDIO", status = "PROCESSING", prompt = "")
 
         val result = callProcessRequest(filePath = audioFile.absolutePath)
 
         assertTrue(result.isSuccess)
         assertEquals("Hello world", result.getOrNull())
         verify {
-            listener.onSuccess(eq("test-1"), eq("Hello world"), eq(false), isNull(), any())
+            listener.onSuccess(eq("test-1"), eq("Hello world"), eq(false), isNull(), any(), segments = any())
         }
+        // TASK-512: with VAD off this request routes through the pipeline
+        // (single chunk); the row carries the run's provenance either way.
+        coVerify(atLeast = 1) { logDao.update(match { e ->
+            val pc = com.antivocale.app.data.local.ProcessingContextConverter.fromJson(e.processingContext)
+            pc?.decodePath == "pipeline" && pc.totalChunks == 1 && pc.chunkCapSeconds != null
+        }) }
     }
 
     @Test
@@ -240,7 +249,11 @@ class TranscriptionOrchestratorAudioTest : TranscriptionOrchestratorTestBase() {
         val result = callProcessRequest(filePath = audioFile.absolutePath)
 
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull() is PreprocessingError.FileNotFound)
+        // TASK-568: streaming failures are wrapped in PipelineFailure so the
+        // notification can carry decoded-of-total; the typed cause survives.
+        val wrapped = result.exceptionOrNull()
+        assertTrue(wrapped is TranscriptionOrchestrator.PipelineFailure)
+        assertTrue((wrapped as TranscriptionOrchestrator.PipelineFailure).cause is PreprocessingError.FileNotFound)
         verify {
             listener.onError(eq("test-1"), eq("INFERENCE_ERROR"), any(), eq(false), eq(false), any())
         }
@@ -336,7 +349,9 @@ class TranscriptionOrchestratorAudioTest : TranscriptionOrchestratorTestBase() {
 
         assertTrue(result.isFailure)
         val error = result.exceptionOrNull()
-        assertTrue(error is PreprocessingError.FileNotFound)
+        // TASK-568: wrapped (see the single-chunk test above); cause preserved.
+        assertTrue(error is TranscriptionOrchestrator.PipelineFailure)
+        assertTrue((error as TranscriptionOrchestrator.PipelineFailure).cause is PreprocessingError.FileNotFound)
         verify {
             listener.onError(eq("test-1"), eq("INFERENCE_ERROR"), any(), eq(false), eq(false), any())
         }

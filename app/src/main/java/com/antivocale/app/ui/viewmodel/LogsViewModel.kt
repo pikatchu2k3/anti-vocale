@@ -8,7 +8,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.core.content.ContextCompat
 import com.antivocale.app.R
 import com.antivocale.app.audio.AudioDurationPolicy
 import com.antivocale.app.audio.AudioPreprocessor
@@ -20,7 +19,9 @@ import com.antivocale.app.data.local.toLogEntry
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.receiver.TaskerRequestReceiver
+import com.antivocale.app.service.InferenceEnqueue
 import com.antivocale.app.service.InferenceService
+import com.antivocale.app.util.LocaleManager
 import com.antivocale.app.util.SharedAudioHandler
 import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.transcription.BuiltInBackendIds
@@ -64,12 +65,21 @@ data class LogEntry(
     val summary: String? = null,
     /** TASK-494: stable token from the entity; rendered localized. */
     val summarySkipReason: String? = null,
+    /** GH #92: JSON-serialized timed cues (raw passthrough; see TimedSegmentsConverter). */
+    val segments: String? = null,
+    /** TASK-570: structured failure diagnostics JSON (raw passthrough; see
+     *  FailureContextJson); present on ERROR rows written since v9. */
+    val failureContext: String? = null,
+    /** TASK-512: JSON processing context (raw passthrough; see
+     *  ProcessingContextConverter); present on SUCCESS rows since v10. */
+    val processingContext: String? = null,
+    /** TASK-546: backend-reported language (null on old rows and text entries). */
+    val detectedLanguage: String? = null,
+    /** TASK-546: the policy-resolved pin in force at transcription time. */
+    val languagePin: String? = null,
 ) {
     enum class Type { TEXT, AUDIO }
 
-    companion object {
-        private const val TAG = "LogsViewModel"
-    }
     enum class Status { QUEUED, PROCESSING, SUCCESS, ERROR }
 
     /** A final, copyable transcript (mirrors the swipe/menu action gating). */
@@ -93,10 +103,18 @@ class LogsViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val backendRegistry: BackendRegistry,
     private val audioPreprocessor: AudioPreprocessor,
-    private val transcriptionCalibrator: TranscriptionCalibrator
+    private val transcriptionCalibrator: TranscriptionCalibrator,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     companion object {
         private const val TAG = "LogsViewModel"
+
+        /**
+         * F1 error-notification id: fixed, inside the free headroom of the
+         * reserved-range contract (2501..2999; see
+         * ResultNotificationFactory's band table).
+         */
+        internal const val HISTORY_ERROR_NOTIFICATION_ID = 2501
     }
 
 
@@ -187,20 +205,55 @@ class LogsViewModel @Inject constructor(
     }
 
     /**
-     * TASK-500: browse errors for the FAB snackbar, as EVENTS: a StateFlow
+     * TASK-500: user-facing errors on the History snackbar (browse FAB
+     * failures, and the guarded FGS starts below), as EVENTS: a StateFlow
      * would conflate an identical consecutive error into silence while the
      * first snackbar is still showing.
      */
-    private val _browseError = MutableSharedFlow<String>(extraBufferCapacity = 4)
-    val browseError: kotlinx.coroutines.flow.SharedFlow<String> = _browseError
+    private val _historyError = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val historyError: kotlinx.coroutines.flow.SharedFlow<String> = _historyError
 
-    private fun reportBrowseError(message: String) {
-        _browseError.tryEmit(message)
+    /**
+     * F1 (code review): with no History tab composed (Crossfade disposes it)
+     * or the app backgrounded, a SharedFlow event reaches nobody and the
+     * failure would evaporate. When nobody is listening, the message rides
+     * a notification instead; the snackbar path stays for the common case.
+     */
+    private fun reportHistoryError(message: String) {
+        if (_historyError.subscriptionCount.value > 0) {
+            _historyError.tryEmit(message)
+        } else {
+            postHistoryErrorNotification(message)
+        }
+    }
+
+    private fun postHistoryErrorNotification(message: String) {
+        // Sibling parity (code review): the result channel like the share
+        // error path, a contentIntent opening the app, NOT the Tasker
+        // fallback channel (a user silencing that channel would lose these).
+        val nm = appContext.getSystemService(android.app.NotificationManager::class.java)
+        com.antivocale.app.util.AppNotificationChannel.TRANSCRIPTION_RESULT.create(appContext)
+        val contentIntent = android.app.PendingIntent.getActivity(
+            appContext, 0,
+            android.content.Intent(appContext, com.antivocale.app.MainActivity::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = androidx.core.app.NotificationCompat.Builder(
+            appContext, com.antivocale.app.util.AppNotificationChannel.TRANSCRIPTION_RESULT.id
+        )
+            .setContentTitle(appContext.getString(com.antivocale.app.R.string.app_name))
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .build()
+        nm.notify(HISTORY_ERROR_NOTIFICATION_ID, notification)
     }
 
     /**
      * TASK-500: the History browse FAB. Copies the picked file through the
-     * SAME shared-audio path as the share receiver (extension/MIME gate,
+     * SAME shared-audio path as the share receiver (format-agnostic copy,
      * free-space pre-copy check, app-storage copy) and enqueues it on the
      * inference service with source "browse": not a share request, so no
      * share-back affordances, exactly like a Tasker-initiated local file.
@@ -210,6 +263,11 @@ class LogsViewModel @Inject constructor(
         // with no suspension points, so the coroutine can outlive the
         // Activity's teardown, and nothing here needs the Activity.
         val appContext = context.applicationContext
+        // User-facing strings resolve through the in-app locale: on API 26-32
+        // setApplicationLocales reaches Activity contexts only, so raw
+        // applicationContext.getString would ignore a pinned app language
+        // (code-review finding 4 on the browse flow).
+        val localizedContext = LocaleManager.updateContextLocale(appContext)
         viewModelScope.launch(Dispatchers.IO) {
             // copyToAppStorage never throws: every path lands in a
             // CopyResult variant (the FGS start below is the throwing step).
@@ -219,29 +277,97 @@ class LogsViewModel @Inject constructor(
                 // Every failure variant carries its own localized message
                 // (single definition next to the sealed class).
                 else -> {
-                    reportBrowseError(result.userMessage(appContext))
+                    reportHistoryError(result.userMessage(localizedContext))
                     return@launch
                 }
             }
-            val intent = Intent(appContext, InferenceService::class.java).apply {
-                putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, UUID.randomUUID().toString())
-                putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, "audio")
-                putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, localPath)
-                putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_BROWSE)
+
+            // F5: the shared probe+offer; when a choice prompt is posted it
+            // owns the request and this flow ends here.
+            if (com.antivocale.app.receiver.SubtitleChoice.offerIfTracks(
+                    appContext, UUID.randomUUID().toString(), localPath,
+                    source = InferenceService.SOURCE_BROWSE,
+                    sourcePackage = null,
+                    backendOverride = null)) {
+                return@launch
             }
-            // API 31+ throws ForegroundServiceStartNotAllowedException when
-            // the app is backgrounded before the copy finishes; the picked
-            // file is already safely in app storage, so the honest outcome
-            // is an error message, not a crash (a retry re-picks cleanly).
-            // Targeted, logged catches - the Tasker receiver's pattern for
-            // the same restriction - so a genuine bug never hides behind
-            // the restriction message.
-            try {
-                ContextCompat.startForegroundService(appContext, intent)
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "Browse enqueue failed (class=${e.javaClass.simpleName})", e)
-                reportBrowseError(appContext.getString(R.string.failed_to_process_audio))
-            }
+
+            // F3: the long-audio advisory shared with the retranscribe
+            // flow (TASK-432); above threshold the SAME dialog confirms
+            // before hours of compute can start.
+            // The in-memory active id is NULL while the model is idle-unloaded
+            // (the common pick-time state); the PERSISTED preference keeps the
+            // gate honest then (device-verified 2026-09-13: a null id fell to
+            // the whole-file ceiling and skipped the advisory entirely).
+            longAudioGate(
+                transcriptionBackendManager.activeBackendId.value
+                    ?: preferencesManager.transcriptionBackend.first(),
+                localPath,
+                localizedContext,
+            ) { enqueueBrowse(appContext, localPath, localizedContext) }
+        }
+    }
+
+    /**
+     * TASK-432 long-audio gate, shared by retranscribe and browse (F-batch
+     * reuse finding; the two inline copies had drifted on probe-failure
+     * stance). Duration probe fails OPEN (0s, no advisory): the hard
+     * ceilings inside preprocessing still protect every path.
+     */
+    private suspend fun longAudioGate(backendId: String?, filePath: String, context: Context, proceed: () -> Unit) {
+        // Off-main ALWAYS: callers arrive on either dispatcher and the probe
+        // is a container parse (code-review: the extraction had dropped the
+        // retranscribe path's withContext(IO) wrapper).
+        val duration = withContext(Dispatchers.IO) {
+            runCatching { audioPreprocessor.getAudioDuration(filePath) }.getOrDefault(0.0)
+        }
+        val decodePath = backendId
+            ?.let { transcriptionBackendManager.gateInputsFor(it) }
+            ?.decodePath(preferencesManager.vadEnabled.first())
+            ?: AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM
+        val ceiling = AudioDurationPolicy.ceilingSeconds(
+            decodePath, MemoryReadings.availableRamBytes(context), MemoryReadings.maxHeapBytes())
+        val descriptor = backendId?.let { backendRegistry.byBackendId(it) }
+        val modelPath = descriptor?.modelPathFlow(preferencesManager)?.first()
+        val profile = backendId?.let { transcriptionCalibrator.getEstimate(it, modelPath ?: "") }
+        val calibrated = profile?.hasEstimate == true
+        val estimate = AudioDurationPolicy.resolveEstimateMsPerSec(
+            profile?.msPerSecondOfAudio, calibrated, descriptor?.rtfEstimate ?: 1f)
+        val decision = AudioDurationPolicy.warnDecision(
+            duration.toLong(), ceiling, estimate, dialogCapable = true, calibrated = calibrated)
+        if (!decision.showDialog) {
+            proceed()
+            return
+        }
+        val previous = _pendingLongAudioWarning.value
+        _pendingLongAudioWarning.value = LongAudioWarning(
+            durationMinutes = decision.durationMinutes.toInt(),
+            estimateMinutes = decision.estimateMinutes,
+            isRough = decision.isRough,
+            modelDisplayName = backendId?.let { displayNameFor(it, context) } ?: "",
+            onConfirm = {
+                previous?.onConfirm?.invoke()
+                proceed()
+            },
+        )
+    }
+
+    /** The browse enqueue, shared by the direct and the warn-confirmed paths. */
+    private fun enqueueBrowse(appContext: Context, localPath: String, localizedContext: Context) {
+        val intent = Intent(appContext, InferenceService::class.java).apply {
+            putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, UUID.randomUUID().toString())
+            putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, TaskerRequestReceiver.REQUEST_TYPE_AUDIO)
+            putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, localPath)
+            putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_BROWSE)
+        }
+        // F2: the unified enqueue owns the API 31+ restriction handling;
+        // a restricted start posts the trampoline notification that
+        // preserves the request instead of dropping it.
+        when (InferenceEnqueue.start(appContext, intent)) {
+            InferenceEnqueue.Outcome.Started,
+            InferenceEnqueue.Outcome.FallbackNotificationPosted -> Unit
+            is InferenceEnqueue.Outcome.Failed ->
+                reportHistoryError(localizedContext.getString(R.string.failed_to_process_audio))
         }
     }
 
@@ -348,6 +474,15 @@ class LogsViewModel @Inject constructor(
     val compactResultActions: StateFlow<Boolean> = preferencesManager.compactResultActions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
 
+    /** TASK-546: the detected-language chip toggle (maintainer directive:
+     *  the chip is conditional on a Settings flag). */
+    val languageChipEnabled: StateFlow<Boolean> = preferencesManager.languageChipEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED)
+
+    fun saveLanguageChip(enabled: Boolean) {
+        viewModelScope.launch { preferencesManager.saveLanguageChipEnabled(enabled) }
+    }
+
     fun saveGroupLogsByConversation(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveGroupLogsByConversation(enabled)
@@ -436,45 +571,12 @@ class LogsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            // dialogCapable is true here by construction: this is the interactive
-            // in-app flow. Every headless dispatch site never calls the gate.
-            val duration = withContext(Dispatchers.IO) { audioPreprocessor.getAudioDuration(filePath) }
-            // GateInputs owns the effective-VAD rule (preference OR backend-forced);
-            // an unknown backend degrades conservatively to the whole-file path.
-            val decodePath = transcriptionBackendManager.gateInputsFor(backendId)
-                ?.decodePath(preferencesManager.vadEnabled.first())
-                ?: AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM
-            // applicationContext, not the Activity: the pending warning outlives
-            // rotation inside the ViewModel and must not hold a destroyed Activity.
+            // The shared TASK-432 gate (fail-open probe, dialogCapable);
+            // retranscribe and browse run the identical decision.
             val appContext = context.applicationContext
-            val ceiling = AudioDurationPolicy.ceilingSeconds(
-                decodePath, MemoryReadings.availableRamBytes(appContext), MemoryReadings.maxHeapBytes())
-            val descriptor = backendRegistry.byBackendId(backendId)
-            val modelPath = descriptor?.modelPathFlow(preferencesManager)?.first()
-            val profile = transcriptionCalibrator.getEstimate(backendId, modelPath ?: "")
-            val calibrated = profile?.hasEstimate == true
-            val estimate = AudioDurationPolicy.resolveEstimateMsPerSec(
-                profile?.msPerSecondOfAudio, calibrated, descriptor?.rtfEstimate ?: 1f)
-            val decision = AudioDurationPolicy.warnDecision(
-                duration.toLong(), ceiling, estimate, dialogCapable = true, calibrated = calibrated)
-            if (!decision.showDialog) {
-                // below threshold or over ceiling: the pre-read refusal carries the message
+            longAudioGate(backendId, filePath, appContext) {
                 dispatchTranscription(originalEntry, backendId, filePath, appContext)
-                return@launch
             }
-            // A second long retranscribe while a warning is pending must not drop
-            // the first request: the new confirm dispatches both, in order.
-            val previous = _pendingLongAudioWarning.value
-            _pendingLongAudioWarning.value = LongAudioWarning(
-                durationMinutes = decision.durationMinutes.toInt(),
-                estimateMinutes = decision.estimateMinutes,
-                isRough = decision.isRough,
-                modelDisplayName = displayNameFor(backendId, appContext),
-                onConfirm = {
-                    previous?.onConfirm?.invoke()
-                    dispatchTranscription(originalEntry, backendId, filePath, appContext)
-                }
-            )
         }
     }
 
@@ -488,7 +590,7 @@ class LogsViewModel @Inject constructor(
 
         val intent = Intent(context, InferenceService::class.java).apply {
             putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, newTaskId)
-            putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, "audio")
+            putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, TaskerRequestReceiver.REQUEST_TYPE_AUDIO)
             putExtra(TaskerRequestReceiver.EXTRA_PROMPT, originalEntry.prompt)
             putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, filePath)
             putExtra(InferenceService.EXTRA_SOURCE, "retranscribe")
@@ -497,6 +599,14 @@ class LogsViewModel @Inject constructor(
                 putExtra(InferenceService.EXTRA_SOURCE_PACKAGE, it)
             }
         }
-        ContextCompat.startForegroundService(context, intent)
+        // F2: unified enqueue; a restricted start rides the fallback
+        // notification (the request survives), a real failure surfaces on
+        // the History error channel.
+        when (InferenceEnqueue.start(context, intent)) {
+            InferenceEnqueue.Outcome.Started,
+            InferenceEnqueue.Outcome.FallbackNotificationPosted -> Unit
+            is InferenceEnqueue.Outcome.Failed ->
+                reportHistoryError(context.getString(R.string.failed_to_process_audio))
+        }
     }
 }

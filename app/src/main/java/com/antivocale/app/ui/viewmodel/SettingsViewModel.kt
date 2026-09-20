@@ -81,6 +81,24 @@ class SettingsViewModel @Inject constructor(
     val llmIsReadyFlow: StateFlow<Boolean> = llmManager.isReadyFlow
     val llmRemainingTimeSeconds: Long? get() = llmManager.getRemainingTimeSeconds()
 
+    /**
+     * True when an LLM (Gemma) model path is configured: the exact
+     * precondition the punctuation and summary passes gate on at runtime
+     * (the orchestrator reads the same preference). Settings rows that can
+     * never run without a Gemma hide behind this flag instead of silently
+     * no-oping (TASK-507).
+     */
+    val gemmaConfigured: StateFlow<Boolean> = preferencesManager.modelPath
+        .map { !it.isNullOrBlank() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            // Seeded synchronously from the preference cache (the TASK-485
+            // idiom, see currentPunctuationPrompt): a plain false would flash
+            // the Gemma rows out for a frame on first Settings open.
+            initialValue = runBlocking { !preferencesManager.modelPath.first().isNullOrBlank() }
+        )
+
     // Keep-alive timeout options in minutes
     val timeoutOptions = listOf(1, 2, 5, 10, 15, 30, 60)
 
@@ -111,6 +129,7 @@ class SettingsViewModel @Inject constructor(
                         entry = BundledCatalog.byId(active.backendId),
                     ),
                     LocaleManager.effectiveLocale(),
+                    phoneLanguage = LocaleManager.phoneLanguage(getApplication()),
                 )
             }
             .stateIn(
@@ -119,6 +138,7 @@ class SettingsViewModel @Inject constructor(
                 initialValue = transcriptionPickerFor(
                     emptySet(),
                     LocaleManager.effectiveLocale(),
+                    phoneLanguage = LocaleManager.phoneLanguage(getApplication()),
                 ),
             )
 
@@ -134,6 +154,17 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT
         )
 
+    // TASK-515: subtitles-or-transcribe choice timeout
+    val subtitleChoiceTimeout: StateFlow<Int> = preferencesManager.subtitleChoiceTimeoutMinutes
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES
+        )
+    // Subtitle-choice timeout options in minutes (the keepAlive precedent:
+    // presentation data lives here, only the default lives in the data layer)
+    val subtitleTimeoutOptions = listOf(1, 2, 5, 10)
+
     // Auto-copy transcription results preference
     val autoCopyEnabled: StateFlow<Boolean> = preferencesManager.autoCopyEnabled
         .stateIn(
@@ -148,6 +179,14 @@ class SettingsViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
+        )
+
+    // GH #92: auto-save file format (TXT | TXT_TIMED | SRT | VTT). Default TXT.
+    val transcriptExportFormat: StateFlow<String> = preferencesManager.transcriptExportFormat
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT
         )
 
     // VAD silence stripping preference
@@ -210,7 +249,16 @@ class SettingsViewModel @Inject constructor(
         )
 
     // TASK-276: punctuation pass mode + user prompt override.
-    val punctuationModeOptions: List<String> = PunctuationPolicy.MODE_PREFS
+    // TASK-507 review: AUTO is NOT offered. No shippable model sets
+    // punctuatesOutput=false (the GigaAM flip made every descriptor true),
+    // so shouldRun is always false in AUTO and the option was a silent
+    // no-op in the shipped default configuration. The policy still parses
+    // legacy/hand-set "auto" values as Mode.AUTO, which today behaves like
+    // off; NOTE it reactivates silently if a non-punctuating model ever
+    // ships. At that point normalize the stored value at read time, and
+    // return the option the same day.
+    val punctuationModeOptions: List<String> =
+        listOf(PunctuationPolicy.PREF_OFF, PunctuationPolicy.PREF_ALWAYS)
     val currentPunctuationMode: StateFlow<String> = preferencesManager.punctuationMode
         .stateIn(
             scope = viewModelScope,
@@ -348,6 +396,17 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS
         )
+    /** TASK-546: the detected-language chip toggle (Settings flag). */
+    val languageChipEnabled: StateFlow<Boolean> = preferencesManager.languageChipEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED
+        )
+
+    fun saveLanguageChip(enabled: Boolean) {
+        viewModelScope.launch { preferencesManager.saveLanguageChipEnabled(enabled) }
+    }
 
     fun saveCompactResultActions(enabled: Boolean) {
         viewModelScope.launch {
@@ -474,6 +533,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** TASK-515: see [subtitleChoiceTimeout]. */
+    fun saveSubtitleChoiceTimeout(minutes: Int) {
+        viewModelScope.launch {
+            preferencesManager.saveSubtitleChoiceTimeoutMinutes(minutes)
+        }
+    }
+
     /**
      * Saves the inference thread count.
      */
@@ -512,6 +578,15 @@ class SettingsViewModel @Inject constructor(
     fun saveOutputFolderUri(uri: String?) {
         viewModelScope.launch {
             preferencesManager.saveOutputFolderUri(uri)
+        }
+    }
+
+    /**
+     * GH #92: saves the auto-save file format (a [SubtitleFormatter.Format] name).
+     */
+    fun saveTranscriptExportFormat(format: String) {
+        viewModelScope.launch {
+            preferencesManager.saveTranscriptExportFormat(format)
         }
     }
 
@@ -900,8 +975,17 @@ class SettingsViewModel @Inject constructor(
 // displayName here is an unused placeholder.
 data class LanguageOption(val code: String, val displayName: String)
 
+// Every locale the app actually ships (values-* dirs). Drift between this
+// list and the res tree hides whole languages from the picker (iw/pl/tr/uk
+// shipped for four releases before being noticed, TASK-561);
+// LanguageOptionsOrderTest guards the two sides against each other. Hebrew
+// uses the canonical "he": Android 15+ (targetSdk 35+) canonicalizes the
+// legacy "iw" away in Locale.forLanguageTag, so a picker keyed "iw" would
+// not round-trip through getCurrentLocaleCode after a restart; the res dir
+// keeps its legacy values-iw name (that is what Android requires) and the
+// test maps the two.
 private val appLanguageCodes =
-    listOf("de", "en", "es", "fr", "hi", "it", "pt-BR", "ru")
+    listOf("de", "en", "es", "fa", "fr", "he", "hi", "it", "pl", "pt-BR", "ru", "tr", "uk")
 
 private fun optionsFor(
     sentinelCodes: List<String>,
@@ -946,7 +1030,20 @@ data class TranscriptionLanguagePicker(
 internal fun transcriptionPickerFor(
     offered: Set<String>,
     locale: java.util.Locale,
+    phoneLanguage: String? = null,
 ): TranscriptionLanguagePicker = TranscriptionLanguagePicker(
-    options = optionsFor(listOf(TranscriptionLanguagePolicy.PREF_AUTO), offered.toList(), locale),
+    // TASK-547 AC#2 (review round 2): "phone" (pin to the device locale) is
+    // offered only where it would actually pin: the model conditions on
+    // language AND the resolved phone language is in the offered set (a
+    // distil-it with an English phone must not offer a pin that
+    // forcedLanguage would silently override). Between Auto and the codes.
+    options = optionsFor(
+        if (phoneLanguage != null && phoneLanguage in offered) {
+            listOf(TranscriptionLanguagePolicy.PREF_AUTO, TranscriptionLanguagePolicy.PREF_PHONE)
+        } else {
+            listOf(TranscriptionLanguagePolicy.PREF_AUTO)
+        },
+        offered.toList(), locale,
+    ),
     offeredCodes = offered,
 )

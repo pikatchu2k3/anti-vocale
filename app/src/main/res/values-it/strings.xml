@@ -109,13 +109,20 @@
     <string name="tour_title_browse">Oppure scegli un file</string>
     <string name="tour_body_history">Condividi un vocale da qualunque messenger. La trascrizione appare qui, con una notifica quando è pronta.</string>
     <string name="tour_title_history">Manda un vocale</string>
-    <string name="tour_body_models">Prima scarica un modello di trascrizione dalla scheda Modelli. Parakeet è il consigliato predefinito.</string>
+    <string name="tour_body_models">Prima scarica un modello di trascrizione dalla scheda Modelli. Parakeet è il consigliato predefinito. I modelli sono grandi, fino a qualche GB, ma ognuno si scarica una sola volta. Gli aggiornamenti dell\'app non richiedono mai di scaricarli di nuovo.</string>
     <string name="tour_title_models">Scarica un modello</string>
     <string name="tour_body_welcome">La trascrizione avviene interamente su questo telefono; l\'audio non lo lascia mai. Tre indicazioni prima di iniziare.</string>
     <string name="tour_title_welcome">Benvenuto in Anti-Vocale</string>
     <string name="voice_message_duration">messaggio vocale</string>
     <string name="source_was_video">Origine: file video</string>
     <string name="processed_in">Elaborato in %1$s</string>
+    <string name="transcript_render_capped">Mostrati i primi %1$d caratteri, altri %2$d. Usa Copia per il testo completo.</string>
+    <string name="transcript_capped_autosave_hint">Trascrizione completa nel salvataggio automatico: Impostazioni → Salva su cartella</string>
+    <string name="transcript_capped_autosave_saved">Trascrizione completa salvata automaticamente nella tua cartella</string>
+    <string name="export_settings_title">Salvataggio automatico ed esportazione</string>
+    <string name="export_settings_description">Scegli cartella e formato file per le trascrizioni salvate</string>
+    <string name="error_folder_not_writable">Questa cartella non può ricevere file. Scegli una cartella dalla memoria del dispositivo (non dalla scorciatoia Scaricamenti).</string>
+    <string name="language_phone_option">Lingua del telefono (%1$s)</string>
     <string name="today">Oggi</string>
     <string name="yesterday">Ieri, %1$s</string>
     <string name="yesterday_label">Ieri</string>
@@ -249,6 +256,7 @@
     <string name="error_file_not_found">File audio non trovato</string>
     <string name="error_invalid_format">Impossibile determinare il formato audio</string>
     <string name="error_no_audio_track">Nessuna traccia audio trovata nel file</string>
+    <string name="error_no_decoder">Questo dispositivo non ha un decoder per questo audio: %1$s</string>
     <string name="error_duration_unknown">Impossibile determinare la durata dell\'audio</string>
     <string name="error_conversion_failed">Conversione non riuscita: %1$s</string>
     <string name="error_chunk_failed">Il segmento %1$d non è riuscito: %2$s</string>
@@ -275,8 +283,6 @@
     <string name="confidence_low">Bassa attendibilità</string>
     <string name="no_audio_file">Nessun file audio ricevuto</string>
     <string name="failed_to_process_audio">Impossibile elaborare il file audio</string>
-    <string name="unsupported_audio_format">Sono supportati i messaggi vocali delle app di messaggistica; .%1$s non è un formato supportato.</string>
-    <string name="unknown_audio_format">Impossibile identificare il formato audio. Condividi l\'audio da un\'app di messaggistica.</string>
     <string name="transcription_started">Trascrizione avviata…</string>
     <string name="added_to_queue">Aggiunto alla coda…</string>
     <string name="processing_chunk">Elaborazione segmento %1$d/%2$d…</string>
@@ -983,5 +989,44 @@
     <string name="a11y_back">Indietro</string>
     <string name="litertlm_importing">Importazione in corso…</string>
     <string name="model_ram_warning">%1$s potrebbe non avere memoria sufficiente su questo dispositivo. Potrebbe non caricarsi o crashare; i modelli più leggeri sono più sicuri.</string>
-    <string name="error_oom_transcription">Memoria insufficiente per trascrivere questo audio. Prova un file più corto, un modello più piccolo, o chiudi altre app.</string>
+    <string name="error_oom_transcription">Memoria insufficiente per trascrivere questo audio. Prova un file più corto, un modello più piccolo, o chiudi altre app. Se fallisce ancora, Impostazioni > Avanzate > Forza caricamento modello può saltare questo controllo.</string>
+    <string name="external_family_detected">Rilevato: %1$s</string>
+    <string name="external_family_pick_title">A quale famiglia appartiene questo modello?</string>
+    <string name="subtitle_timeout_title">Timeout della scelta automatica</string>
+    <string name="subtitle_timeout_description">Quanto aspetta la notifica di scelta per un video con sottotitoli prima di trascrivere da sola.</string>
+    <string name="transcript_export_format_title">Formato del salvataggio automatico</string>
+    <string name="transcript_export_format_description">Formato dei file salvati nella cartella di salvataggio automatico. I formati con indicatori temporali vengono scritti solo se la trascrizione ha prodotto dati temporali.</string>
+    <string name="transcript_export_format_txt">Testo semplice</string>
+    <string name="transcript_export_format_txt_timed">Testo con indicatori temporali (sperimentale)</string>
+    <string name="transcript_export_format_srt">Sottotitoli SRT (sperimentale)</string>
+    <string name="transcript_export_format_vtt">Sottotitoli WebVTT (sperimentale)</string>
+    <string name="settings_search_hint">Cerca nelle impostazioni…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d risultato</item>
+        <item quantity="other">%1$d risultati</item>
+    </plurals>
+    <string name="settings_search_no_results">Nessuna impostazione trovata</string>
+    <string name="settings_search_clear">Cancella ricerca</string>
+        <string name="partial_transcript_label">Trascrizione parziale</string>
+    
+    <string name="decoded_of_total">Decodificati %1$s di %2$s</string>
+    
+    <string name="decoded_so_far">Decodificati %1$s</string>
+    <string name="language_chip_setting_title">Bandierina lingua sui risultati</string>
+    <string name="language_chip_setting_description">Mostra la lingua rilevata su ogni trascrizione; toccala per controllare o cambiare la lingua di trascrizione</string>
+    <string name="language_chip_dialog_title">Lingua</string>
+    <string name="language_chip_detected_body">Rilevata automaticamente: %1$s. Lingua sbagliata? Cambia la lingua di trascrizione e ritrasscrivi l\'audio.</string>
+    <string name="language_chip_pinned_body">Fissata: %1$s. Per cambiarla, apri l\'impostazione della lingua di trascrizione.</string>
+    <string name="language_chip_open_setting">Apri impostazione lingua</string>
+
+    <!-- Curated Model-tab profiles (GH #70): per-language recommendation copy -->
+    <string name="curated_section_title">Per la tua lingua</string>
+    <string name="curated_browse_all">Sfoglia tutte le lingue</string>
+    <string name="curated_suggest_model">Suggerisci un modello per la tua lingua</string>
+    <string name="curated_why_distil_it">Fine-tuned for Italian: the most accurate choice</string>
+    <string name="curated_why_parakeet">Very fast (about 17x) and still very accurate</string>
+    <string name="curated_why_german_whisper">Fine-tuned for German: the most accurate option</string>
+    <string name="curated_why_canary">Compact: small download, quick results</string>
+    <string name="curated_why_swiss_german">For Swiss German dialects</string>
+    <string name="curated_why_kroko">Streaming: text appears while you speak</string>
 </resources>

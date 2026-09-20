@@ -101,7 +101,13 @@
     <string name="logs_search_no_results">No matching entries</string>
     <string name="logs_search_no_results_hint">Try a different search term</string>
     <string name="browse_audio_content_description">Pick an audio file to transcribe</string>
-    <string name="settings_replay_tour">Replay welcome tour</string>
+    <string name="settings_search_hint">Search settings…</string>
+    <plurals name="settings_search_matches">
+        <item quantity="one">%1$d match</item>
+        <item quantity="other">%1$d matches</item>
+    </plurals>
+    <string name="settings_search_no_results">No matching settings</string>
+    <string name="settings_search_clear">Clear search</string>    <string name="settings_replay_tour">Replay welcome tour</string>
     <string name="tour_done">Got it</string>
     <string name="tour_skip">Skip</string>
     <string name="tour_next">Next</string>
@@ -109,13 +115,20 @@
     <string name="tour_title_browse">Or pick a file</string>
     <string name="tour_body_history">Share a voice message from any messenger. The transcript appears here, with a notification when it\'s ready.</string>
     <string name="tour_title_history">Send a voice message</string>
-    <string name="tour_body_models">Download a transcription model from the Models tab first. Parakeet is the recommended default.</string>
+    <string name="tour_body_models">Download a transcription model from the Models tab first. Parakeet is the recommended default. Models are large, up to a few GB, but each one is downloaded only once. App updates never require downloading them again.</string>
     <string name="tour_title_models">Get a model</string>
     <string name="tour_body_welcome">Transcription runs entirely on this phone; your audio never leaves it. Three quick pointers before you start.</string>
     <string name="tour_title_welcome">Welcome to Anti-Vocale</string>
     <string name="voice_message_duration">voice message</string>
     <string name="source_was_video">Source: video file</string>
     <string name="processed_in">Processed in %1$s</string>
+    <string name="transcript_render_capped">First %1$d characters shown, %2$d more. Use Copy for the full text.</string>
+    <string name="transcript_capped_autosave_hint">Full transcript available via auto-save: Settings → Auto-Save to Folder</string>
+    <string name="transcript_capped_autosave_saved">Full transcript auto-saved to your folder</string>
+    <string name="export_settings_title">Auto-Save &amp; Export</string>
+    <string name="export_settings_description">Choose the folder and file format for saved transcripts</string>
+    <string name="error_folder_not_writable">This folder cannot receive files. Pick a folder from the device storage (not the Downloads shortcut).</string>
+    <string name="language_phone_option">Phone language (%1$s)</string>
     <string name="today">Today</string>
     <string name="yesterday">Yesterday, %1$s</string>
     <string name="yesterday_label">Yesterday</string>
@@ -249,6 +262,7 @@
     <string name="error_file_not_found">Audio file not found</string>
     <string name="error_invalid_format">Unable to determine audio format</string>
     <string name="error_no_audio_track">No audio track found in file</string>
+    <string name="error_no_decoder">This device has no decoder for this audio: %1$s</string>
     <string name="error_duration_unknown">Could not determine audio duration</string>
     <string name="error_conversion_failed">Conversion failed: %1$s</string>
     <string name="error_chunk_failed">Chunk %1$d failed: %2$s</string>
@@ -275,8 +289,6 @@
     <string name="confidence_low">Low confidence</string>
     <string name="no_audio_file">No audio file received</string>
     <string name="failed_to_process_audio">Failed to process audio file</string>
-    <string name="unsupported_audio_format">Voice messages from messaging apps are supported; .%1$s isn\'t a supported format.</string>
-    <string name="unknown_audio_format">Could not identify the audio format. Share the audio from a messaging app.</string>
     <string name="transcription_started">Transcription started…</string>
     <string name="processing_segment_progress">Segment %1$d of %2$d…</string>
     <string name="progressive_initial">Preparing text; final result available on completion</string>
@@ -976,5 +988,38 @@
     <string name="a11y_back">Back</string>
     <string name="litertlm_importing">Importing…</string>
     <string name="model_ram_warning">%1$s may not have enough memory on this device. It might fail to load or crash; lighter models are safer.</string>
-    <string name="error_oom_transcription">Not enough memory to transcribe this audio. Try a shorter file, a smaller model, or close other apps.</string>
+    <string name="error_oom_transcription">Not enough memory to transcribe this audio. Try a shorter file, a smaller model, or close other apps. If it still fails, Settings > Advanced > Force model load can bypass this check.</string>
+    <string name="external_family_detected">Detected: %1$s</string>
+    <string name="external_family_pick_title">Which family is this model?</string>
+    <string name="subtitle_timeout_title">Automatic Choice Timeout</string>
+    <string name="subtitle_timeout_description">How long the choice notification for a video with subtitles waits before transcription starts on its own.</string>
+    <string name="transcript_export_format_title">Auto-Save File Format</string>
+    <string name="transcript_export_format_description">Format of the files saved to the auto-save folder. Timestamped formats are written only when the transcription produced timing data.</string>
+    <string name="transcript_export_format_txt">Plain text</string>
+    <string name="transcript_export_format_txt_timed">Timestamped text (experimental)</string>
+    <string name="transcript_export_format_srt">SRT subtitles (experimental)</string>
+    <string name="transcript_export_format_vtt">WebVTT subtitles (experimental)</string>
+    
+    <string name="partial_transcript_label">Partial transcript</string>
+    
+    <string name="decoded_of_total">Decoded %1$s of %2$s</string>
+    
+    <string name="decoded_so_far">Decoded %1$s</string>
+    <string name="language_chip_setting_title">Language chip on results</string>
+    <string name="language_chip_setting_description">Show the detected language on each transcript; tap it to check or change the transcription language</string>
+    <string name="language_chip_dialog_title">Language</string>
+    <string name="language_chip_detected_body">Auto-detected: %1$s. Wrong language? Change the transcription language and transcribe the audio again.</string>
+    <string name="language_chip_pinned_body">Pinned: %1$s. To change it, open the transcription language setting.</string>
+    <string name="language_chip_open_setting">Open language setting</string>
+
+    <!-- Curated Model-tab profiles (GH #70): per-language recommendation copy -->
+    <string name="curated_section_title">For your language</string>
+    <string name="curated_browse_all">Browse all languages</string>
+    <string name="curated_suggest_model">Suggest a model for your language</string>
+    <string name="curated_why_distil_it" translatable="false">Fine-tuned for Italian: the most accurate choice</string>
+    <string name="curated_why_parakeet" translatable="false">Very fast (about 17x) and still very accurate</string>
+    <string name="curated_why_german_whisper" translatable="false">Fine-tuned for German: the most accurate option</string>
+    <string name="curated_why_canary" translatable="false">Compact: small download, quick results</string>
+    <string name="curated_why_swiss_german" translatable="false">For Swiss German dialects</string>
+    <string name="curated_why_kroko" translatable="false">Streaming: text appears while you speak</string>
 </resources>

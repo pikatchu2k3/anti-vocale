@@ -5,12 +5,16 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +23,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import kotlinx.coroutines.flow.first
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.launch
 import android.content.ClipData
 import android.content.Context
@@ -41,9 +48,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.antivocale.app.MainActivity
 import com.antivocale.app.R
-import com.svenjacobs.reveal.revealable
+import com.antivocale.app.ui.onboarding.tourRevealable
 import com.antivocale.app.transcription.SummaryPolicy
+import com.antivocale.app.data.local.FailureContextJson
+import com.antivocale.app.data.local.ProcessingContextConverter
 import com.antivocale.app.util.AppInfoUtils
+import com.antivocale.app.util.AudioDurationFormat
+import com.antivocale.app.util.DecodedOfTotalFormat
 import com.antivocale.app.util.SharedAudioHandler
 import com.antivocale.app.util.formatProcessingTime
 import com.antivocale.app.data.PreferencesManager
@@ -58,8 +69,12 @@ import com.antivocale.app.ui.components.SwipeToRevealBox
 import com.antivocale.app.ui.components.rememberSwipeToRevealState
 import com.antivocale.app.util.ToastCompat
 import com.antivocale.app.util.FeedbackHelper
+import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.ui.viewmodel.LogEntry
 import com.antivocale.app.ui.onboarding.TourStep
+import com.antivocale.app.ui.MAX_RENDERED_TRANSCRIPT_CHARS
+import com.antivocale.app.ui.components.CappedTranscriptText
+import com.antivocale.app.ui.components.highlightText
 import com.antivocale.app.ui.viewmodel.LogsViewModel
 import androidx.compose.runtime.produceState
 import com.antivocale.app.ui.dialogs.LongAudioWarningDialog
@@ -78,6 +93,7 @@ internal interface LogGroup {
     val logs: List<LogEntry>
 }
 
+
 /**
  * TASK-374: opens the feedback email pre-filled with this entry's facts and a
  * TRUNCATED excerpt (the user reviews/edits before sending; full transcripts
@@ -92,10 +108,18 @@ private fun reportTranscription(context: Context, log: LogEntry) {
                 taskId = log.taskId,
                 modelName = log.modelName ?: "-",
                 audioDurationSeconds = log.audioDurationSeconds,
-                processingTimeMs = log.durationMs,
+                // TASK-568: durationMs on ERROR rows is decoded-at-failure
+                // audio, not processing time; the email field keeps its meaning.
+                processingTimeMs = if (log.status == LogEntry.Status.SUCCESS) log.durationMs else 0L,
                 status = log.status.name,
                 excerpt = log.result,
                 errorMessage = log.errorMessage,
+                failureDiagnostics = FailureContextJson.render(
+                    FailureContextJson.fromJson(log.failureContext)),
+                appVersion = FeedbackHelper.currentVersionName(context),
+                deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
+                processingLine = ProcessingContextConverter.render(
+                    ProcessingContextConverter.fromJson(log.processingContext)),
             ),
             FeedbackHelper.TranscriptLabels(
                 task = context.getString(R.string.feedback_label_task),
@@ -278,6 +302,7 @@ private fun buildSwipeActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsTab(
+    onNavigateToSettings: (() -> Unit)? = null,
     viewModel: LogsViewModel = hiltViewModel(),
     highlightTaskId: String? = null,
     tourRevealState: com.svenjacobs.reveal.RevealState,
@@ -390,10 +415,19 @@ fun LogsTab(
     ) { uri ->
         if (uri != null) viewModel.transcribeLocalFile(context, uri)
     }
-    LaunchedEffect(Unit) {
-        viewModel.browseError.collect {
-            snackbarHostState.showSnackbar(it)
+    // Lifecycle-aware (code review F1): collect only while RESUMED, so a
+    // failure while the activity is STOPPED finds zero subscribers and the
+    // ViewModel routes it to a notification instead of an invisible host.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val job = lifecycleOwner.lifecycleScope.launch {
+            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.historyError.collect {
+                    snackbarHostState.showSnackbar(it)
+                }
+            }
         }
+        onDispose { job.cancel() }
     }
 
     Scaffold(
@@ -405,10 +439,7 @@ fun LogsTab(
                 onClick = { browseLauncher.launch(arrayOf("audio/*", "video/*")) },
                 modifier = Modifier
                     .navigationBarsPadding()
-                    .revealable(
-                        key = TourStep.BrowseFab.key,
-                        state = tourRevealState,
-                    ),
+                    .tourRevealable(TourStep.BrowseFab.key, tourRevealState),
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
@@ -560,57 +591,40 @@ fun LogsTab(
                     )
                 ) {
                     item(key = "header") {
+                        // TASK-564 (maintainer): the search field is the
+                        // tab's first element, at the same 16dp inset and on
+                        // the same surface as the Settings search field.
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface)
+                                .padding(16.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Locale-safe: weight + ellipsis keeps the Clear button
-                                // anchored under longer locales (TASK-345)
-                                Text(
-                                    text = stringResource(R.string.logs_recent_requests, logs.size),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                TextButton(
-                                    onClick = { showClearDialog = true },
-                                    enabled = logs.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        Icons.Default.DeleteSweep,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(stringResource(R.string.logs_clear))
-                                }
-                            }
-
                             OutlinedTextField(
                                 value = searchQuery,
                                 onValueChange = { viewModel.onSearchQueryChanged(it) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text(stringResource(R.string.logs_search_placeholder)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Search, contentDescription = null)
                                 },
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                                 trailingIcon = {
+                                    // Search-clear when a query is active;
+                                    // history-clear otherwise (the title row
+                                    // that used to carry it is gone).
                                     if (searchQuery.isNotEmpty()) {
                                         IconButton(onClick = { viewModel.clearSearch() }) {
                                             Icon(
                                                 Icons.Default.Clear,
                                                 contentDescription = stringResource(R.string.clear_search)
+                                            )
+                                        }
+                                    } else if (logs.isNotEmpty()) {
+                                        IconButton(onClick = { showClearDialog = true }) {
+                                            Icon(
+                                                Icons.Default.DeleteSweep,
+                                                contentDescription = stringResource(R.string.logs_clear),
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
                                     }
@@ -666,7 +680,8 @@ fun LogsTab(
                                         onDeleteLog = { id -> viewModel.deleteLog(id) },
                                         viewModel = viewModel,
                                         onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
-                                        compactActions = compactActions
+                                        compactActions = compactActions,
+                                        onNavigateToSettings = onNavigateToSettings,
                                     )
                                     HorizontalDivider(
                                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -703,7 +718,8 @@ fun LogsTab(
                                     onDeleteLog = { id -> viewModel.deleteLog(id) },
                                     viewModel = viewModel,
                                     onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
-                                    compactActions = compactActions
+                                    compactActions = compactActions,
+                                    onNavigateToSettings = onNavigateToSettings,
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -720,28 +736,32 @@ fun LogsTab(
 
 @Composable
 private fun DateGroupHeader(label: String, count: Int) {
+    // TASK-566 follow-up: a container from the brand ramp (not the old
+    // indigo chip): surfaceContainerHigh sits one step below the cards,
+    // so the group reads as a section without a third color family.
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.small
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "($count)",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -864,7 +884,10 @@ fun LogEntryItem(
     onRetranscribe: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onCancel: (() -> Unit)? = null,
-    compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS
+    compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+    onNavigateToSettings: (() -> Unit)? = null,
+    /** TASK-546: render the language chip (the Settings flag's value). */
+    showLanguageChip: Boolean = false,
 ) {
     val context = LocalContext.current
     var contextMenuExpanded by remember { mutableStateOf(false) }
@@ -879,7 +902,12 @@ fun LogEntryItem(
             .combinedClickable(
                 onClick = { onExpandChange(!expanded) },
                 onLongClick = { contextMenuExpanded = true }
-            )
+            ),
+        // TASK-564: the Models-tab container idiom (the app-wide style
+        // reference); matches SectionCard and the curated model cards.
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Long-press context menu (GH #52), anchored to the card's top-start.
@@ -951,7 +979,7 @@ fun LogEntryItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = formatAudioDuration(log.audioDurationSeconds),
+                        text = AudioDurationFormat.format(log.audioDurationSeconds),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -1090,20 +1118,11 @@ fun LogEntryItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = highlightText(
-                                log.result,
-                                searchQuery,
-                                MaterialTheme.colorScheme.tertiary
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                                    shape = MaterialTheme.shapes.small
-                                )
-                                .padding(8.dp)
+                        CappedTranscriptText(
+                            text = log.result,
+                            searchQuery = searchQuery,
+                            container = MaterialTheme.colorScheme.primaryContainer,
+                            onAutoSaveHintClick = onNavigateToSettings,
                         )
 
                         // TASK-121.4: the AI summary of a long transcript, when the
@@ -1188,6 +1207,22 @@ fun LogEntryItem(
                                     )
                                 }
                             }
+                            // TASK-512: the processing line (decode path, chunk
+                            // coverage, cap, RAM) so a long-run report is
+                            // attributable from the card alone. Remember-parsed
+                            // (the list re-emits on every interim write).
+                            val renderedProcessing = remember(log.processingContext) {
+                                ProcessingContextConverter.render(
+                                    ProcessingContextConverter.fromJson(log.processingContext))
+                            }
+                            renderedProcessing?.let { rendered ->
+                                Text(
+                                    text = rendered,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             // Model that produced the transcription (GH #45); null on pre-v4
                             // rows. Long external-import names wrap (TASK-495) instead of
                             // ellipsizing their tail.
@@ -1196,6 +1231,13 @@ fun LogEntryItem(
                                     text = stringResource(R.string.logs_model_label, name),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (showLanguageChip) {
+                                LanguageChip(
+                                    detected = log.detectedLanguage,
+                                    pinned = log.languagePin,
+                                    onOpenSetting = { onNavigateToSettings?.invoke() },
                                 )
                             }
                         }
@@ -1240,6 +1282,37 @@ fun LogEntryItem(
                         }
                     }
                     LogEntry.Status.ERROR -> {
+                        // TASK-568: a failed long run keeps whatever was
+                        // transcribed before the stream died (the streaming
+                        // catches persist it); show it with a partial
+                        // qualifier and, when the failure point is known,
+                        // the decoded-of-total line. Empty result renders
+                        // exactly as before.
+                        if (log.result.isNotEmpty()) {
+                            // The salvaged transcript is the run's only
+                            // output: the shared block gives it the copy
+                            // affordance the summary blocks have (GH #72
+                            // rationale), not just a rendered Text.
+                            LabeledTranscriptBlock(
+                                label = stringResource(R.string.partial_transcript_label),
+                                copyLabelRes = R.string.copy,
+                                text = log.result,
+                                searchQuery = searchQuery,
+                            )
+                            if (log.durationMs > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                DecodedOfTotalFormat
+                                    .format(context, log.durationMs / 1000.0, log.audioDurationSeconds)
+                                    ?.let {
+                                        Text(
+                                            text = it,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
                         Text(
                             text = stringResource(R.string.logs_error_label),
                             style = MaterialTheme.typography.labelSmall,
@@ -1258,6 +1331,23 @@ fun LogEntryItem(
                                 )
                                 .padding(8.dp)
                         )
+                        // TASK-570: the structured diagnostics line (backend,
+                        // provider, version, chunk coverage, durations) so a
+                        // screenshot of the failure is actionable alone. The
+                        // JSON parse is remembered: list recompositions are
+                        // frequent (every interim write re-emits the flow).
+                        val renderedDiagnostics = remember(log.failureContext) {
+                            FailureContextJson.render(FailureContextJson.fromJson(log.failureContext))
+                        }
+                        renderedDiagnostics?.let { rendered ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = rendered,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     LogEntry.Status.QUEUED -> {
                         QueuedStatusLabel()
@@ -1271,20 +1361,14 @@ fun LogEntryItem(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = highlightText(
-                                    log.result,
-                                    searchQuery,
-                                    MaterialTheme.colorScheme.tertiary
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                                        shape = MaterialTheme.shapes.small
-                                    )
-                                    .padding(8.dp)
+                            // TASK-506 /simplify F-A: the interim streaming
+                            // result is the exact surface where a repetition
+                            // loop grows; same cap as the completed result.
+                            CappedTranscriptText(
+                                text = log.result,
+                                searchQuery = searchQuery,
+                                container = MaterialTheme.colorScheme.primaryContainer,
+                                onAutoSaveHintClick = onNavigateToSettings,
                             )
                         } else {
                             SkeletonTranscriptionCard()
@@ -1317,19 +1401,13 @@ fun LogEntryItem(
     }
 }
 
-// Format audio duration: 83.5 -> "1:23", 45.0 -> "0:45"
-private fun formatAudioDuration(seconds: Double): String {
-    if (seconds <= 0) return "0:00"
-    val totalSeconds = seconds.toInt()
-    val minutes = totalSeconds / 60
-    val secs = totalSeconds % 60
-    return "$minutes:${secs.toString().padStart(2, '0')}"
-}
-
 // Format relative time: "5 min ago", "Yesterday 14:32", "Mar 2, 14:32"
 private fun formatRelativeTime(timestamp: Long, context: Context): String {
     val now = System.currentTimeMillis()
-    val diff = now - timestamp
+    // Clamp future timestamps (clock skew, imported data) to "now": a negative
+    // diff fell into the seconds branch and rendered raw "-46213s ago"
+    // (maintainer trial 2026-09-13, TASK-507).
+    val diff = (now - timestamp).coerceAtLeast(0)
     val locale = context.resources.configuration.locales.get(0)
     return when {
         diff < 60_000 -> context.getString(R.string.time_seconds_ago, diff / 1000)
@@ -1372,43 +1450,6 @@ private fun getPreviewText(text: String, maxLength: Int = 50): String {
     return text.take(maxLength) + "…"
 }
 
-// Highlight all occurrences of query in text (case-insensitive)
-@Composable
-private fun highlightText(
-    text: String,
-    query: String,
-    highlightColor: androidx.compose.ui.graphics.Color
-): AnnotatedString {
-    if (query.isBlank()) return AnnotatedString(text)
-
-    return buildAnnotatedString {
-        var currentIndex = 0
-        val lowerText = text.lowercase()
-        val lowerQuery = query.lowercase()
-
-        while (currentIndex < text.length) {
-            val matchIndex = lowerText.indexOf(lowerQuery, currentIndex)
-            if (matchIndex == -1) {
-                append(text.substring(currentIndex))
-                break
-            }
-            // Append text before the match
-            if (matchIndex > currentIndex) {
-                append(text.substring(currentIndex, matchIndex))
-            }
-            // Append the matched text with highlight
-            withStyle(SpanStyle(
-                color = highlightColor,
-                fontWeight = FontWeight.Bold,
-                background = highlightColor.copy(alpha = 0.15f)
-            )) {
-                append(text.substring(matchIndex, matchIndex + query.length))
-            }
-            currentIndex = matchIndex + query.length
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LogEntryWithSwipe(
@@ -1424,9 +1465,12 @@ private fun LogEntryWithSwipe(
     onDeleteLog: (String) -> Unit,
     viewModel: LogsViewModel,
     onRetranscribe: (() -> Unit)? = null,
-    compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS
+    compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+    onNavigateToSettings: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    // TASK-546: the chip flag, collected once here (the item stays stateless).
+    val showLanguageChip by viewModel.languageChipEnabled.collectAsState()
     if (SwipeActionMode.from(swipeActionMode) == SwipeActionMode.REVEAL) {
         val revealState = rememberSwipeToRevealState()
 
@@ -1475,7 +1519,9 @@ private fun LogEntryWithSwipe(
                 onRetranscribe = onRetranscribe,
                 onCancel = { cancelTask(context, log.taskId) },
                 onDelete = { onDeleted(log); viewModel.deleteLog(log.id) },
-                compactActions = compactActions
+                compactActions = compactActions,
+                onNavigateToSettings = onNavigateToSettings,
+                showLanguageChip = showLanguageChip,
             )
         }
     } else {
@@ -1522,7 +1568,9 @@ private fun LogEntryWithSwipe(
                 onRetranscribe = onRetranscribe,
                 onCancel = { cancelTask(context, log.taskId) },
                 onDelete = { onDeleted(log); onDeleteLog(log.id) },
-                compactActions = compactActions
+                compactActions = compactActions,
+                onNavigateToSettings = onNavigateToSettings,
+                showLanguageChip = showLanguageChip,
             )
         }
     }
@@ -1549,7 +1597,9 @@ private fun ConversationGroupHeader(
                 role = Role.Button
                 stateDescription = toggleStateDescription
             },
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        // TASK-566 follow-up: the brand ramp step shared with the date
+        // headers, so a collapsed conversation group reads as a section.
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.small,
         onClick = onToggle
     ) {
@@ -1560,20 +1610,25 @@ private fun ConversationGroupHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                if (expanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = appName.ifBlank { stringResource(R.string.conversation_group_unknown) },
                 style = MaterialTheme.typography.labelMedium,
-                // Locale-safe: ellipsize before the count/timestamp column (TASK-345)
+                // Locale-safe: ellipsize before the count/timestamp column (TASK-345).
+                // TASK-507: the ONLY weighted child. The previous pair (this
+                // one fill=false + a weighted spacer) leaked the name's
+                // unused share past the row end under Arrangement.Start, so
+                // the timestamp floated left by (share/2 - nameWidth):
+                // short group names visibly misaligned the times across rows.
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -1582,7 +1637,7 @@ private fun ConversationGroupHeader(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = formatRelativeTime(lastTimestamp, context),
                 style = MaterialTheme.typography.labelSmall,
@@ -1631,6 +1686,66 @@ private fun summarySkipCaptionRes(reason: String?): Int? = when (reason) {
     else -> null
 }
 
+
+/**
+ * TASK-546: the language fact of a result, visible (the detection-failure
+ * class used to be invisible). Shows the backend-reported language when the
+ * run auto-detected, the pin when it was forced; tapping opens the facts and
+ * the path to the language setting (the recovery arm: pin there, then
+ * re-transcribe the same audio). Hidden entirely when neither fact exists
+ * (old rows, text entries) or via the Settings toggle (maintainer directive).
+ */
+@Composable
+private fun LanguageChip(
+    detected: String?,
+    pinned: String?,
+    onOpenSetting: () -> Unit,
+) {
+    val autoDetected = pinned == null || pinned == "auto"
+    val code = if (autoDetected) detected else pinned
+    if (code.isNullOrBlank()) return
+    var showFacts by remember { mutableStateOf(false) }
+    TextButton(
+        onClick = { showFacts = true },
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+        modifier = Modifier.height(28.dp)
+    ) {
+        Text(
+            text = LanguageNames.nativeLanguageName(code) +
+                (if (!autoDetected) "" else " *"),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (showFacts) {
+        AlertDialog(
+            onDismissRequest = { showFacts = false },
+            title = { Text(stringResource(R.string.language_chip_dialog_title)) },
+            text = { Text(
+                if (autoDetected)
+                    stringResource(
+                        R.string.language_chip_detected_body,
+                        LanguageNames.nativeLanguageName(detected ?: code))
+                else
+                    stringResource(
+                        R.string.language_chip_pinned_body,
+                        LanguageNames.nativeLanguageName(code))
+            ) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showFacts = false
+                    onOpenSetting()
+                }) { Text(stringResource(R.string.language_chip_open_setting)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFacts = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
 /**
  * A labeled secondary transcript block of the expanded log card (summary,
  * pre-punctuation original): labelSmall caption, highlighted body on the
@@ -1666,10 +1781,10 @@ private fun LabeledTranscriptBlock(
         )
     }
     Spacer(modifier = Modifier.height(4.dp))
-    Text(
-        text = highlightText(text, searchQuery, MaterialTheme.colorScheme.tertiary),
+    CappedTranscriptText(
+        text = text,
+        searchQuery = searchQuery,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.transcriptBlockSurface()
+        textColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
