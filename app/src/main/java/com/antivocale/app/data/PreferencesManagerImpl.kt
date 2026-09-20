@@ -33,6 +33,7 @@ class PreferencesManagerImpl(
         private val KEEP_ALIVE_TIMEOUT_LEGACY = stringPreferencesKey("keep_alive_timeout")
         private val LANGUAGE_PREFERENCE = stringPreferencesKey("language_preference")
         private val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
+        private val TEXT_SCALE = stringPreferencesKey("text_scale")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val TRANSCRIPTION_BACKEND = stringPreferencesKey("transcription_backend")
         private val SHERPA_MODEL_PATH_PREFIX = "sherpa_model_path_"
@@ -95,6 +96,7 @@ class PreferencesManagerImpl(
         val subtitleChoiceTimeout: Int = PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES,
         val themePreference: String = PreferencesManager.DEFAULT_THEME,
         val themeMode: String = PreferencesManager.DEFAULT_THEME_MODE,
+        val textScale: String = PreferencesManager.DEFAULT_TEXT_SCALE,
         val transcriptionBackend: String = PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
         val sherpaModelPaths: Map<String, String?> = emptyMap(),
         val customTransducerModelPath: String? = null,
@@ -136,6 +138,7 @@ class PreferencesManagerImpl(
             ?: PreferencesManager.DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES,
         themePreference = this[THEME_PREFERENCE] ?: PreferencesManager.DEFAULT_THEME,
         themeMode = this[THEME_MODE] ?: PreferencesManager.DEFAULT_THEME_MODE,
+        textScale = this[TEXT_SCALE] ?: PreferencesManager.DEFAULT_TEXT_SCALE,
         transcriptionBackend = this[TRANSCRIPTION_BACKEND] ?: PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
         sherpaModelPaths = LEGACY_MODEL_PATH_KEYS.entries.associate { (entryId, legacyKey) ->
             entryId to (this[sherpaModelPathKey(entryId)] ?: this[legacyKey])
@@ -225,6 +228,17 @@ class PreferencesManagerImpl(
 
     override val themePreference: Flow<String> = dataStore.data.map { it[THEME_PREFERENCE] ?: PreferencesManager.DEFAULT_THEME }
         .onStart { emit(cache.get().themePreference) }
+
+    override val textScalePreference: Flow<String> =
+        dataStore.data.map { it[TEXT_SCALE] ?: PreferencesManager.DEFAULT_TEXT_SCALE }
+            .onStart { emit(cache.get().textScale) }
+
+    override suspend fun saveTextScale(value: String) {
+        dataStore.edit { preferences ->
+            preferences[TEXT_SCALE] = value
+        }
+        cache.updateAndGet { it.copy(textScale = value) }
+    }
 
     override suspend fun saveThemePreference(theme: String) {
         dataStore.edit { preferences ->
