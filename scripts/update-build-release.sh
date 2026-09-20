@@ -48,16 +48,45 @@ if git merge-base --is-ancestor "upstream/$UPSTREAM_BRANCH" HEAD && [ "${FORCE:-
 fi
 
 step "[2/6] Upstream mergen"
-if ! git merge "upstream/$UPSTREAM_BRANCH" --no-edit >&2; then
-  fail "MERGE-KONFLIKT in $REPO_DIR — manuell loesen: git status"
+# Konflikte automatisch zugunsten des Forks aufloesen (-X ours): Upstream-Aenderungen
+# ausserhalb der Konflikthunks kommen weiter mit, die Fork-Patches bleiben stehen.
+# Ein Merge-Konflikt darf die Wochenschleife NICHT mehr anhalten (09/2026: 3 Laeufe
+# in Folge an app/build.gradle.kts + InferenceService.kt gescheitert).
+if ! git merge -X ours "upstream/$UPSTREAM_BRANCH" --no-edit >&2; then
+  CONFLICTS="$(git diff --name-only --diff-filter=U)"
+  [ -n "$CONFLICTS" ] || fail "Merge fehlgeschlagen ohne Konfliktdateien — Repo pruefen"
+  for f in $CONFLICTS; do
+    case "$f" in
+      app/build.gradle.kts|app/src/main/AndroidManifest.xml|app/src/main/java/com/antivocale/app/MainActivity.kt|app/src/main/java/com/antivocale/app/audio/AudioPreprocessor.kt|app/src/main/java/com/antivocale/app/service/InferenceService.kt|app/src/main/java/com/antivocale/app/transcription/TranscriptionOrchestrator.kt|app/src/debug/res/values/strings.xml|app/src/debug/res/values-de/strings.xml)
+        if git checkout --ours -- "$f" 2>/dev/null && git add -- "$f"; then
+          echo "   Fork-Datei behalten: $f" >&2
+        else
+          fail "Konflikt in $f nicht automatisch aufloesbar — manuell pruefen"
+        fi ;;
+      *) fail "Merge-Konflikt in $f (unbekannte Datei) — manuell pruefen" ;;
+    esac
+  done
+  git commit --no-edit >/dev/null || fail "Merge-Commit fehlgeschlagen"
 fi
+
+step "[3/6] Fork-Patches pruefen"
+# Ein Merge, der still einen Fork-Patch verliert, darf nie in einen Release laufen.
+fork_marker() { grep -q -F -- "$2" "$1" || fail "Fork-Patch fehlt nach Merge: '$2' in $1"; }
+fork_marker app/build.gradle.kts 'System.getenv("VERSION_CODE")'
+fork_marker app/build.gradle.kts 'System.getenv("VERSION_NAME")'
+fork_marker app/src/main/AndroidManifest.xml 'READ_MEDIA_AUDIO'
+fork_marker app/src/main/java/com/antivocale/app/MainActivity.kt 'requestAudioPermissionIfNeeded'
+fork_marker app/src/main/java/com/antivocale/app/audio/AudioPreprocessor.kt 'openAudioSource'
+fork_marker app/src/main/java/com/antivocale/app/service/InferenceService.kt 'Fork: Always surface the result notification'
+fork_marker app/src/main/java/com/antivocale/app/transcription/TranscriptionOrchestrator.kt 'resolveExistingAudioPath'
+fork_marker app/src/debug/res/values/strings.xml 'Anti-Vocale Storage'
 
 # Tag VOR dem Build berechnen und in die APK backen (Obtainium-Vergleich Tag == versionName)
 TAG="v$(date +%Y.%m.%d)"
 export VERSION_NAME="$TAG"
 export VERSION_CODE="$(date +%Y%m%d)"
 
-step "[3/6] Build ($GRADLE_TASK, $TAG)"
+step "[4/6] Build ($GRADLE_TASK, $TAG)"
 if ! { ./gradlew "$GRADLE_TASK" 2>&1 | tail -25; } >&2; then
   fail "BUILD FEHLGESCHLAGEN (Repair: Log pruefen)"
 fi
@@ -74,14 +103,14 @@ case "$BAKED" in
   *) fail "versionName '$BAKED' matcht Tag '$TAG' nicht — Build-Env/Commit-Problem" ;;
 esac
 
-step "[4/6] Push zum Fork"
+step "[5/6] Push zum Fork"
 git fetch origin "$UPSTREAM_BRANCH" >/dev/null 2>&1 || true
 if ! git rebase --rebase-merges "origin/$UPSTREAM_BRANCH" >&2; then
   fail "REBASE auf origin/$UPSTREAM_BRANCH fehlgeschlagen - manuell loesen"
 fi
 git push origin "$UPSTREAM_BRANCH" 2>&1 | tail -2 >&2
 
-step "[5/6] Release erstellen"
+step "[6/6] Release erstellen"
 UPSTREAM_HASH=$(git log -1 --format=%h "upstream/$UPSTREAM_BRANCH")
 UPSTREAM_DATE=$(git log -1 --format=%cs "upstream/$UPSTREAM_BRANCH")
 BODY="Automatischer Build von **anti-vocale** (Upstream \`${UPSTREAM_HASH}\` vom ${UPSTREAM_DATE}) + Custom-Patch (Storage-Permission fuer /storage/...-Broadcasts, Ergebnis-Notification immer, signal-Rename-Fallback).
