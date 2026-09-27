@@ -2128,6 +2128,17 @@ class TranscriptionOrchestrator @Inject constructor(
         // unreliable Tasker %evtprm1 bindings).
         val effectiveFilePath = resolveExistingAudioPath(filePath)
 
+        // TASK-600 F11: ONE collector seam. Both decode arms record their
+        // sample timeline here; the collector fires exactly once, at this
+        // function's tail, instead of being re-plumbed per arm (the fixed
+        // wiring bug was the recurrence proof).
+        var sampleTimeline: List<FloatArray>? = null
+        var sampleTimelineRate = 16000
+
+        fun fireCollector() {
+            sampleTimeline?.let { collectSamples?.invoke(it, sampleTimelineRate) }
+        }
+
         val backend = backendManager.getActiveBackend()
             ?: return Result.failure(IllegalStateException("No active backend"))
 
@@ -2274,20 +2285,33 @@ class TranscriptionOrchestrator @Inject constructor(
         val totalStartMs = System.currentTimeMillis()
 
         if (pipelineChunkSeconds != null) {
-            return applyFinalGenerativePass(
-                backend, promptPlan.finalPass,
-                processPipelinedAudio(
-                    taskId = taskId,
-                    filePath = effectiveFilePath,
-                    backend = backend,
-                    maxChunkDurationSeconds = pipelineChunkSeconds,
-                    streamedWithoutVad = fellBackFromVad,
-                    context = context,
-                    coroutineScope = coroutineScope,
-                    listener = listener,
-                    prompt = promptPlan.perChunk,
-                    progressiveEnabled = progressiveEnabled
-                ))
+            val pipelined = processPipelinedAudio(
+                taskId = taskId,
+                filePath = effectiveFilePath,
+                backend = backend,
+                maxChunkDurationSeconds = pipelineChunkSeconds,
+                streamedWithoutVad = fellBackFromVad,
+                context = context,
+                coroutineScope = coroutineScope,
+                listener = listener,
+                prompt = promptPlan.perChunk,
+                progressiveEnabled = progressiveEnabled,
+                emitInterim = emitInterim,
+                // GH #83: the pipeline is the DEFAULT contiguous path
+                // (Parakeet); without this the collector only reached
+                // the whole-file branch and every default run skipped
+                // labels (caught on the first real device trial).
+                // TASK-600 F11: the arm only RECORDS the timeline; the
+                // collector fires once at this function's tail.
+                collectSamples = collectSamples?.let {
+                    { chunks, rate ->
+                        sampleTimeline = chunks
+                        sampleTimelineRate = rate
+                    }
+                }
+            )
+            fireCollector()
+            return applyFinalGenerativePass(backend, promptPlan.finalPass, pipelined)
         }
 
         val preprocessStartMs = System.currentTimeMillis()

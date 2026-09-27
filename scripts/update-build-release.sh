@@ -81,6 +81,16 @@ fork_marker app/src/main/java/com/antivocale/app/service/InferenceService.kt 'Fo
 fork_marker app/src/main/java/com/antivocale/app/transcription/TranscriptionOrchestrator.kt 'resolveExistingAudioPath'
 fork_marker app/src/debug/res/values/strings.xml 'Anti-Vocale Storage'
 
+# sherpa-AAR-Sync: die AAR ist gitignored (app/libs/) und wird bei einem
+# Pin-Bump NICHT automatisch nachgezogen. 09/2026: Pin 1.13.5 -> 1.13.8, lokale
+# AAR blieb 1.13.5 -> Upstream-Code (SpeakerDiarizer, computeConfidence) compilierte
+# nicht. Idempotent (cmp): laedt nur bei Abweichung. Fehler nicht fatal, damit
+# ein Netz-Aussetzer den Lauf nicht blockiert (der Build meldet es dann selbst).
+step "[3b/6] sherpa AAR sync (Pin vs. app/libs)"
+if ! bash scripts/fetch-sherpa-aar.sh >&2; then
+  echo "   WARN: sherpa AAR nicht aktualisiert — Build nutzt die vorhandene AAR" >&2
+fi
+
 # Tag VOR dem Build berechnen und in die APK backen (Obtainium-Vergleich Tag == versionName)
 TAG="v$(date +%Y.%m.%d)"
 export VERSION_NAME="$TAG"

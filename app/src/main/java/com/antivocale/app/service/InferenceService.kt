@@ -603,9 +603,14 @@ class InferenceService : Service(), TranscriptionListener {
         // protection in pendingResultNotifications still applies.
         pendingResultNotifications.add(serviceScope.launch {
             try {
-                val copied = autoCopyIfEnabled(resultText, sourcePackage)
+                // Upstream TASK-598 review F3: auto-copy must deliver the same text
+                // the notification's Copy action delivers (the annotated form on
+                // diarized runs), not the raw stored transcript.
+                val annotatedText = SubtitleFormatter.annotatedOrStored(resultText, segments)
+                val copied = autoCopyIfEnabled(annotatedText, sourcePackage)
                 saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
-                showResultNotification(resultText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied, streamedWithoutVad = streamedWithoutVad)
+                val refinedFrom = refinementOutcome?.takeIf { it != DualRefinementPolicy.NOT_REFINED }
+                showResultNotification(annotatedText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied, streamedWithoutVad = streamedWithoutVad, refinedFrom = refinedFrom, notRefined = refinementOutcome == DualRefinementPolicy.NOT_REFINED, segments = segments)
             } finally {
                 pendingResultNotifications.remove(coroutineContext[Job])
             }
