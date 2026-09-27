@@ -3,8 +3,11 @@ package com.antivocale.app.transcription
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ModelFamily
 import com.k2fsa.sherpa.onnx.OfflineCanaryModelConfig
+import com.k2fsa.sherpa.onnx.OfflineDolphinModelConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineMoonshineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineNemoEncDecCtcModelConfig
+import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
@@ -84,6 +87,47 @@ private fun pickNonTransducerPlan(files: List<String>): Map<String, String>? {
 }
 
 /**
+ * Single-model plan shared by the model+tokens families (SenseVoice, Dolphin
+ * since GH #89): the "model"-basename rule cannot collide with encoder or
+ * decoder roles, so it is safe as a role keyword. [extraNameHint] carries the
+ * family's own filename hint (SenseVoice's sense_voice); one definition so the
+ * two deliberately-ambiguous families cannot drift apart.
+ */
+private fun pickSingleModelPlan(
+    files: List<String>,
+    extraNameHint: (String) -> Boolean,
+): Map<String, String>? {
+    val model = files.firstOrNull { f ->
+        f.endsWith(".onnx") && (
+            f.substringBeforeLast('.').startsWith("model", ignoreCase = true) ||
+                extraNameHint(f)
+            )
+    } ?: return null
+    val tokens = pickTokens(files) ?: return null
+    return linkedMapOf(
+        SherpaBackend.CANONICAL_MODEL to model,
+        SherpaBackend.CANONICAL_TOKENS to tokens,
+    )
+}
+
+/**
+ * The config tail every family shares (tokens path, threading, provider);
+ * one definition so nine construction sites cannot drift (review round:
+ * one missed copy gave a family a wrong tokens path that only surfaced at
+ * native load).
+ */
+private fun OfflineModelConfig.withCommonTail(
+    record: ExternalModelRecord,
+    numThreads: Int,
+    provider: String,
+): OfflineModelConfig = copy(
+    tokens = record.dir + "/" + SherpaBackend.CANONICAL_TOKENS,
+    numThreads = numThreads,
+    debug = false,
+    provider = provider,
+)
+
+/**
  * The family support table (spec: multi-family external models): per-family copy
  * planning, metadata routing, and sherpa config construction behind one interface,
  * so the importer (import-time) and [ExternalSherpaBackend] (load-time) share a
@@ -105,8 +149,23 @@ sealed interface ModelFamilySupport {
     val featureDim: Int
         get() = 80
 
-    /** Canonical file names every import of this family must produce. */
+    /**
+     * Canonical file names every import of this family must produce: the
+     * production list for the one-shape families (the [requiredRolesFor]
+     * default is exactly this). MOONSHINE alone returns the union of its two
+     * generations' published names, which nothing in production reads
+     * (moonshine overrides [requiredRolesFor] per generation).
+     */
     fun requiredRoles(): List<String>
+
+    /**
+     * [requiredRoles] narrowed to the files an import with THESE file names
+     * actually needs. Default: the full set (one-shape families). Moonshine
+     * overrides: its v1 and v2 generations carry disjoint file sets, so the
+     * load-time presence check must ask for the generation that exists, not
+     * the union (the union would fail every import of either shape).
+     */
+    fun requiredRolesFor(files: List<String>): List<String> = requiredRoles()
 
     /** Maps source file names to canonical role names; null when any role has no candidate. */
     fun buildCopyPlan(files: List<String>): Map<String, String>?
@@ -160,7 +219,7 @@ sealed interface ModelFamilySupport {
 
         /** Error raised when CTC is imported without an explicit modelType (single definition). */
         const val CTC_MODEL_TYPE_REQUIRED =
-            "CTC family requires an explicit modelType: nemo_ctc or zipformer_ctc"
+            "CTC family requires an explicit modelType: nemo_ctc, zipformer_ctc or omnilingual_ctc"
 
         /** The two sherpa CTC config subtypes (single definition for the
          *  engine mapping above, the import UI defaults, and the family
@@ -168,6 +227,9 @@ sealed interface ModelFamilySupport {
          *  must spell these identically). */
         const val CTC_TYPE_NEMO = "nemo_ctc"
         const val CTC_TYPE_ZIPFORMER = "zipformer_ctc"
+
+        /** TASK-635: Meta omnilingual CTC (sherpa OfflineOmnilingualAsrCtcModelConfig). */
+        const val CTC_TYPE_OMNILINGUAL = "omnilingual_ctc"
 
         /** Record option keys, single definition for the supports and the import UI. */
         const val OPTION_WHISPER_LANGUAGE = "whisper.language"
@@ -183,17 +245,23 @@ sealed interface ModelFamilySupport {
          */
         fun defaultModelType(family: ModelFamily): String? = when (family) {
             ModelFamily.TRANSDUCER -> "nemo_transducer"
-            ModelFamily.WHISPER, ModelFamily.SENSE_VOICE, ModelFamily.CANARY -> ""
+            ModelFamily.WHISPER, ModelFamily.SENSE_VOICE, ModelFamily.CANARY,
+            ModelFamily.MOONSHINE, ModelFamily.DOLPHIN -> ""
             ModelFamily.CTC -> null
         }
 
-        /** True when [modelType] is a valid record modelType for [family] (single definition). */
-        fun isValidModelType(family: ModelFamily, modelType: String): Boolean = when (family) {
-            ModelFamily.TRANSDUCER ->
-                modelType.isEmpty() || modelType == "nemo_transducer" || modelType == "conformer_transducer"
-            ModelFamily.CTC -> modelType == "nemo_ctc" || modelType == "zipformer_ctc"
-            ModelFamily.WHISPER, ModelFamily.SENSE_VOICE, ModelFamily.CANARY -> modelType.isEmpty()
+        /** The modelType strings this family accepts ("" = no subtype); the
+         *  ONE table both [isValidModelType] and error messages derive from. */
+        fun validModelTypes(family: ModelFamily): List<String> = when (family) {
+            ModelFamily.TRANSDUCER -> listOf("", "nemo_transducer", "conformer_transducer")
+            ModelFamily.CTC -> listOf("nemo_ctc", "zipformer_ctc", CTC_TYPE_OMNILINGUAL)
+            ModelFamily.WHISPER, ModelFamily.SENSE_VOICE, ModelFamily.CANARY,
+            ModelFamily.MOONSHINE, ModelFamily.DOLPHIN -> listOf("")
         }
+
+        /** True when [modelType] is a valid record modelType for [family] (single definition). */
+        fun isValidModelType(family: ModelFamily, modelType: String): Boolean =
+            modelType in validModelTypes(family)
 
         fun forFamily(family: ModelFamily): ModelFamilySupport = when (family) {
             ModelFamily.TRANSDUCER -> TransducerSupport
@@ -201,6 +269,8 @@ sealed interface ModelFamilySupport {
             ModelFamily.CTC -> CtcSupport
             ModelFamily.SENSE_VOICE -> SenseVoiceSupport
             ModelFamily.CANARY -> CanarySupport
+            ModelFamily.MOONSHINE -> MoonshineSupport
+            ModelFamily.DOLPHIN -> DolphinSupport
         }
     }
 }
@@ -298,12 +368,8 @@ object TransducerSupport : ModelFamilySupport {
                 decoder = "${record.dir}/${SherpaBackend.CANONICAL_DECODER}",
                 joiner = "${record.dir}/${SherpaBackend.CANONICAL_JOINER}"
             ),
-            tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
             modelType = record.modelType,
-            numThreads = numThreads,
-            debug = false,
-            provider = provider
-        )
+        ).withCommonTail(record, numThreads, provider)
 }
 
 /**
@@ -374,12 +440,8 @@ object WhisperSupport : ModelFamilySupport {
             // tokens must be passed even though OfflineWhisperModelConfig takes
             // no tokens path: the built-in whisper config passes it and the
             // external one failed native validation without it (TASK-332).
-            tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
             modelType = "whisper",
-            numThreads = numThreads,
-            debug = false,
-            provider = provider,
-        )
+        ).withCommonTail(record, numThreads, provider)
     }
 }
 
@@ -471,22 +533,20 @@ object CtcSupport : ModelFamilySupport {
         return when (record.modelType) {
             "nemo_ctc" -> OfflineModelConfig(
                 nemo = OfflineNemoEncDecCtcModelConfig(model = encoderPath),
-                tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
                 modelType = "nemo_ctc",
-                numThreads = numThreads,
-                debug = false,
-                provider = provider,
-            )
+            ).withCommonTail(record, numThreads, provider)
             "zipformer_ctc" -> OfflineModelConfig(
                 zipformerCtc = OfflineZipformerCtcModelConfig(model = encoderPath),
-                tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
                 modelType = "zipformer_ctc",
-                numThreads = numThreads,
-                debug = false,
-                provider = provider,
-            )
+            ).withCommonTail(record, numThreads, provider)
+            ModelFamilySupport.CTC_TYPE_OMNILINGUAL -> OfflineModelConfig(
+                // Mirrors sherpa's from_omnilingual_asr_ctc: the dedicated
+                // config field, no model_type (empty default).
+                omnilingual = OfflineOmnilingualAsrCtcModelConfig(model = encoderPath),
+                modelType = "",
+            ).withCommonTail(record, numThreads, provider)
             else -> throw IllegalArgumentException(
-                "unknown CTC modelType \"${record.modelType}\"; valid values: nemo_ctc, zipformer_ctc")
+                "unknown CTC modelType \"${record.modelType}\"; valid values: nemo_ctc, zipformer_ctc, omnilingual_ctc")
         }
     }
 }
@@ -510,28 +570,18 @@ object CtcSupport : ModelFamilySupport {
  * Record modelType: ignored; OfflineModelConfig.modelType = "sense_voice".
  */
 object SenseVoiceSupport : ModelFamilySupport {
-    /** Canonical single-model file name (the .int8.onnx convention of the table). */
-    const val CANONICAL_MODEL = "model.int8.onnx"
+    /** Aliases [SherpaBackend.CANONICAL_MODEL], the single owner of the
+     *  single-model canonical name (rename THERE, not here). */
+    const val CANONICAL_MODEL = SherpaBackend.CANONICAL_MODEL
 
     override val family: ModelFamily = ModelFamily.SENSE_VOICE
 
     override fun requiredRoles(): List<String> = listOf(CANONICAL_MODEL, SherpaBackend.CANONICAL_TOKENS)
 
     override fun buildCopyPlan(files: List<String>): Map<String, String>? {
-        val model = files.firstOrNull { f ->
-            f.endsWith(".onnx") && (
-                f.contains("sense_voice", ignoreCase = true) ||
-                    // sherpa SenseVoice repos ship the acoustic model as model.onnx or
-                    // model.int8.onnx; a basename "model" prefix cannot match encoder
-                    // or decoder files, so it is safe as a role keyword.
-                    f.substringBeforeLast('.').startsWith("model", ignoreCase = true)
-                )
-        } ?: return null
-        val tokens = pickTokens(files) ?: return null
-        return linkedMapOf(
-            CANONICAL_MODEL to model,
-            SherpaBackend.CANONICAL_TOKENS to tokens,
-        )
+        // The shared single-model core (pickSingleModelPlan) plus this
+        // family's own filename hint.
+        return pickSingleModelPlan(files) { it.contains("sense_voice", ignoreCase = true) }
     }
 
     override fun metadataFileRole(): String = CANONICAL_MODEL
@@ -548,12 +598,8 @@ object SenseVoiceSupport : ModelFamilySupport {
                 language = language,
                 useInverseTextNormalization = itn,
             ),
-            tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
             modelType = "sense_voice",
-            numThreads = numThreads,
-            debug = false,
-            provider = provider,
-        )
+        ).withCommonTail(record, numThreads, provider)
     }
 }
 
@@ -626,11 +672,220 @@ object CanarySupport : ModelFamilySupport {
                 tgtLang = language,
                 usePnc = true,
             ),
-            tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
             modelType = "canary",
-            numThreads = numThreads,
-            debug = false,
-            provider = provider,
-        )
+        ).withCommonTail(record, numThreads, provider)
     }
+}
+
+/**
+ * Moonshine family (GH #89 light-models): tiny/base recognizers, EN plus the
+ * 2026 KO/JA/ZH v2 exports. Two shapes, both accepted, and each import keeps
+ * its own generation's file names as canonical (the sherpa config names the
+ * files explicitly, so no renaming is needed):
+ *  - v1: preprocess.onnx + encode.int8.onnx + uncached_decode.int8.onnx +
+ *    cached_decode.int8.onnx + tokens
+ *  - v2: encoder_model.ort + decoder_model_merged.ort + tokens (NOTE the
+ *    .ort extension: only this family ships it).
+ * Chunk cap 8s: the 2026-02-27 v2 .ort exports decode empty above ~9.25s of
+ * total input INCLUDING the decode path's 1s silence pad (measured,
+ * TASK-619; the backend table owns the number).
+ */
+object MoonshineSupport : ModelFamilySupport {
+    // Role segments (the name before the first dot): the canonical file
+    // names are the source's own, so the constants name ROLES, not files.
+    internal const val V2_ROLE_ENCODER = "encoder_model"
+    internal const val V2_ROLE_MERGED_DECODER = "decoder_model_merged"
+    internal const val V1_ROLE_PREPROCESSOR = "preprocess"
+    internal const val V1_ROLE_ENCODER = "encode"
+    internal const val V1_ROLE_UNCACHED_DECODER = "uncached_decode"
+    internal const val V1_ROLE_CACHED_DECODER = "cached_decode"
+
+    override val family: ModelFamily = ModelFamily.MOONSHINE
+
+    /** Union of both generations' canonical names (plus tokens); the
+     *  files-aware narrowing below picks the generation actually present. */
+    // Documentation/test union, DERIVED from the published lists (review
+    // round: a hand-maintained third copy is what nothing in production
+    // reads, so it rots silently). Nothing in the import or load path reads
+    // this; requiredRolesFor(files) is the live narrowing.
+    override fun requiredRoles(): List<String> = (V2_PUBLISHED + V1_PUBLISHED).distinct()
+
+    /** Container-gated role-name test (review round): the ONE predicate
+     *  shared with ModelFamilyDetector's truncated-set guard, which used to
+     *  carry its own copy of the six constants. Sidecar rationale on
+     *  [isContainerSegment]. */
+    internal fun isRoleName(name: String): Boolean =
+        name.isContainerSegment(ROLE_SEGMENTS)
+
+    /** One container gate + segment matcher for the plan-side role lookups
+     *  (isRoleName, byRole). The gate exists because a split-ONNX sidecar
+     *  (encode.int8.onnx.data) or a same-stem note file shares the first
+     *  segment: a plan role must resolve to a real container, and a
+     *  truncated-set guard must not fire on sidecars. Generation INFERENCE
+     *  (v2Generation below) deliberately does NOT use this gate; see there.
+     *  A future container-extension change edits this line only. */
+    private fun String.isContainerSegment(segments: Set<String>): Boolean =
+        (endsWith(".onnx", ignoreCase = true) || endsWith(".ort", ignoreCase = true)) &&
+            substringBefore('.').lowercase() in segments
+
+    private val ROLE_SEGMENTS = setOf(
+        V2_ROLE_ENCODER, V2_ROLE_MERGED_DECODER,
+        V1_ROLE_PREPROCESSOR, V1_ROLE_ENCODER,
+        V1_ROLE_UNCACHED_DECODER, V1_ROLE_CACHED_DECODER,
+    )
+
+    // Generation selection has TWO predicates by design: the PLAN is strict
+    // (a v2 import needs BOTH .ort files), while generation INFERENCE answers
+    // "which shape is this folder" even when incomplete, so error messages
+    // never send a v2 folder chasing v1 files. This is the single inference
+    // definition; both callers below share it.
+    /** Model containers only (verification round); rationale on
+     *  [isContainerSegment]. */
+    private fun Collection<String>.byRole(role: String): String? =
+        firstOrNull { it.isContainerSegment(setOf(role)) }
+
+    // STEM-ONLY, deliberately ungated (seventh review round): the plan-side
+    // lookups are container-gated, but inference must answer "which shape is
+    // this folder" even when the containers were lost and only split-file
+    // sidecars survive (encoder_model.onnx.data still carries the v2 stem),
+    // so the missing-files error keeps naming the v2 set instead of sending
+    // a v2 folder chasing v1 files. The inference-vs-plan split is the
+    // object comment above.
+    private val V2_SEGMENTS = setOf(V2_ROLE_ENCODER, V2_ROLE_MERGED_DECODER)
+    private fun v2Generation(names: Iterable<String>): Boolean =
+        names.any { it.substringBefore('.').lowercase() in V2_SEGMENTS }
+
+    // The generations' published spellings: ONE definition each (seventh
+    // review round killed the emptyList()-means-published dual mode).
+    private val V2_PUBLISHED = listOf(
+        "$V2_ROLE_ENCODER.ort", "$V2_ROLE_MERGED_DECODER.ort", SherpaBackend.CANONICAL_TOKENS)
+    private val V1_PUBLISHED = listOf(
+        "$V1_ROLE_PREPROCESSOR.onnx", "$V1_ROLE_ENCODER.int8.onnx",
+        "$V1_ROLE_UNCACHED_DECODER.int8.onnx", "$V1_ROLE_CACHED_DECODER.int8.onnx",
+        SherpaBackend.CANONICAL_TOKENS,
+    )
+
+    // User-facing fallback names: the generation's published spelling, or
+    // the file ACTUALLY present for that role when the folder carries a
+    // non-canonical extension (an .onnx-flavored v2 export's error must
+    // name encoder_model.onnx, not the .ort spelling it does not use)
+    // (verification + review rounds: extensions derived, never hardcoded
+    // against the set).
+    private fun rolesForGeneration(v2: Boolean, files: List<String>): List<String> =
+        (if (v2) V2_PUBLISHED else V1_PUBLISHED).map { published ->
+            files.byRole(published.substringBefore('.')) ?: published
+        }
+
+    // The interface default supplies the plan keys; only the INCOMPLETE-set
+    // fallback is moonshine-specific (generation inference, not the union).
+    override fun requiredRolesFor(files: List<String>): List<String> =
+        buildCopyPlan(files)?.keys?.toList() ?: rolesForGeneration(v2Generation(files), files)
+
+    override fun buildCopyPlan(files: List<String>): Map<String, String>? {
+        val tokens = pickTokens(files) ?: return null
+        // Role matching on the FIRST dot-segment of the file name (review
+        // round): that is the role proper, before quantization tags (.int8)
+        // and container extensions (.onnx/.ort). "encode.int8.onnx" and
+        // "encode.onnx" both read as role "encode"; "encoder_model.ort" and
+        // "encoder_model.onnx" both read as role "encoder_model". The v2
+        // canonical names PRESERVE the source extension: an .onnx-flavored v2
+        // export must not be renamed to .ort (the bytes are protobuf ONNX,
+        // the split-file sidecar check reads the canonical extension, and a
+        // lie in the extension is an opaque native error later).
+        val v2Encoder = files.byRole(V2_ROLE_ENCODER)
+        val v2Decoder = files.byRole(V2_ROLE_MERGED_DECODER)
+        if (v2Encoder != null && v2Decoder != null) {
+            return linkedMapOf(
+                v2Encoder to v2Encoder,
+                v2Decoder to v2Decoder,
+                SherpaBackend.CANONICAL_TOKENS to tokens,
+            )
+        }
+        val pre = files.byRole(V1_ROLE_PREPROCESSOR)
+        val enc = files.byRole(V1_ROLE_ENCODER)
+        val uncached = files.byRole(V1_ROLE_UNCACHED_DECODER)
+        val cached = files.byRole(V1_ROLE_CACHED_DECODER)
+        if (pre != null && enc != null && uncached != null && cached != null) {
+            return linkedMapOf(
+                pre to pre,
+                enc to enc,
+                uncached to uncached,
+                cached to cached,
+                SherpaBackend.CANONICAL_TOKENS to tokens,
+            )
+        }
+        return null
+    }
+
+    // No pre-native metadata gate for this family (the structural plan is the
+    // discriminator): metadataKeys is empty and valueMetadataKey is null, so
+    // nothing ever reads this path (the empty-gate short-circuit in SherpaBackend
+    // returns first). Deliberate, not accidental: adding a metadata key for
+    // moonshine means making this generation-aware, not just flipping a const.
+    override fun metadataFileRole(): String = "$V1_ROLE_ENCODER.int8.onnx"
+
+    override fun metadataKeys(modelType: String): List<String> = emptyList()
+
+    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
+        // record.files.keys is the import-time truth (the canonical names the
+        // import actually wrote): a stray file dropped into the directory
+        // later cannot flip the generation under the load check's feet
+        // (review round: presence check and config used to disagree).
+        // The actual file names are the record's own canonical keys (the
+        // plan keeps the source names, extension included), so the config
+        // never points at a name the import did not write.
+        fun fileFor(role: String) = requireNotNull(record.files.keys.byRole(role)) {
+            "moonshine record missing the $role model file (drifted record?)"
+        }
+        val moonshine = if (v2Generation(record.files.keys)) {
+            OfflineMoonshineModelConfig(
+                encoder = "${record.dir}/${fileFor(V2_ROLE_ENCODER)}",
+                mergedDecoder = "${record.dir}/${fileFor(V2_ROLE_MERGED_DECODER)}",
+            )
+        } else {
+            OfflineMoonshineModelConfig(
+                preprocessor = "${record.dir}/${fileFor(V1_ROLE_PREPROCESSOR)}",
+                encoder = "${record.dir}/${fileFor(V1_ROLE_ENCODER)}",
+                uncachedDecoder = "${record.dir}/${fileFor(V1_ROLE_UNCACHED_DECODER)}",
+                cachedDecoder = "${record.dir}/${fileFor(V1_ROLE_CACHED_DECODER)}",
+            )
+        }
+        return OfflineModelConfig(
+            moonshine = moonshine,
+        ).withCommonTail(record, numThreads, provider)
+    }
+}
+
+/**
+ * Dolphin family (GH #89 light-models): the multi-language offline Dolphin
+ * recognizer (model.int8.onnx + tokens). The file shape is SenseVoice's, so
+ * an unhinted model+tokens set is deliberately AMBIGUOUS between the two
+ * (the chooser offers both; a dolphin-named folder or URL narrows the hint,
+ * exactly like the whisper/canary pair).
+ */
+object DolphinSupport : ModelFamilySupport {
+    /** Aliases [SherpaBackend.CANONICAL_MODEL], the single owner of the
+     *  single-model canonical name (SenseVoice aliases the same constant;
+     *  renaming means editing THAT one, not this alias). */
+    const val CANONICAL_MODEL = SherpaBackend.CANONICAL_MODEL
+
+    override val family: ModelFamily = ModelFamily.DOLPHIN
+
+    override fun requiredRoles(): List<String> = listOf(CANONICAL_MODEL, SherpaBackend.CANONICAL_TOKENS)
+
+    override fun buildCopyPlan(files: List<String>): Map<String, String>? =
+        pickSingleModelPlan(files) { it.contains("dolphin", ignoreCase = true) }
+
+    // No pre-native metadata gate: the shape plus the hint/chooser flow is
+    // the discriminator for this family.
+    override fun metadataFileRole(): String = CANONICAL_MODEL
+
+    override fun metadataKeys(modelType: String): List<String> = emptyList()
+
+    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig =
+        OfflineModelConfig(
+            dolphin = OfflineDolphinModelConfig(
+                model = "${record.dir}/$CANONICAL_MODEL",
+            ),
+        ).withCommonTail(record, numThreads, provider)
 }

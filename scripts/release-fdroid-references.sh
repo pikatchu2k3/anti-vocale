@@ -41,6 +41,9 @@
 
 set -euo pipefail
 
+# TASK-633: this script's directory (the patterns module lives beside it).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP_REPO="$(cd "$HERE/.." && pwd)"
 REPO="RisorseArtificiali/anti-vocale"
@@ -65,10 +68,28 @@ case "$PHASE" in prepare | finalize) ;; *) usage ;; esac
 # finalize takes no commit arg: by then tag + release exist (release-create.sh
 # ran), and gate C resolves everything from the tag.
 [ "$PHASE" = "finalize" ] && [ -n "$COMMIT" ] && usage
+# A short hash fails the workflow's checkout-by-name two refspecs and burns a
+# ~3h dispatch (the 1.13.0 first-dispatch incident): require the full SHA.
+if [ -n "$COMMIT" ] && ! printf '%s' "$COMMIT" | grep -qE '^[0-9a-f]{40}$'; then
+  echo "FAIL: commit must be a full 40-char SHA, got '$COMMIT'" >&2
+  exit 1
+fi
 
 cd "$APP_REPO"
 
 if [ "$PHASE" = "prepare" ]; then
+  # TASK-683.1: preflight is phase 0 of prepare. Refusing before the mirror
+  # sync and the dispatch turns a mid-run CI failure into a local, seconds-
+  # cost stop. Read-only, so it runs under DRY_RUN too.
+  say "phase 0/4: release preflight"
+  PREFLIGHT_ARGS=(--tag "$TAG")
+  if [ -n "$COMMIT" ]; then
+    PREFLIGHT_ARGS+=(--commit "$COMMIT")
+  fi
+  if ! "$HERE/release-preflight.sh" "${PREFLIGHT_ARGS[@]}"; then
+    fail "release-preflight.sh exited nonzero: fix the named blocker(s) above before dispatching (the exit code, not the text, is the verdict)"
+  fi
+
   say "phase 1/4: mirror sync (fetches the fork; the remote is written only at finalize)"
   DRY_RUN="${DRY_RUN:-0}" "$HERE/sync-fdroid-mirror.sh"
 
@@ -177,8 +198,22 @@ say "phase 1/3: gate C (job success, signed URLs, fork==mirror, clean tree)"
 # sides keeps the skip reachable without widening it to version fields or
 # any build-relevant line.
 normalize_recipe() {
-  sed -e "/^[[:space:]]*- sdkmanager 'ndk;r27c'$/d" \
-      -e 's/wget build-essential cmake g++ zip unzip/wget build-essential cmake g++ unzip/'
+  # TASK-633: the inert-line list has one owner, scripts/fdroid_recipe_patterns.py
+  # (shared with new-fdroid-version.py); a divergence there breaks this
+  # comparison silently. NOTE -c (not a heredoc): a `python3 - <<PY` heredoc
+  # makes the SCRIPT the stdin, so sys.stdin.read() returns empty and both
+  # sides normalize to "" (the comparison would always match, green no-op).
+  python3 -c "
+import re, sys
+sys.path.insert(0, '${SCRIPT_DIR}')
+from fdroid_recipe_patterns import INERT_LINE_PATTERNS, INERT_LITERAL_REPLACES
+text = sys.stdin.read()
+for _, pattern in INERT_LINE_PATTERNS:
+    text = re.sub(pattern, '', text, flags=re.M)
+for _, old_lit, new_lit in INERT_LITERAL_REPLACES:
+    text = text.replace(old_lit, new_lit)
+sys.stdout.write(text)
+"
 }
 MASTER_RAW=""
 # Anonymous API against fdroid/fdroiddata (note: no hyphen; the fork is
@@ -202,6 +237,21 @@ fi
 say "phase 2/3: fork push (only if local recipe commits are pending)"
 BR="$(git -C "$FORK_CHECKOUT" branch --show-current)"
 [ -n "$BR" ] || fail "fork checkout is on a detached HEAD; check out the recipe branch first"
+# 2026-09-21 incident: the checkout sat on another app's branch (cookies-
+# extractor-1.0.0) and finalize happily force-pushed this release's recipe
+# onto that app's MR. The lane rule is the app PREFIX, not the exact
+# version: an anti-vocale-<X.Y.Z> branch of a DIFFERENT version is the
+# documented state while an MR is still open when the next version drops
+# (fdroid maintainers ask for the newer bump pushed to the SAME branch;
+# docs/research/2026-09-01-fdroiddata-branch-conventions.md section 4), so
+# only non-anti-vocale lanes are refused. No remediation command printed:
+# creating the branch here would cut it from whatever HEAD the drifted
+# checkout sits on; the runbook (step 4) owns the reset-onto-upstream dance.
+EXPECTED_BR="anti-vocale-${TAG#v}"
+case "$BR" in
+  anti-vocale-*) ;;
+  *) fail "fork checkout is on branch '$BR' but this release pushes an anti-vocale-* lane (expected '$EXPECTED_BR' or the open-MR branch); see docs/release-runbook.md" ;;
+esac
 git -C "$FORK_CHECKOUT" fetch -q origin
 LOCAL_SHA="$(git -C "$FORK_CHECKOUT" rev-parse HEAD)"
 REMOTE_SHA="$(git -C "$FORK_CHECKOUT" rev-parse -q --verify "origin/$BR" || true)"

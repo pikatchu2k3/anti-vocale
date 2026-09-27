@@ -35,7 +35,30 @@ object SubtitleExtractor {
      */
     const val MIME_SUBRIP = "application/x-subrip"
     const val MIME_VTT = "text/vtt"
+
+    /**
+     * TASK-677 simplify F2: the single owner of the SHARE-side subtitle MIME
+     * vocabulary (the SEND intent-filters in AndroidManifest and
+     * SharedAudioHandler's MIME-to-extension map both derive from this set;
+     * the manifest cannot reference constants, so SubtitleMimeManifestTest
+     * pins its literals to this set instead).
+     */
+    val SHARE_SUBTITLE_MIME_TO_EXTENSION: Map<String, String> = mapOf(
+        MIME_SUBRIP to "srt",
+        "application/x-srt" to "srt",
+        "text/srt" to "srt",
+        MIME_VTT to "vtt",
+        "application/webvtt" to "vtt",
+    )
     const val CUE_TIME_SEPARATOR = "-->"
+
+    /**
+     * TASK-677 review F6: the app's speaker-turn prefix pattern, the single
+     * owner for export (SubtitleFormatter), track extraction (here) and the
+     * import parser (SubtitleParser): tolerant of the missing trailing space,
+     * n >= 1. The manifest of this contract must not fork per consumer.
+     */
+    val SPEAKER_PREFIX_PATTERN = "^SPEAKER (\\d+): ?"
     const val VTT_HEADER = "WEBVTT"
 
     /**
@@ -185,7 +208,12 @@ object SubtitleExtractor {
     internal fun stripTimestampsAndMarkup(raw: String, mime: String): String {
         // 1. Strip all <...> markup tags: HTML/tx3g styling (<i>, </i>, <b>) and WebVTT
         //    inline cue-time tags (<00:00:01.000>).
-        val withoutTags = raw.replace(MARKUP_TAG_REGEX, "")
+        // 1b. Strip the app's own speaker-turn prefixes (GH #83 exports
+        //     "SPEAKER k: " at turn starts): re-ingesting a labeled export
+        //     must not deliver machine labels as literal transcript text.
+        val withoutTags = raw
+            .replace(MARKUP_TAG_REGEX, "")
+            .replace(SPEAKER_PREFIX_REGEX, "")
 
         // 2. Keep only real subtitle text lines: drop cue timestamp ranges (lines
         //    containing "-->"), standalone timestamp lines, SRT cue indices (lines that
@@ -210,6 +238,10 @@ object SubtitleExtractor {
 
     // Matches <...> (non-greedy, no nested '>'): covers <i>, </i>, <00:00:01.500>, <b>, etc.
     private val MARKUP_TAG_REGEX = Regex("<[^>]*>")
+
+    // The app's speaker-turn cue prefix (SubtitleFormatter): "SPEAKER 12: "
+    // at a line start.
+    private val SPEAKER_PREFIX_REGEX = Regex("(?m)^SPEAKER \\d+: ")
 
     // A pure SRT cue index line: one or more digits and nothing else (e.g. "1", "23").
     private val CUE_INDEX_REGEX = Regex("^\\d+$")

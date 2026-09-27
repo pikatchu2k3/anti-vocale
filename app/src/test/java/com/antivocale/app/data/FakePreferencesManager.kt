@@ -34,8 +34,10 @@ internal class FakePreferencesManager : PreferencesManager {
     val _externalMigrationDone = MutableStateFlow(false)
     val _customTransducerModelPath = MutableStateFlow<String?>(null)
     val _customTransducerModelType = MutableStateFlow(PreferencesManager.DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE)
-    val _ggufModelPath = MutableStateFlow<String?>(null)
     val _autoCopyEnabled = MutableStateFlow(false)
+    val _signatureEnabled = MutableStateFlow(false)
+    val _signatureText = MutableStateFlow("")
+    val _signaturePosition = MutableStateFlow("append")
     val _outputFolderUri = MutableStateFlow<String?>(null)
     val _vadEnabled = MutableStateFlow(false)
     val _vadAdvisoryDismissed = MutableStateFlow(false)
@@ -50,13 +52,24 @@ internal class FakePreferencesManager : PreferencesManager {
     val _transcriptionLanguage = MutableStateFlow("auto")
     val _swipeActionMode = MutableStateFlow("REVEAL")
     val _groupLogsByConversation = MutableStateFlow(true)
+    val _showTechnicalDetails = MutableStateFlow(PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS)
     val _advancedSharingEnabled = MutableStateFlow(false)
     val _showRetranscribeButton = MutableStateFlow(true)
-    val _forceModelLoad = MutableStateFlow(false)
+    val _memoryProtection = MutableStateFlow(false)
+    // TASK-274: consent gate for the exported automation receivers.
+    val _externalAutomationEnabled = MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED)
+    // TASK-681: the LAN-offload (OmniVoice) gate and its config triple.
+    val _remoteOmnivoiceEnabled = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED)
+    val _remoteOmnivoiceEndpoint = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT)
+    val _remoteOmnivoiceApiKey = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY)
+    val _remoteOmnivoiceModel = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL)
     val _compactResultActions = MutableStateFlow(PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
     val _languageChipEnabled = MutableStateFlow(PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED)
     val _externalModelsJson = MutableStateFlow<String?>(null)
     val _partialTranscriptionText = MutableStateFlow<String?>(null)
+    val _pendingBackendLoad = MutableStateFlow<String?>(null)
+    override val pendingBackendLoad: Flow<String?> get() = _pendingBackendLoad
+    override suspend fun savePendingBackendLoad(backendId: String?) { _pendingBackendLoad.value = backendId }
     val _partialTranscriptionTimestamp = MutableStateFlow<Long?>(null)
     val _benchmarkResults = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -69,12 +82,15 @@ internal class FakePreferencesManager : PreferencesManager {
     override fun sherpaModelPath(entryId: String): Flow<String?> = _sherpaModelPath(entryId)
     override val externalCatalogUrl: Flow<String> get() = _externalCatalogUrl
     override suspend fun saveExternalCatalogUrl(url: String) { _externalCatalogUrl.value = url }
+    override suspend fun clearExternalCatalogUrl() { _externalCatalogUrl.value = PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL }
 
     override val externalMigrationDone: Flow<Boolean> get() = _externalMigrationDone
     override val customTransducerModelPath: Flow<String?> get() = _customTransducerModelPath
     override val customTransducerModelType: Flow<String> get() = _customTransducerModelType
-    override val ggufModelPath: Flow<String?> get() = _ggufModelPath
     override val autoCopyEnabled: Flow<Boolean> get() = _autoCopyEnabled
+    override val signatureEnabled: Flow<Boolean> get() = _signatureEnabled
+    override val signatureText: Flow<String> get() = _signatureText
+    override val signaturePosition: Flow<String> get() = _signaturePosition
     override val outputFolderUri: Flow<String?> get() = _outputFolderUri
     private val _transcriptExportFormat = MutableStateFlow(PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT)
     override val transcriptExportFormat: Flow<String> get() = _transcriptExportFormat
@@ -94,9 +110,33 @@ internal class FakePreferencesManager : PreferencesManager {
     override val transcriptionLanguage: Flow<String> get() = _transcriptionLanguage
     override val swipeActionMode: Flow<String> get() = _swipeActionMode
     override val groupLogsByConversation: Flow<Boolean> get() = _groupLogsByConversation
+    override val showTechnicalDetails: Flow<Boolean> get() = _showTechnicalDetails
     override val advancedSharingEnabled: Flow<Boolean> get() = _advancedSharingEnabled
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
-    override val forceModelLoad: Flow<Boolean> get() = _forceModelLoad
+    override val memoryProtection: Flow<Boolean> get() = _memoryProtection
+    override val externalAutomationEnabled: Flow<Boolean> get() = _externalAutomationEnabled
+    override val remoteOmnivoiceEnabled: Flow<Boolean> get() = _remoteOmnivoiceEnabled
+    override val remoteOmnivoiceEndpoint: Flow<String> get() = _remoteOmnivoiceEndpoint
+    override val remoteOmnivoiceApiKey: Flow<String> get() = _remoteOmnivoiceApiKey
+    override val remoteOmnivoiceModel: Flow<String> get() = _remoteOmnivoiceModel
+    override suspend fun saveRemoteOmnivoiceEnabled(enabled: Boolean) {
+        _remoteOmnivoiceEnabled.value = enabled
+        // TASK-681: mirrors the impl's coupled write (disable resets a
+        // selection pointing at the backend, same turn).
+        if (!enabled && _transcriptionBackend.value ==
+            com.antivocale.app.transcription.RemoteOmnivoiceBackend.BACKEND_ID
+        ) {
+            _transcriptionBackend.value = PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND
+        }
+    }
+    override suspend fun saveRemoteOmnivoiceConfig(endpoint: String, apiKey: String, model: String) {
+        _remoteOmnivoiceEndpoint.value = endpoint.trim()
+        _remoteOmnivoiceApiKey.value = apiKey.trim()
+        _remoteOmnivoiceModel.value = model.trim()
+    }
+    override suspend fun saveRemoteOmnivoiceEndpoint(url: String) { _remoteOmnivoiceEndpoint.value = url.trim() }
+    override suspend fun saveRemoteOmnivoiceApiKey(key: String) { _remoteOmnivoiceApiKey.value = key.trim() }
+    override suspend fun saveRemoteOmnivoiceModel(model: String) { _remoteOmnivoiceModel.value = model.trim() }
     override val compactResultActions: Flow<Boolean> get() = _compactResultActions
     override val languageChipEnabled: Flow<Boolean> get() = _languageChipEnabled
     override val externalModelsJson: Flow<String?> get() = _externalModelsJson
@@ -114,9 +154,10 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveSherpaModelPath(entryId: String, path: String) { _sherpaModelPath(entryId).value = path }
     override suspend fun clearSherpaModelPath(entryId: String) { _sherpaModelPath(entryId).value = null }
     override suspend fun saveExternalMigrationDone(done: Boolean) { _externalMigrationDone.value = done }
-    override suspend fun saveGgufModelPath(path: String) { _ggufModelPath.value = path }
-    override suspend fun clearGgufModelPath() { _ggufModelPath.value = null }
     override suspend fun saveAutoCopyEnabled(enabled: Boolean) { _autoCopyEnabled.value = enabled }
+    override suspend fun saveSignatureEnabled(enabled: Boolean) { _signatureEnabled.value = enabled }
+    override suspend fun saveSignatureText(text: String) { _signatureText.value = text.trim() }
+    override suspend fun saveSignaturePosition(position: String) { _signaturePosition.value = position }
     override suspend fun saveOutputFolderUri(uri: String?) { _outputFolderUri.value = uri }
     override suspend fun saveTranscriptExportFormat(format: String) { _transcriptExportFormat.value = format }
     override suspend fun saveVadEnabled(enabled: Boolean) { _vadEnabled.value = enabled }
@@ -132,9 +173,11 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveTranscriptionLanguage(language: String) { _transcriptionLanguage.value = language }
     override suspend fun saveSwipeActionMode(mode: String) { _swipeActionMode.value = mode }
     override suspend fun saveGroupLogsByConversation(enabled: Boolean) { _groupLogsByConversation.value = enabled }
+    override suspend fun saveShowTechnicalDetails(enabled: Boolean) { _showTechnicalDetails.value = enabled }
     override suspend fun saveAdvancedSharingEnabled(enabled: Boolean) { _advancedSharingEnabled.value = enabled }
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
-    override suspend fun saveForceModelLoad(enabled: Boolean) { _forceModelLoad.value = enabled }
+    override suspend fun saveMemoryProtection(enabled: Boolean) { _memoryProtection.value = enabled }
+    override suspend fun saveExternalAutomationEnabled(enabled: Boolean) { _externalAutomationEnabled.value = enabled }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
     override suspend fun saveLanguageChipEnabled(enabled: Boolean) { _languageChipEnabled.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }
@@ -159,6 +202,19 @@ internal class FakePreferencesManager : PreferencesManager {
 
     override suspend fun clearBenchmarkResult(modelId: String) {
         _benchmarkResults.value = _benchmarkResults.value - modelId
+    }
+
+    // GH #43
+    val _refinementEnabled = MutableStateFlow(false)
+    override val refinementEnabled: Flow<Boolean> = _refinementEnabled
+    override suspend fun saveRefinementEnabled(enabled: Boolean) {
+        _refinementEnabled.value = enabled
+    }
+
+    val _speakerLabelsEnabled = MutableStateFlow(false)
+    override val speakerLabelsEnabled: Flow<Boolean> = _speakerLabelsEnabled
+    override suspend fun saveSpeakerLabelsEnabled(enabled: Boolean) {
+        _speakerLabelsEnabled.value = enabled
     }
 
     // TASK-576
@@ -188,5 +244,15 @@ internal class FakePreferencesManager : PreferencesManager {
 
     override suspend fun pruneMeasuredModelMemory(validKeys: Set<String>) {
         _measuredModelMemory.update { it.filterKeys { k -> k in validKeys } }
+    }
+
+    // TASK-675: silent-model demotion set (mirrors the Impl's set semantics).
+    val _demotedBackends = MutableStateFlow<Set<String>>(emptySet())
+    override val demotedBackends: Flow<Set<String>> get() = _demotedBackends
+    override suspend fun markBackendDemoted(backendId: String) {
+        _demotedBackends.value = _demotedBackends.value + backendId
+    }
+    override suspend fun clearDemotedBackend(backendId: String) {
+        _demotedBackends.value = _demotedBackends.value - backendId
     }
 }

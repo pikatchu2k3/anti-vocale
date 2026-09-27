@@ -6,12 +6,18 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.antivocale.app.R
+import com.antivocale.app.ui.components.LanguageOption
+import com.antivocale.app.ui.components.TranscriptionLanguagePicker
+import com.antivocale.app.ui.components.languageOptionsFor
+import com.antivocale.app.ui.components.transcriptionPickerFor
 import com.antivocale.app.data.DiscoveredModel
+import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.HuggingFaceApiClient
 import com.antivocale.app.data.HuggingFaceAuthManager
 import com.antivocale.app.data.HuggingFaceOAuthConfig
 import com.antivocale.app.data.HuggingFaceTokenManager
 import com.antivocale.app.data.ModelDiscovery
+import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.data.ActiveModelRepository
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.PreferencesManager
@@ -19,12 +25,11 @@ import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.catalog.BundledCatalog
+import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.manager.LlmManager
-// GGUF: import com.antivocale.app.transcription.Gemma4GgufBackend
-// GGUF: import com.antivocale.app.transcription.Gemma4GgufModelManager
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.ui.appearance.LauncherIconManager
 import com.antivocale.app.ui.appearance.LauncherIconVariant
@@ -38,6 +43,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +66,7 @@ import kotlinx.coroutines.launch
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    private val externalRecordsProvider: com.antivocale.app.data.ExternalModelRecordsProvider,
     application: Application,
     private val preferencesManager: PreferencesManager,
     private val logDao: com.antivocale.app.data.local.LogDao,
@@ -73,7 +80,13 @@ class SettingsViewModel @Inject constructor(
     private val shareTargetManager: ShareTargetManager,
     private val shareShortcutManager: ShareShortcutManager,
     private val activeModelRepository: ActiveModelRepository,
-    private val launcherIconManager: LauncherIconManager
+    private val launcherIconManager: LauncherIconManager,
+    // TASK-681: the LAN-offload connection probe runs through the real
+    // backend (its OkHttp timeouts are the fail-fast contract).
+    private val remoteOmnivoiceBackend: com.antivocale.app.transcription.RemoteOmnivoiceBackend,
+    // TASK-679: the resident-models memory panel reads through the same
+    // recorder that writes the post-OOM breadcrumb.
+    private val oomBreadcrumbRecorder: com.antivocale.app.transcription.OomBreadcrumbRecorder
 ) : AndroidViewModel(application) {
 
     companion object {
@@ -112,24 +125,20 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * TASK-458: the Transcription Language picker follows the ACTIVE backend.
-     * The offered codes derive from the active model via
-     * [TranscriptionLanguagePolicy.offeredLanguages] (GH #78: the hardcoded
-     * list could drift from per-backend support), so the UI list always
-     * matches what the recognizer actually consumes. Collects
-     * [ActiveModelRepository.activeModelFlow] like [loadCurrentModel], so a
-     * backend or model change re-derives the picker reactively. Until the
-     * first emission the picker starts disabled (the default backend,
-     * Parakeet, conditions on no language at all).
+     * The offered codes derive from
+     * [ActiveModelRepository.offeredLanguageCodes] (GH #78: the hardcoded
+     * list could drift from per-backend support; TASK-546 AC3 made the
+     * repository the single owner so the History chip's re-run picker shares
+     * the exact derivation), so the UI list always matches what the
+     * recognizer actually consumes. Until the first emission the picker
+     * starts disabled (the default backend, Parakeet, conditions on no
+     * language at all).
      */
     val transcriptionLanguagePicker: StateFlow<TranscriptionLanguagePicker> =
-        activeModelRepository.activeModelFlow
-            .distinctUntilChanged()
-            .map { active ->
+        activeModelRepository.offeredLanguageCodes
+            .map { offered ->
                 transcriptionPickerFor(
-                    TranscriptionLanguagePolicy.offeredLanguages(
-                        modelPath = active.modelPath,
-                        entry = BundledCatalog.byId(active.backendId),
-                    ),
+                    offered,
                     LocaleManager.effectiveLocale(),
                     phoneLanguage = LocaleManager.phoneLanguage(getApplication()),
                 )
@@ -311,6 +320,17 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_SUMMARIZE_ENABLED
         )
 
+    // GH #43: two-pass refinement. The toggle's availability needs the
+    // installed-streaming check (a disk probe), so it is its own flow.
+    private val _refinementEnabled = MutableStateFlow(false)
+    val refinementEnabled: StateFlow<Boolean> = _refinementEnabled.asStateFlow()
+    private val _refinementAvailable = MutableStateFlow(false)
+    val refinementAvailable: StateFlow<Boolean> = _refinementAvailable.asStateFlow()
+
+    // GH #83: speaker labeling after transcription.
+    private val _speakerLabelsEnabled = MutableStateFlow(false)
+    val speakerLabelsEnabled: StateFlow<Boolean> = _speakerLabelsEnabled.asStateFlow()
+
     // TASK-336: background-kill detection (cold-start sweep marker rows) for the
     // battery-exemption card. Only re-offered after a NEW interruption.
     private val _backgroundKills = MutableStateFlow(0)
@@ -379,16 +399,121 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    val forceModelLoad: StateFlow<Boolean> = preferencesManager.forceModelLoad
+    val memoryProtection: StateFlow<Boolean> = preferencesManager.memoryProtection
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = PreferencesManager.DEFAULT_FORCE_MODEL_LOAD
+            initialValue = PreferencesManager.DEFAULT_MEMORY_PROTECTION
         )
 
-    fun saveForceModelLoad(enabled: Boolean) {
+    fun saveMemoryProtection(enabled: Boolean) {
         viewModelScope.launch {
-            preferencesManager.saveForceModelLoad(enabled)
+            preferencesManager.saveMemoryProtection(enabled)
+        }
+    }
+
+    /** TASK-274: consent gate for the exported automation receivers (Tasker surface). */
+    val externalAutomationEnabled: StateFlow<Boolean> = preferencesManager.externalAutomationEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED
+        )
+
+    fun saveExternalAutomationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveExternalAutomationEnabled(enabled)
+        }
+    }
+
+    // ---- TASK-681: LAN offload (OmniVoice) ----
+
+    /** The consent gate; while off, the backend has no surface anywhere. */
+    val remoteOmnivoiceEnabled: StateFlow<Boolean> = preferencesManager.remoteOmnivoiceEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED
+        )
+
+    /** Editable fields, seeded from the stored config; saved by [saveRemoteOmnivoiceConfig]. */
+    val remoteEndpointInput = MutableStateFlow("")
+    val remoteApiKeyInput = MutableStateFlow("")
+    val remoteModelInput = MutableStateFlow("")
+
+    init {
+        viewModelScope.launch {
+            remoteEndpointInput.value = preferencesManager.remoteOmnivoiceEndpoint.first()
+            remoteApiKeyInput.value = preferencesManager.remoteOmnivoiceApiKey.first()
+            remoteModelInput.value = preferencesManager.remoteOmnivoiceModel.first()
+        }
+    }
+
+    fun saveRemoteOmnivoiceConfig() {
+        viewModelScope.launch {
+            preferencesManager.saveRemoteOmnivoiceConfig(
+                remoteEndpointInput.value,
+                remoteApiKeyInput.value,
+                remoteModelInput.value)
+        }
+    }
+
+    /**
+     * The gate write; the disable-resets-selection invariant lives in the
+     * preference layer (one transaction, every writer covered).
+     */
+    fun saveRemoteOmnivoiceEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveRemoteOmnivoiceEnabled(enabled)
+        }
+    }
+
+    /** The Test-connection probe's outcome; null = idle, the card renders it localized. */
+    val remoteConnectionTest = MutableStateFlow<com.antivocale.app.transcription.RemoteOmnivoiceBackend.ConnectionTestResult?>(null)
+    val remoteConnectionTesting = MutableStateFlow(false)
+
+    /** Tests the TYPED values (works before saving); Dispatchers.IO lives inside the backend. */
+    fun testRemoteConnection() {
+        viewModelScope.launch {
+            remoteConnectionTesting.value = true
+            remoteConnectionTest.value = remoteOmnivoiceBackend.testConnection(
+                remoteEndpointInput.value,
+                remoteApiKeyInput.value,
+                remoteModelInput.value)
+            remoteConnectionTesting.value = false
+        }
+    }
+
+    // ---- TASK-679: resident-models memory panel ----
+
+    /** The panel's state; null until the first [refreshMemoryDiagnostics] lands. */
+    private val _memoryDiagnostics = MutableStateFlow<com.antivocale.app.transcription.MemoryDiagnosticsState?>(null)
+    val memoryDiagnostics: StateFlow<com.antivocale.app.transcription.MemoryDiagnosticsState?> = _memoryDiagnostics.asStateFlow()
+
+    /**
+     * Emits when residency could have changed (backend swap, LLM load or
+     * idle unload). The panel collects this while it is composed, so it
+     * refreshes exactly for as long as the user can see it.
+     */
+    val memoryDiagnosticsTriggers: kotlinx.coroutines.flow.Flow<Unit> = combine(
+        backendManager.activeBackendId,
+        llmManager.isReadyFlow,
+    ) { activeBackendId, llmReady -> activeBackendId to llmReady }
+        .distinctUntilChanged()
+        .map { }
+
+    /** One read of the panel state: residents, RAM, heap, last breadcrumb. */
+    /** Simplify F7: only one refresh in flight; two rapid triggers cannot
+     *  complete out of order and let a stale snapshot overwrite the newer. */
+    private var memoryDiagnosticsJob: kotlinx.coroutines.Job? = null
+
+    fun refreshMemoryDiagnostics() {
+        // Simplify F2: panelState reads the breadcrumb prefs file and makes
+        // two binder calls; off the main thread (the in-file precedent at
+        // the model listing already launches on Default).
+        memoryDiagnosticsJob?.cancel()
+        memoryDiagnosticsJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _memoryDiagnostics.value = oomBreadcrumbRecorder.panelState(getApplication())
         }
     }
 
@@ -398,13 +523,35 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS
         )
-    /** TASK-546: the detected-language chip toggle (Settings flag). */
+    /** TASK-546: the detected-language chip toggle (Settings flag). The
+     *  underlying preference keeps its value even while the toggle is
+     *  disabled for models that cannot detect the language (TASK-611). */
     val languageChipEnabled: StateFlow<Boolean> = preferencesManager.languageChipEnabled
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED
         )
+    /**
+     * TASK-611: only Whisper and SenseVoice backends fill detectedLanguage
+     * (sherpa's transducer/canary paths never set it), so the chip toggle is
+     * ENABLED for those and kept visible-but-off with its description
+     * naming the supported models otherwise. Two inputs, collected: the
+     * backend selection and the external records (an external install
+     * writes no backend value).
+     */
+    val languageChipAvailable: StateFlow<Boolean> = combine(
+        preferencesManager.transcriptionBackend,
+        externalRecordsProvider.records,
+    ) { backendId, records ->
+        when {
+            backendId == BuiltInBackendIds.WHISPER -> true
+            backendId.startsWith(ExternalModelRecord.BACKEND_ID_PREFIX) -> records
+                .firstOrNull { it.backendId == backendId }
+                ?.let { it.family == ModelFamily.WHISPER || it.family == ModelFamily.SENSE_VOICE } ?: false
+            else -> false
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun saveLanguageChip(enabled: Boolean) {
         viewModelScope.launch { preferencesManager.saveLanguageChipEnabled(enabled) }
@@ -413,6 +560,20 @@ class SettingsViewModel @Inject constructor(
     fun saveCompactResultActions(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveCompactResultActions(enabled)
+        }
+    }
+
+    /** TASK-616: the technical processing-context line on transcript entries. */
+    val showTechnicalDetails: StateFlow<Boolean> = preferencesManager.showTechnicalDetails
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
+        )
+
+    fun saveShowTechnicalDetails(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveShowTechnicalDetails(enabled)
         }
     }
 
@@ -464,6 +625,36 @@ class SettingsViewModel @Inject constructor(
                 } catch (e: IllegalArgumentException) {
                     ThemeType.DEFAULT
                 }
+            }
+        }
+        // GH #43: refinement toggle + availability
+        viewModelScope.launch {
+            preferencesManager.refinementEnabled.collect { _refinementEnabled.value = it }
+        }
+        // GH #83: speaker labeling toggle
+        viewModelScope.launch {
+            preferencesManager.speakerLabelsEnabled.collect { _speakerLabelsEnabled.value = it }
+        }
+        // TASK-603 F6: availability has TWO inputs, and both are collected:
+        // the backend selection (a switch) and the streaming entry's saved
+        // path (a bare install writes no backend value, and the backend flow
+        // is distinctUntilChanged, so collecting it alone never re-probes on
+        // install; review F1). The disk probe rides each (rare) emission of
+        // either source, through the shared owner of the probe.
+        val streamingEntry = com.antivocale.app.data.catalog.BundledCatalog.entries()
+            .firstOrNull { it.isStreaming }
+        if (streamingEntry != null) {
+            viewModelScope.launch(Dispatchers.Default) {
+                kotlinx.coroutines.flow.combine(
+                    preferencesManager.transcriptionBackend,
+                    preferencesManager.sherpaModelPath(streamingEntry.id),
+                ) { selected, _ -> selected }
+                    .collect { selected ->
+                        val installed =
+                            com.antivocale.app.transcription.SherpaModelManager
+                                .installedStreamingEntryId(getApplication<Application>()) != null
+                        _refinementAvailable.value = installed && streamingEntry.id != selected
+                    }
             }
         }
         // Load text size from preferences (TASK-576)
@@ -647,10 +838,54 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** GH #43: persists the two-pass toggle. */
+    fun saveRefinementEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                preferencesManager.saveRefinementEnabled(enabled)
+                _refinementEnabled.value = enabled
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save refinement toggle", e)
+            }
+        }
+    }
+
+    /** GH #83: persists the speaker-labeling toggle. */
+    fun saveSpeakerLabelsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                preferencesManager.saveSpeakerLabelsEnabled(enabled)
+                _speakerLabelsEnabled.value = enabled
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save speaker-labels toggle", e)
+            }
+        }
+    }
+
     fun saveSummarizeEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveSummarizeEnabled(enabled)
         }
+    }
+
+    // TASK-647: the AI-disclaimer signature on exit surfaces.
+    val signatureEnabled: StateFlow<Boolean> = preferencesManager.signatureEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val signatureText: StateFlow<String> = preferencesManager.signatureText
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val signaturePosition: StateFlow<String> = preferencesManager.signaturePosition
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "append")
+
+    fun saveSignatureEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesManager.saveSignatureEnabled(enabled) }
+    }
+
+    fun saveSignatureText(text: String) {
+        viewModelScope.launch { preferencesManager.saveSignatureText(text) }
+    }
+
+    fun saveSignaturePosition(position: String) {
+        viewModelScope.launch { preferencesManager.saveSignaturePosition(position) }
     }
 
     /**
@@ -997,86 +1232,3 @@ class SettingsViewModel @Inject constructor(
     }
 }
 
-// ---- TASK-353: locale-aware language option ordering ----
-// Alphabetical order is locale-dependent, so the sort runs at READ time with a
-// Collator for the active app locale (what the Android system language picker
-// does, frameworks/opt/localepicker LocaleHelper). Display names come from the
-// platform ICU/CLDR data via [LanguageNames] (native names: users find their
-// language by its own name; see util/LanguageNames.kt). The sentinel entries
-// (app language / auto-detect) stay pinned first; their labels are genuinely
-// translatable and resolved from string resources at the UI layer, so their
-// displayName here is an unused placeholder.
-data class LanguageOption(val code: String, val displayName: String)
-
-// Every locale the app actually ships (values-* dirs). Drift between this
-// list and the res tree hides whole languages from the picker (iw/pl/tr/uk
-// shipped for four releases before being noticed, TASK-561);
-// LanguageOptionsOrderTest guards the two sides against each other. Hebrew
-// uses the canonical "he": Android 15+ (targetSdk 35+) canonicalizes the
-// legacy "iw" away in Locale.forLanguageTag, so a picker keyed "iw" would
-// not round-trip through getCurrentLocaleCode after a restart; the res dir
-// keeps its legacy values-iw name (that is what Android requires) and the
-// test maps the two.
-private val appLanguageCodes =
-    listOf("de", "en", "es", "fa", "fr", "he", "hi", "it", "pl", "pt-BR", "ru", "tr", "uk")
-
-private fun optionsFor(
-    sentinelCodes: List<String>,
-    codes: List<String>,
-    locale: java.util.Locale,
-): List<LanguageOption> {
-    if (codes.isEmpty()) return sentinelCodes.map { LanguageOption(it, "") }
-    val collator = java.text.Collator.getInstance(locale)
-    val entries = codes
-        .map { LanguageOption(it, LanguageNames.nativeLanguageName(it)) }
-        .sortedWith { a, b -> collator.compare(a.displayName, b.displayName) }
-    return sentinelCodes.map { LanguageOption(it, "") } + entries
-}
-
-internal fun languageOptionsFor(locale: java.util.Locale): List<LanguageOption> =
-    optionsFor(listOf("system"), appLanguageCodes, locale)
-
-/**
- * TASK-458: what the Transcription Language card renders for the active
- * backend. An empty offered set means "no language conditioning" and renders
- * the card disabled with an explanatory line; the offered codes become the
- * dropdown entries under the one "auto" sentinel (TASK-457: a stored "system"
- * default resolves identically to "auto", so it is no longer offered or
- * labeled separately).
- */
-data class TranscriptionLanguagePicker(
-    /** The "auto" sentinel plus the offered codes, sentinel-first, collated for the locale. */
-    val options: List<LanguageOption>,
-    /** The raw offered set; the unsupported-pin check compares the stored pin against it. */
-    val offeredCodes: Set<String>,
-) {
-    /** False = the active model does not condition on language; the card renders disabled. */
-    val conditioningAvailable: Boolean get() = offeredCodes.isNotEmpty()
-
-    /** Just the code list, in menu order (no per-recomposition mapping at the call site). */
-    val codes: List<String> get() = options.map { it.code }
-
-    /** Label lookup for the dropdown rows and the current value (O(1), not a scan). */
-    val optionByCode: Map<String, LanguageOption> by lazy { options.associateBy { it.code } }
-}
-
-internal fun transcriptionPickerFor(
-    offered: Set<String>,
-    locale: java.util.Locale,
-    phoneLanguage: String? = null,
-): TranscriptionLanguagePicker = TranscriptionLanguagePicker(
-    // TASK-547 AC#2 (review round 2): "phone" (pin to the device locale) is
-    // offered only where it would actually pin: the model conditions on
-    // language AND the resolved phone language is in the offered set (a
-    // distil-it with an English phone must not offer a pin that
-    // forcedLanguage would silently override). Between Auto and the codes.
-    options = optionsFor(
-        if (phoneLanguage != null && phoneLanguage in offered) {
-            listOf(TranscriptionLanguagePolicy.PREF_AUTO, TranscriptionLanguagePolicy.PREF_PHONE)
-        } else {
-            listOf(TranscriptionLanguagePolicy.PREF_AUTO)
-        },
-        offered.toList(), locale,
-    ),
-    offeredCodes = offered,
-)

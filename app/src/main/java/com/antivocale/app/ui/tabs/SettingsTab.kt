@@ -2,6 +2,7 @@ package com.antivocale.app.ui.tabs
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -10,8 +11,11 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
@@ -34,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
@@ -42,10 +47,12 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.antivocale.app.BuildConfig
 import com.antivocale.app.R
 import com.antivocale.app.ui.AppNavigation
+import com.antivocale.app.ui.SettingsFocusRow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -58,12 +65,15 @@ import com.antivocale.app.data.TranscriptionCalibrator.CalibrationProfile
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.PunctuationPolicy
+import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.data.DiscoveredModel
 import com.antivocale.app.data.HuggingFaceTokenManager
 import com.antivocale.app.data.HuggingFaceOAuthConfig
 import com.antivocale.app.data.ModelSource
 import com.antivocale.app.ui.components.CardTitleRow
+import com.antivocale.app.ui.components.languageOptionLabel
+import com.antivocale.app.ui.components.transcriptionSentinelLabels
 import com.antivocale.app.ui.components.CollapsibleSection
 import com.antivocale.app.ui.components.HF_TOKEN_SETTINGS_URL
 import com.antivocale.app.ui.components.OAuthLoginSection
@@ -82,7 +92,7 @@ import com.antivocale.app.util.FeedbackHelper
 import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.util.SubtitleFormatter
 import com.antivocale.app.service.InferenceService
-import com.antivocale.app.ui.viewmodel.LanguageOption
+import com.antivocale.app.ui.components.LanguageOption
 import com.antivocale.app.ui.components.EditablePromptCard
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
 
@@ -92,6 +102,8 @@ fun SettingsTab(
     onNavigateToModelTab: () -> Unit = {},
     navRequest: AppNavigation.NavRequest? = null,
     onNavConsumed: () -> Unit = {},
+    focusRow: SettingsFocusRow? = null,
+    onFocusRowConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -115,8 +127,10 @@ fun SettingsTab(
     val groupLogsByConversation by viewModel.groupLogsByConversation.collectAsState()
     val advancedSharingEnabled by viewModel.advancedSharingEnabled.collectAsState()
     val showRetranscribeButton by viewModel.showRetranscribeButton.collectAsState()
-    val forceModelLoad by viewModel.forceModelLoad.collectAsState()
+    val memoryProtection by viewModel.memoryProtection.collectAsState()
+    val externalAutomationEnabled by viewModel.externalAutomationEnabled.collectAsState()
     val compactResultActions by viewModel.compactResultActions.collectAsState()
+    val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
     // TASK-546: the chip flag (maintainer directive: the flag lives here).
     val languageChipEnabled by viewModel.languageChipEnabled.collectAsState()
     val tokenState by viewModel.tokenState.collectAsState()
@@ -190,6 +204,79 @@ fun SettingsTab(
         }
     }
 
+    // TASK-625: row-level focus (the memory-failure notification action).
+    // Same mechanics as the section branch above: consume first, back out of
+    // any open sub-page, then scroll to the row's captured content-space Y
+    // once layout has delivered it. The scroll and the highlight decay run in
+    // navScope so they survive this effect's relaunch on consumption.
+    var memoryProtectionRowY by remember { mutableStateOf<Int?>(null) }
+    var memoryProtectionHighlighted by remember { mutableStateOf(false) }
+    LaunchedEffect(focusRow) {
+        val row = focusRow ?: return@LaunchedEffect
+        onFocusRowConsumed()
+        when (row) {
+            SettingsFocusRow.MEMORY_PROTECTION -> {
+                showIconSettings = false
+                showPromptSettings = false
+                showPerAppSettings = false
+                showExportSettings = false
+                // A live search query keeps non-matching rows out of
+                // composition, so the focus row would never lay out: clear it.
+                searchQuery = ""
+                // The row lives in the collapsed-by-default Advanced section:
+                // expand it (the TASK-543 counter pattern, same key as the
+                // section destination) or the row never lays out and there is
+                // nothing to scroll to.
+                expandCounters["advanced"] = (expandCounters["advanced"] ?: 0) + 1
+                // Everything below awaits frames, and consuming the focus
+                // signal relaunches (read: cancels) this effect; the wait and
+                // the scroll must run in navScope to survive it.
+                navScope.launch {
+                    // Wait for the row to lay out (the expand bump above), then
+                    // converge on it. The expand and the async cards above the
+                    // row (battery, share targets) keep shifting its position,
+                    // so re-derive the target from the LIVE row position each
+                    // pass; rowY - contentRoot is invariant to scrolling and
+                    // tracks only real layout changes. Reaching a CLAMPED cap
+                    // is not convergence while the list can still grow: an
+                    // in-flight expand keeps maxValue small, so treat clamped
+                    // passes as settled only once maxValue has stopped moving.
+                    var attempts = 0
+                    var settled = false
+                    var lastMax = -1
+                    var stableMaxFrames = 0
+                    while (attempts < 48 && !settled) {
+                        val rowY = memoryProtectionRowY
+                        if (rowY == null) {
+                            withFrameNanos { }
+                        } else {
+                            val wanted = maxOf(0, rowY - scrollContentRootY - 32)
+                            val cap = minOf(wanted, scrollState.maxValue)
+                            val clamped = wanted > scrollState.maxValue
+                            if (clamped) {
+                                stableMaxFrames =
+                                    if (scrollState.maxValue == lastMax) stableMaxFrames + 1 else 0
+                                lastMax = scrollState.maxValue
+                                scrollState.animateScrollTo(cap)
+                                settled = stableMaxFrames >= 3
+                                if (!settled) withFrameNanos { }
+                            } else if (kotlin.math.abs(scrollState.value - cap) <= 4) {
+                                settled = true
+                            } else {
+                                scrollState.animateScrollTo(cap)
+                                withFrameNanos { }
+                            }
+                        }
+                        attempts++
+                    }
+                    memoryProtectionHighlighted = true
+                    delay(2_500)
+                    memoryProtectionHighlighted = false
+                }
+            }
+        }
+    }
+
     // OAuth launcher
     val oauthLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -224,9 +311,15 @@ fun SettingsTab(
         initialValue = viewModel.llmRemainingTimeSeconds ?: 0L,
         key1 = isModelLoaded,
     ) {
+        // TASK-603 (TASK-574 regression): a null reading means PAUSED (work
+        // in flight; beginWork drops the idle deadline and endWork re-arms
+        // the FULL timeout), so it HIDES the row (the >0L display gate)
+        // instead of freezing a stale imminent number; and there is no
+        // break-on-zero: a transient zero (re-arm racing the fire) must not
+        // kill the producer, and every genuine expiry ends with the unload
+        // flipping isModelLoaded, which is the loop's key and its exit.
         while (isModelLoaded) {
             value = viewModel.llmRemainingTimeSeconds ?: 0L
-            if (value <= 0L) break
             kotlinx.coroutines.delay(1_000)
         }
     }
@@ -238,6 +331,11 @@ fun SettingsTab(
     // groups can mirror each card's runtime condition exactly.
     val backgroundKills by viewModel.backgroundKills.collectAsState()
     val summarizeOn by viewModel.summarizeEnabled.collectAsState()
+    // TASK-647: the AI-disclaimer signature on exit surfaces.
+    val signatureOn by viewModel.signatureEnabled.collectAsState()
+    val signatureTextValue by viewModel.signatureText.collectAsState()
+    val signaturePositionValue by viewModel.signaturePosition.collectAsState()
+    val signaturePositionTitle = stringResource(R.string.signature_position_title)
     val currentPunctuationMode by viewModel.currentPunctuationMode.collectAsState()
 
     // Show sub-screens or main settings
@@ -265,6 +363,12 @@ fun SettingsTab(
             onBack = { showPromptSettings = false }
         )
     } else {
+    // TASK-628: compact rendering while search is active (descriptions
+    // suppressed) so matched cards are reachable below tall merged cards.
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.antivocale.app.ui.components.LocalSettingsSearchCompact provides
+            searchQuery.isNotBlank()
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -363,6 +467,12 @@ fun SettingsTab(
                 if (gemmaConfigured && summarizeOn) listOf(
                     R.string.summary_prompt_title, R.string.summary_prompt_description,
                 ) else null,
+                // TASK-647: the card renders unconditionally, so its search
+                // group must too (review F3: bundling it with the Gemma-gated
+                // summarize group hid it for non-Gemma users).
+                listOf(
+                    R.string.signature_setting_title, R.string.signature_setting_description,
+                ),
                 if (isLlmBackend) listOf(
                     R.string.default_prompt_title, R.string.default_prompt_description,
                 ) else null,
@@ -380,6 +490,7 @@ fun SettingsTab(
                 listOf(R.string.swipe_action_title, R.string.swipe_action_description),
                 listOf(R.string.conversation_grouping_title, R.string.conversation_grouping_description),
                 listOf(R.string.compact_result_actions_title, R.string.compact_result_actions_description),
+                listOf(R.string.technical_details_title, R.string.technical_details_description),
                 listOf(R.string.language_chip_setting_title, R.string.language_chip_setting_description),
                 listOf(R.string.retranscribe_setting_title, R.string.retranscribe_setting_description),
             ).map { group -> group.map { context.getString(it) } }
@@ -397,9 +508,19 @@ fun SettingsTab(
                     R.string.advanced_sharing_toggle,
                 ),
                 listOf(R.string.subtitle_timeout_title, R.string.subtitle_timeout_description),
-                listOf(R.string.force_model_load, R.string.force_model_load_desc),
+                listOf(R.string.memory_protection, R.string.memory_protection_desc),
+                listOf(R.string.external_automation_title, R.string.external_automation_description),
+                // TASK-681: the toggle card renders unconditionally; its
+                // fields ride the same group.
+                listOf(
+                    R.string.remote_offload_title, R.string.remote_offload_description,
+                    R.string.remote_offload_disclosure,
+                ),
                 listOf(R.string.per_app_settings_title, R.string.per_app_settings_description),
                 listOf(R.string.performance_stats_title, R.string.performance_stats_subtitle),
+                // TASK-679: the memory diagnostics card rides the same search
+                // groups so "memory" finds it like every other Advanced card.
+                listOf(R.string.memory_diagnostics_title, R.string.memory_diagnostics_subtitle),
             ).map { group -> group.map { context.getString(it) } }
         }
         @SuppressLint("RememberReturnType")
@@ -683,6 +804,40 @@ fun SettingsTab(
                 }
             }
 
+            // GH #43: two-pass transcription (instant preview, then refine).
+            val refinementTitle = stringResource(R.string.refinement_title)
+            val refinementDescription = stringResource(R.string.refinement_description)
+            val refinementEnabled by viewModel.refinementEnabled.collectAsState()
+            val refinementAvailable by viewModel.refinementAvailable.collectAsState()
+            SearchFilterRow(searchQuery, refinementTitle, refinementDescription) {
+                ToggleSettingCard(
+                    icon = Icons.Default.Bolt,
+                    title = refinementTitle,
+                    description = refinementDescription,
+                    // Greyed out until a streaming model is installed and the
+                    // selected backend is not the streaming one itself.
+                    enabled = refinementAvailable,
+                    checked = refinementEnabled && refinementAvailable,
+                    onCheckedChange = { enabled -> viewModel.saveRefinementEnabled(enabled) }
+                )
+            }
+
+            // GH #83: speaker labels on transcript cues.
+            val speakerLabelsTitle = stringResource(R.string.speaker_labels_title)
+            val speakerLabelsSummary = stringResource(R.string.speaker_labels_description)
+            val speakerLabelsEnabled by viewModel.speakerLabelsEnabled.collectAsState()
+            SearchFilterRow(searchQuery, speakerLabelsTitle, speakerLabelsSummary) {
+                ToggleSettingCard(
+                    icon = Icons.Default.RecordVoiceOver,
+                    title = speakerLabelsTitle,
+                    description = speakerLabelsSummary,
+                    checked = speakerLabelsEnabled,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveSpeakerLabelsEnabled(enabled)
+                    }
+                )
+            }
+
             // VAD Silence Stripping Setting
             val vadTitle = stringResource(R.string.vad_title)
             val vadDescription = stringResource(R.string.vad_description)
@@ -792,6 +947,45 @@ fun SettingsTab(
                         SummaryPromptCard(
                             prompt = viewModel.currentSummaryPrompt.collectAsState().value,
                             onSave = { viewModel.saveSummaryPrompt(it) }
+                        )
+                    }
+                }
+            }
+
+            // TASK-647: the AI-disclaimer signature. Applies to what LEAVES
+            // the app (copy, share, export); the in-app screens stay raw.
+            SearchFilterRow(
+                searchQuery,
+                stringResource(R.string.signature_setting_title),
+                stringResource(R.string.signature_setting_description)
+            ) {
+                ToggleSettingCard(
+                    icon = Icons.Default.Notes,
+                    title = stringResource(R.string.signature_setting_title),
+                    description = stringResource(R.string.signature_setting_description),
+                    checked = signatureOn,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveSignatureEnabled(enabled)
+                    }
+                )
+                if (signatureOn) {
+                    SignatureTextCard(
+                        text = signatureTextValue,
+                        onSave = { viewModel.saveSignatureText(it) }
+                    )
+                    SectionCard(
+                        icon = Icons.Default.SwapVert,
+                        title = signaturePositionTitle,
+                        description = null
+                    ) {
+                        SettingsDropdown(
+                            currentValue = signaturePositionValue,
+                            options = PreferencesManager.SIGNATURE_POSITIONS,
+                            currentValueDisplay = signaturePositionLabel(signaturePositionValue),
+                            optionDisplay = { signaturePositionLabel(it) },
+                            onOptionSelected = { viewModel.saveSignaturePosition(it) },
+                            label = signaturePositionTitle,
+                            enabled = true
                         )
                     }
                 }
@@ -1086,15 +1280,37 @@ fun SettingsTab(
                 )
             }
 
+            // TASK-616: the technical processing-context line on transcript
+            // entries; off by default, the data rides the report regardless.
+            val technicalDetailsTitle = stringResource(R.string.technical_details_title)
+            val technicalDetailsDescription = stringResource(R.string.technical_details_description)
+            SearchFilterRow(searchQuery, technicalDetailsTitle, technicalDetailsDescription) {
+                ToggleSettingCard(
+                    icon = Icons.Default.DataObject,
+                    title = technicalDetailsTitle,
+                    description = technicalDetailsDescription,
+                    checked = showTechnicalDetails,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveShowTechnicalDetails(enabled)
+                    }
+                )
+            }
+
             // TASK-546: the language chip is conditional on this flag.
             val languageChipTitle = stringResource(R.string.language_chip_setting_title)
             val languageChipDescription = stringResource(R.string.language_chip_setting_description)
+            val languageChipNote = stringResource(R.string.language_chip_setting_note)
+            val languageChipAvailable by viewModel.languageChipAvailable.collectAsState()
             SearchFilterRow(searchQuery, languageChipTitle, languageChipDescription) {
                 ToggleSettingCard(
                     icon = Icons.Default.Language,
                     title = languageChipTitle,
                     description = languageChipDescription,
-                    checked = languageChipEnabled,
+                    // TASK-611: visible but disabled on models that cannot
+                    // detect the language; the note names the supported ones.
+                    enabled = languageChipAvailable,
+                    supportingText = languageChipNote.takeIf { !languageChipAvailable },
+                    checked = languageChipEnabled && languageChipAvailable,
                     onCheckedChange = { enabled ->
                         viewModel.saveLanguageChip(enabled)
                     }
@@ -1659,17 +1875,73 @@ fun SettingsTab(
                 )
             }
 
-            // Force model load (bypass the low-memory pre-flight)
-            val forceModelLoadTitle = stringResource(R.string.force_model_load)
-            val forceModelLoadDescription = stringResource(R.string.force_model_load_desc)
-            SearchFilterRow(searchQuery, forceModelLoadTitle, forceModelLoadDescription) {
+            // Memory protection (opt-in low-memory pre-flight; off by default the app never blocks)
+            val memoryProtectionTitle = stringResource(R.string.memory_protection)
+            val memoryProtectionDescription = stringResource(R.string.memory_protection_desc)
+            SearchFilterRow(searchQuery, memoryProtectionTitle, memoryProtectionDescription) {
+                // TASK-625: the memory-failure notification scrolls here and
+                // flashes the card border (selection border, LauncherIconScreen
+                // pattern); idle is a transparent border, invisible.
+                val highlightColor by animateColorAsState(
+                    if (memoryProtectionHighlighted) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    tween(durationMillis = 400),
+                    label = "memory_protection_highlight"
+                )
                 ToggleSettingCard(
                     icon = Icons.Default.Memory,
-                    title = forceModelLoadTitle,
-                    description = forceModelLoadDescription,
-                    checked = forceModelLoad,
-                    onCheckedChange = { viewModel.saveForceModelLoad(it) }
+                    title = memoryProtectionTitle,
+                    description = memoryProtectionDescription,
+                    checked = memoryProtection,
+                    onCheckedChange = { viewModel.saveMemoryProtection(it) },
+                    modifier = Modifier
+                        .onGloballyPositioned { memoryProtectionRowY = it.positionInRoot().y.toInt() }
+                        .border(2.dp, highlightColor, MaterialTheme.shapes.medium)
                 )
+            }
+
+            // TASK-274: consent gate for the exported automation receivers
+            // (Tasker surface); while off they answer with the error that
+            // names this toggle.
+            val externalAutomationTitle = stringResource(R.string.external_automation_title)
+            val externalAutomationDescription = stringResource(R.string.external_automation_description)
+            SearchFilterRow(searchQuery, externalAutomationTitle, externalAutomationDescription) {
+                ToggleSettingCard(
+                    icon = Icons.Default.Build,
+                    title = externalAutomationTitle,
+                    description = externalAutomationDescription,
+                    checked = externalAutomationEnabled,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveExternalAutomationEnabled(enabled)
+                    }
+                )
+            }
+
+            // TASK-681: LAN offload (experimental). Opt-in delegation to the
+            // user's own OmniVoice box on their network; the supporting text
+            // IS the privacy contract and stays visible while off too.
+            val remoteOffloadTitle = stringResource(R.string.remote_offload_title)
+            val remoteOffloadDescription = stringResource(R.string.remote_offload_description)
+            val remoteOffloadDisclosure = stringResource(R.string.remote_offload_disclosure)
+            val remoteOffloadEnabled by viewModel.remoteOmnivoiceEnabled.collectAsState()
+            SearchFilterRow(
+                searchQuery,
+                remoteOffloadTitle,
+                remoteOffloadDescription,
+                remoteOffloadDisclosure,
+            ) {
+                ToggleSettingCard(
+                    icon = Icons.Default.Lan,
+                    title = remoteOffloadTitle,
+                    description = remoteOffloadDescription,
+                    supportingText = remoteOffloadDisclosure,
+                    checked = remoteOffloadEnabled,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveRemoteOmnivoiceEnabled(enabled)
+                    }
+                )
+                if (remoteOffloadEnabled) {
+                    RemoteOmnivoiceConfigCard(viewModel)
+                }
             }
 
             // Per-App Settings Navigation Card
@@ -1774,6 +2046,16 @@ fun SettingsTab(
                     }
                 }
             }
+
+            // TASK-679: read-only memory diagnostics. Same section as memory
+            // protection and the perf stats: the diagnostics grouping.
+            SearchFilterRow(
+                searchQuery,
+                stringResource(R.string.memory_diagnostics_title),
+                stringResource(R.string.memory_diagnostics_subtitle)
+            ) {
+                MemoryDiagnosticsCard(viewModel)
+            }
         }
 
         // Feedback & About section (issue #34 / TASK-341)
@@ -1804,7 +2086,138 @@ fun SettingsTab(
         // Spacer for scroll
         Spacer(modifier = Modifier.height(32.dp))
         }
+    }
     } // End of if-else for showPerAppSettings
+}
+
+/**
+ * TASK-679: the read-only memory diagnostics card (Settings > Advanced).
+ * Resident engines, free RAM, the app heap ceiling and the last post-OOM
+ * breadcrumb, exactly as the recorder wrote them. The Copy action puts the
+ * scrubbed bundle on the clipboard (model identities and memory numbers
+ * only; no transcript, no paths), which is the v1 export: no share intent.
+ */
+@Composable
+private fun MemoryDiagnosticsCard(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    // Live exactly while the card is composed (the collapsed-by-default
+    // Advanced section keeps this collector from ever running unseen).
+    LaunchedEffect(viewModel) {
+        viewModel.memoryDiagnosticsTriggers.collect { viewModel.refreshMemoryDiagnostics() }
+    }
+    val diagnostics by viewModel.memoryDiagnostics.collectAsState()
+    val state = diagnostics
+
+    // Simplify F1: the shared section-card scaffold (TASK-510), matching
+    // every neighbor in the Advanced section and inheriting the compact-
+    // search description suppression (TASK-628).
+    com.antivocale.app.ui.components.SectionCard(
+        icon = Icons.Default.Memory,
+        title = stringResource(R.string.memory_diagnostics_title),
+        description = stringResource(R.string.memory_diagnostics_subtitle),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+
+            Text(
+                text = stringResource(R.string.memory_diagnostics_resident_label),
+                style = MaterialTheme.typography.labelLarge
+            )
+            val residentLines = state?.residentLines().orEmpty()
+            if (residentLines.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.memory_diagnostics_resident_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                residentLines.forEach { line ->
+                    Text(text = line, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.memory_diagnostics_ram_label),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                text = state?.freeRamMb()?.let { free ->
+                    stringResource(
+                        R.string.memory_diagnostics_ram_value,
+                        free, state.totalRamMb() ?: "")
+                } ?: stringResource(R.string.memory_diagnostics_ram_unknown),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = stringResource(R.string.memory_diagnostics_heap_label),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                text = state?.heapLimitLine() ?: "",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            Text(
+                text = stringResource(R.string.memory_diagnostics_breadcrumb_label),
+                style = MaterialTheme.typography.labelLarge
+            )
+            val crumb = state?.lastBreadcrumb
+            if (crumb == null) {
+                Text(
+                    text = stringResource(R.string.memory_diagnostics_breadcrumb_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                state.lastBreadcrumbAtMs?.let { atMs ->
+                    Text(
+                        text = android.text.format.DateUtils.getRelativeTimeSpanString(atMs).toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = crumb,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+            }
+            Text(
+                text = stringResource(R.string.memory_diagnostics_breadcrumb_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            TextButton(
+                enabled = state != null,
+                onClick = {
+                    val bundle = state?.exportBundle() ?: return@TextButton
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText(
+                        context.getString(R.string.memory_diagnostics_title), bundle))
+                    com.antivocale.app.util.ToastCompat.show(
+                        context, context.getString(R.string.copied_to_clipboard))
+                }
+            ) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(R.string.memory_diagnostics_copy))
+            }
+            Text(
+                text = stringResource(R.string.memory_diagnostics_scrub_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 /**
@@ -2220,49 +2633,29 @@ private fun OutputFolderSettingCard(
     }
 }
 
-/**
- * Single label policy for the language dropdowns: a sentinel code resolves to
- * its string resource, everything else goes through the option list and falls
- * back to an ICU native name. Shared by both dropdowns so the fallback chain
- * cannot drift apart. [sentinelLabels] carries each sentinel's code → label
- * resource; both dropdowns pass the same hoisted map to the current-value and
- * per-option label calls.
- */
-@Composable
-private fun languageOptionLabel(
-    code: String,
-    sentinelLabels: Map<String, Int>,
-    options: Map<String, LanguageOption>,
-): String {
-    // TASK-547 AC#2: the phone sentinel formats with the resolved language's
-    // NAME (a raw ISO code reads as noise; every sibling row shows a native
-    // name), blank only when the locale is unreadable.
-    if (code == TranscriptionLanguagePolicy.PREF_PHONE) {
-        val phone = com.antivocale.app.util.LocaleManager.phoneLanguage(
-            androidx.compose.ui.platform.LocalContext.current
-        )
-        return stringResource(
-            R.string.language_phone_option,
-            phone?.let { LanguageNames.nativeLanguageName(it) } ?: "",
-        )
-    }
-    sentinelLabels[code]?.let { return stringResource(it) }
-    return options[code]?.displayName
-        ?: LanguageNames.nativeLanguageName(code)
-}
-
 /** App-language dropdown sentinel (the per-app "System Default" entry). */
 private val appLanguageSentinelLabels = mapOf("system" to R.string.language_system)
 
-/**
- * Transcription-language dropdown sentinel (TASK-457): "auto" is the
- * model-side detection choice. A stored "system" (the pre-457 untouched
- * default) resolves identically now that the app-locale pinning is gone, so
- * it renders with the same label instead of a second sentinel entry.
- */
-private val transcriptionSentinelLabels = mapOf(
-    TranscriptionLanguagePolicy.PREF_AUTO to R.string.transcription_language_auto,
+
+/** TASK-647: the free-text signature (blank = the localized default); inherits EditablePromptCard's cap and focus-loss commit. */
+@Composable
+private fun SignatureTextCard(
+    text: String,
+    onSave: (String) -> Unit,
+) = EditablePromptCard(
+    prompt = text,
+    onSave = onSave,
+    titleRes = R.string.signature_text_title,
+    descriptionRes = R.string.signature_text_description,
+    placeholderRes = R.string.signature_default_text,
 )
+
+@Composable
+private fun signaturePositionLabel(value: String): String = when (value) {
+    "prepend" -> stringResource(R.string.signature_position_prepend)
+    else -> stringResource(R.string.signature_position_append)
+}
+
 
 /**
  * TASK-483: editable override of the summary-pass prompt. Same contract as
@@ -2297,6 +2690,108 @@ private fun PunctuationPromptCard(
     descriptionRes = R.string.punctuation_prompt_description,
     placeholderRes = R.string.punctuation_prompt_placeholder,
 )
+
+/**
+ * TASK-681: the LAN-offload config card: endpoint, API key (password
+ * style), the pass-through model name, Save, and the connection probe.
+ * Test uses the TYPED field values, so a configuration can be verified
+ * before it is saved.
+ */
+@Composable
+private fun RemoteOmnivoiceConfigCard(viewModel: SettingsViewModel) {
+    val endpoint by viewModel.remoteEndpointInput.collectAsState()
+    val apiKey by viewModel.remoteApiKeyInput.collectAsState()
+    val model by viewModel.remoteModelInput.collectAsState()
+    val testing by viewModel.remoteConnectionTesting.collectAsState()
+    val testResult by viewModel.remoteConnectionTest.collectAsState()
+    var keyVisible by remember { mutableStateOf(false) }
+    val clipboardManager = LocalContext.current.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedTextField(
+                value = endpoint,
+                onValueChange = { viewModel.remoteEndpointInput.value = it },
+                label = { Text(stringResource(R.string.remote_offload_endpoint_label)) },
+                placeholder = { Text(stringResource(R.string.remote_offload_endpoint_placeholder)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TokenInputField(
+                value = apiKey,
+                onValueChange = { viewModel.remoteApiKeyInput.value = it },
+                tokenPasswordVisible = keyVisible,
+                onPasswordVisibilityToggle = { keyVisible = !keyVisible },
+                clipboardManager = clipboardManager,
+                modifier = Modifier.fillMaxWidth(),
+                labelRes = R.string.remote_offload_key_label,
+            )
+            OutlinedTextField(
+                value = model,
+                onValueChange = { viewModel.remoteModelInput.value = it },
+                label = { Text(stringResource(R.string.remote_offload_model_label)) },
+                supportingText = { Text(stringResource(R.string.remote_offload_model_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.saveRemoteOmnivoiceConfig() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.remote_offload_save))
+                }
+                Button(
+                    onClick = { viewModel.testRemoteConnection() },
+                    enabled = endpoint.isNotBlank() && !testing,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (testing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(stringResource(
+                        if (testing) R.string.remote_offload_test_running
+                        else R.string.remote_offload_test))
+                }
+            }
+            testResult?.let { result ->
+                val success = result is RemoteOmnivoiceBackend.ConnectionTestResult.Success
+                Text(
+                    text = remoteTestReasonText(result),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (success) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+/** TASK-681: the probe verdict in the user's language; codes stay as-is. */
+@Composable
+private fun remoteTestReasonText(
+    result: com.antivocale.app.transcription.RemoteOmnivoiceBackend.ConnectionTestResult,
+): String = when (result) {
+    is RemoteOmnivoiceBackend.ConnectionTestResult.Success ->
+        stringResource(R.string.remote_offload_test_success)
+    is RemoteOmnivoiceBackend.ConnectionTestResult.Unreachable ->
+        stringResource(R.string.remote_test_reason_unreachable)
+    is RemoteOmnivoiceBackend.ConnectionTestResult.AuthRejected ->
+        stringResource(R.string.remote_test_reason_auth)
+    is RemoteOmnivoiceBackend.ConnectionTestResult.Timeout ->
+        stringResource(
+            R.string.remote_test_reason_timeout,
+            (RemoteOmnivoiceBackend.TEST_BUDGET_MS / 1000L).toInt())
+    is RemoteOmnivoiceBackend.ConnectionTestResult.ServerError ->
+        stringResource(R.string.remote_test_reason_server, result.statusCode)
+}
 
 /** TASK-276: pref value -> localized label, one fallback for unknown values. */
 @Composable

@@ -38,15 +38,25 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun MainScreen(
     startOnModelTab: Boolean = false,
     navigateToModel: Boolean = false,
-    isInPipMode: Boolean = false
+    isInPipMode: Boolean = false,
+    focusSettingsRow: SettingsFocusRow? = null,
+    onSettingsFocusConsumed: () -> Unit = {}
 ) {
     // PiP mode: show compact transcription view
     if (isInPipMode) {
+        // A settings-row focus arriving while in PiP cannot run (the tab UI is
+        // not composed): consume it instead of firing a stale jump on PiP exit.
+        LaunchedEffect(focusSettingsRow) {
+            if (focusSettingsRow != null) onSettingsFocusConsumed()
+        }
         PipTranscriptionView()
         return
     }
 
-    var selectedTabIndex by remember { mutableIntStateOf(if (startOnModelTab) 1 else 0) }
+    var selectedTabIndex by remember {
+        mutableIntStateOf(
+            if (startOnModelTab) AppNavigation.TAB_INDEX_MODELS else AppNavigation.TAB_INDEX_HISTORY)
+    }
     val viewModel: LogsViewModel = hiltViewModel()
     val highlightTaskId by viewModel.highlightTaskId.collectAsState()
 
@@ -91,11 +101,11 @@ fun MainScreen(
             null -> revealState.hide()
             TourStep.Welcome -> revealState.reveal(TourStep.Welcome.key)
             TourStep.ModelsTab -> {
-                selectedTabIndex = 1
+                selectedTabIndex = AppNavigation.TAB_INDEX_MODELS
                 revealState.reveal(TourStep.ModelsTab.key)
             }
             TourStep.HistoryTab, TourStep.BrowseFab -> {
-                selectedTabIndex = 0
+                selectedTabIndex = AppNavigation.TAB_INDEX_HISTORY
                 revealState.reveal(step.key)
             }
         }
@@ -104,7 +114,7 @@ fun MainScreen(
     // Force Logs tab when a highlight signal arrives
     LaunchedEffect(highlightTaskId) {
         if (highlightTaskId != null) {
-            selectedTabIndex = 0
+            selectedTabIndex = AppNavigation.TAB_INDEX_HISTORY
         }
     }
 
@@ -112,7 +122,15 @@ fun MainScreen(
     // (e.g. user tapped "Go to Model tab" in the native-crash dialog).
     LaunchedEffect(navigateToModel) {
         if (navigateToModel) {
-            selectedTabIndex = 1
+            selectedTabIndex = AppNavigation.TAB_INDEX_MODELS
+        }
+    }
+
+    // TASK-625: switch to Settings when a row-focus signal arrives; the
+    // target is handed to SettingsTab, which consumes it after delivery.
+    LaunchedEffect(focusSettingsRow) {
+        if (focusSettingsRow != null) {
+            selectedTabIndex = AppNavigation.TAB_INDEX_SETTINGS
         }
     }
 
@@ -127,13 +145,21 @@ fun MainScreen(
     // switch to the Settings tab and hand the destination to SettingsTab
     // through the consume-once NavRequest, never through the pending token
     // (its write side is debug-only by contract, AppNavigation KDoc). The
-    // tab index DERIVES from TAB_KEYS so inserting a tab cannot silently
-    // reroute every settings navigation. Accepted race (debug-only): a TEST_SPI
-    // settings destination landing between a hint tap and SettingsTab's
-    // composition overwrites the single in-flight NavRequest slot.
-    val settingsTabIndex = AppNavigation.TAB_KEYS.indexOf("settings")
+    // tab index DERIVES from TAB_KEYS (checked at load, AppNavigation), like
+    // every other tab-switch site in this file. Accepted race (debug-only):
+    // a TEST_SPI settings destination landing between a hint tap and
+    // SettingsTab's composition overwrites the single in-flight NavRequest slot.
+    // TASK-617 F9: navigateToTab is the switch site the callback-based
+    // routings delegate to; the LaunchedEffect handlers below still assign
+    // selectedTabIndex directly (idiomatic there, same constants). No
+    // remember wrappers: strong skipping (on by default in the Compose
+    // compiler we ship) already memoizes the capturing lambdas.
+    fun navigateToTab(index: Int) {
+        selectedTabIndex = index
+    }
+
     fun openSettings(destination: AppNavigation.Destination) {
-        selectedTabIndex = settingsTabIndex
+        navigateToTab(AppNavigation.TAB_INDEX_SETTINGS)
         settingsNavRequest = AppNavigation.NavRequest.next(destination)
     }
     LaunchedEffect(testNav) {
@@ -142,18 +168,13 @@ fun MainScreen(
         when (val parsed = AppNavigation.parse(dest)) {
             is AppNavigation.Destination.Tab -> selectedTabIndex = parsed.index
             is AppNavigation.Destination.ModelTarget -> {
-                selectedTabIndex = 1
+                selectedTabIndex = AppNavigation.TAB_INDEX_MODELS
                 modelsNavRequest = AppNavigation.NavRequest.next(parsed)
             }
             is AppNavigation.Destination.SettingsSubPage,
             is AppNavigation.Destination.SettingsSection -> openSettings(parsed)
             null -> Unit
         }
-    }
-
-    // Navigation callback to switch tabs
-    fun navigateToTab(index: Int) {
-        selectedTabIndex = index
     }
 
     // Logs tab is first since it is the primary use case (viewing transcription history)
@@ -165,6 +186,11 @@ fun MainScreen(
             LogsTab(
                 highlightTaskId = highlightTaskId,
                 tourRevealState = revealState,
+                // TASK-617: the chip's destination; rationale on the
+                // LogsTab parameter it pairs with.
+                onOpenLanguageSetting = {
+                    openSettings(AppNavigation.Destination.SettingsSection("transcription"))
+                },
                 onNavigateToSettings = {
                     openSettings(
                         AppNavigation.Destination.SettingsSubPage(
@@ -174,8 +200,8 @@ fun MainScreen(
                 },
             )
         },
-        TabItem(R.string.model_tab, Icons.Default.Storage) { ModelTab(onNavigateToSettings = { navigateToTab(settingsTabIndex) }, navRequest = modelsNavRequest, onNavConsumed = { modelsNavRequest = null }) },
-        TabItem(R.string.settings_tab, Icons.Default.Settings) { SettingsTab(onNavigateToModelTab = { navigateToTab(1) }, navRequest = settingsNavRequest, onNavConsumed = { settingsNavRequest = null }) }
+        TabItem(R.string.model_tab, Icons.Default.Storage) { ModelTab(onNavigateToSettings = { navigateToTab(AppNavigation.TAB_INDEX_SETTINGS) }, navRequest = modelsNavRequest, onNavConsumed = { modelsNavRequest = null }) },
+        TabItem(R.string.settings_tab, Icons.Default.Settings) { SettingsTab(onNavigateToModelTab = { navigateToTab(AppNavigation.TAB_INDEX_MODELS) }, navRequest = settingsNavRequest, onNavConsumed = { settingsNavRequest = null }, focusRow = focusSettingsRow, onFocusRowConsumed = onSettingsFocusConsumed) }
     )
 
     RevealCanvas(
@@ -247,8 +273,8 @@ fun MainScreen(
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         val tourKey = when (index) {
-                            0 -> TourStep.HistoryTab.key
-                            1 -> TourStep.ModelsTab.key
+                            AppNavigation.TAB_INDEX_HISTORY -> TourStep.HistoryTab.key
+                            AppNavigation.TAB_INDEX_MODELS -> TourStep.ModelsTab.key
                             else -> null
                         }
                         Tab(

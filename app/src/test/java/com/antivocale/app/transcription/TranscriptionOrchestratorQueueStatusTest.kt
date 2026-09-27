@@ -26,7 +26,16 @@ class TranscriptionOrchestratorQueueStatusTest {
             backendManager = mockk(relaxed = true),
             audioPreprocessor = mockk<AudioPreprocessor>(),
             backendRegistry = staticRegistry(),
+            shareTargetManager = mockk(relaxed = true),
+            shareShortcutManager = mockk(relaxed = true),
             externalModelStore = mockk(relaxed = true),
+            // TASK-675: never reached here (logQueued only), real instance
+            // keeps the construction honest anyway.
+            silentModelDemoter = SilentModelDemoter(com.antivocale.app.data.FakePreferencesManager()),
+            // TASK-679: never reached here either, same honesty rule.
+            oomBreadcrumbRecorder = OomBreadcrumbRecorder(
+                mockk(relaxed = true), mockk(relaxed = true),
+                mockk(relaxed = true), staticRegistry()),
         )
 
     @Test
@@ -59,11 +68,15 @@ class TranscriptionOrchestratorQueueStatusTest {
 
         orchestrator.logQueued(taskId = "t-sub", requestType = "subtitles")
         orchestrator.logQueued(taskId = "t-txt", requestType = "text")
+        // TASK-677: a handed subtitle file is TEXT, not AUDIO: the row must
+        // never offer re-transcribe (there is no audio to decode), which the
+        // Type.AUDIO gate on that action would.
+        orchestrator.logQueued(taskId = "t-imp", requestType = "subtitle_import")
 
         val inserts = mutableListOf<com.antivocale.app.data.local.LogEntity>()
-        coVerify(exactly = 2) { logDao.insert(capture(inserts)) }
+        coVerify(exactly = 3) { logDao.insert(capture(inserts)) }
         assertEquals(
-            listOf("AUDIO", "TEXT"),
+            listOf("AUDIO", "TEXT", "TEXT"),
             inserts.map { it.type },
         )
     }

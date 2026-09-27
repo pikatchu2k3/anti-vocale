@@ -3,6 +3,7 @@ package com.antivocale.app.service
 import android.app.Notification
 import android.app.NotificationManager
 import com.antivocale.app.util.AppNotificationChannel
+import com.antivocale.app.util.TranscriptSignature
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -23,11 +24,14 @@ import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.local.LogDao
 import com.antivocale.app.receiver.TaskerRequestReceiver
+import com.antivocale.app.transcription.DualRefinementPolicy
 import com.antivocale.app.transcription.TimedSegment
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.TranscriptionOrchestrator
+import com.antivocale.app.ui.SettingsFocusRow
 import com.antivocale.app.util.CrashReporter
 import com.antivocale.app.util.ProgressThrottler
+import com.antivocale.app.util.SubtitleFormatter
 import com.antivocale.app.util.TranscriptFileSaver
 import com.antivocale.app.util.formatProcessingTime
 import dagger.hilt.android.AndroidEntryPoint
@@ -64,9 +68,16 @@ class InferenceService : Service(), TranscriptionListener {
 
         private const val RC_LAUNCH_DEFAULT = 0
         private const val RC_LAUNCH_MODEL_TAB = 1
+        private const val RC_LAUNCH_SETTINGS_ROW = 2
         private const val RC_NAV_PREV = 10
         private const val RC_NAV_NEXT = 11
         private const val RC_NAV_LIVE = 12
+
+        // TaskId-hash request codes live above the small-constant band: a raw
+        // hash can land on a constant's value, and PendingIntent matching
+        // ignores extras, so a collision silently overwrites the other intent
+        // (the slot-band comment in InferenceEnqueue documents the same class).
+        private const val RC_HASH_BASE = 1000
 
         const val EXTRA_SOURCE = "source"
         const val EXTRA_SOURCE_PACKAGE = "source_package"
@@ -78,6 +89,15 @@ class InferenceService : Service(), TranscriptionListener {
         const val EXTRA_SHARED_URI = "shared_uri"
         const val EXTRA_MIME_TYPE = "mime_type"
         const val EXTRA_BACKEND_OVERRIDE = "backend_override"
+
+        /**
+         * TASK-546 AC3: transient per-request language override (the chip's
+         * re-run arm). Speaks the preference vocabulary ("auto" or a concrete
+         * code); never persists, unlike a Settings pin.
+         */
+        const val EXTRA_LANGUAGE_OVERRIDE = "language_override"
+        /** TASK-274(f): the broadcast sender's package, pinned onto replies. */
+        const val EXTRA_REQUESTER_PACKAGE = "requester_package"
 
         const val ACTION_CANCEL = "com.antivocale.app.CANCEL_TRANSCRIPTION"
 
@@ -144,7 +164,11 @@ class InferenceService : Service(), TranscriptionListener {
         val source: String? = null,
         val sourcePackage: String? = null,
         val backendOverride: String? = null,
-        val trackIndex: Int = -1
+        /** TASK-546 AC3: request-scoped language override, like [backendOverride]. */
+        val languageOverride: String? = null,
+        val trackIndex: Int = -1,
+        /** TASK-274(f): reply-sink pin (null = pre-34 sender, unpinned reply). */
+        val requesterPackage: String? = null
     )
 
     // ---- Android Lifecycle ----
@@ -187,11 +211,14 @@ class InferenceService : Service(), TranscriptionListener {
             requestType = intent?.getStringExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE) ?: "text",
             prompt = intent?.getStringExtra(TaskerRequestReceiver.EXTRA_PROMPT) ?: "",
             filePath = filePath,
+            requesterPackage = intent?.getStringExtra(EXTRA_REQUESTER_PACKAGE),
             source = intent?.getStringExtra(EXTRA_SOURCE),
             sourcePackage = intent?.getStringExtra(EXTRA_SOURCE_PACKAGE),
             backendOverride = intent?.getStringExtra(EXTRA_BACKEND_OVERRIDE),
+            languageOverride = intent?.getStringExtra(EXTRA_LANGUAGE_OVERRIDE),
             trackIndex = intent?.getIntExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, -1) ?: -1
         )
+        rememberRequester(request)
 
         // Dedup by taskId: drop a duplicate before it enters the queue. This covers both the
         // queued case (a request with the same taskId is waiting) and the in-flight case (a
@@ -292,6 +319,7 @@ class InferenceService : Service(), TranscriptionListener {
                                     source = request.source,
                                     sourcePackage = request.sourcePackage,
                                     backendOverride = request.backendOverride,
+                                    languageOverride = request.languageOverride,
                                     trackIndex = request.trackIndex,
                                     queuePosition = currentIndex,
                                     queueTotal = totalInBatch,
@@ -560,9 +588,11 @@ class InferenceService : Service(), TranscriptionListener {
         isPartial: Boolean,
         failedChunkCount: Int,
         streamedWithoutVad: Boolean,
-        segments: List<TimedSegment>
+        segments: List<TimedSegment>,
+        refinementOutcome: String?
     ) {
         sendSuccessReply(taskId, resultText)
+        forgetRequester(taskId)
         // Every completed task moves the model-recency source: re-derive the
         // launcher's dynamic share shortcuts. Metadata-only side effect on the
         // service scope (IO), must never reach the result path.
@@ -588,37 +618,62 @@ class InferenceService : Service(), TranscriptionListener {
         errorMessage: String,
         isShareRequest: Boolean,
         isNoModelError: Boolean,
-        durationMs: Long
+        durationMs: Long,
+        isMemoryFailure: Boolean
     ) {
         sendErrorReply(taskId, errorCode, errorMessage)
+        forgetRequester(taskId)
         // TASK-307: in-app failures get the same notification as share failures.
         // The Logs row records the error either way, but a user actively waiting on
         // an in-app transcription had no immediate signal unless they expanded the row.
         if (isNoModelError) showNoModelNotification()
         else showErrorNotification(
-            // TASK-396 pt.1: the orchestrator's OOM catch reports the technical
-            // class name as the message; the notification must carry the localized
-            // mitigation advice, not "OutOfMemoryError".
-            if (errorCode == "OUT_OF_MEMORY") getString(R.string.error_oom_transcription)
-            else errorMessage)
+            // TASK-631: the orchestrator now sends the localized message for
+            // every failure path, including the OOM catch (its advice varies
+            // with the memory-protection state), so errorMessage is final.
+            errorMessage,
+            isMemoryFailure = isMemoryFailure)
     }
 
     // ---- Broadcast Replies ----
 
+    /**
+     * TASK-274(f): the reply sink is PINNED point-to-point. The receiver
+     * records the sending package (API 34+); replies go only there, and
+     * share-flow requests are never replied to at all (their consumer is the
+     * result notification; nothing legitimate listens for share_* taskIds, so
+     * a world-visible reply was pure exfiltration surface). A null pin (pre-34
+     * device or system-sent broadcast) keeps the historical unpinned reply,
+     * which cannot be made worse than it already was.
+     */
+    private val requesterByTask = java.util.concurrent.ConcurrentHashMap<String, PendingRequest>()
+    private fun rememberRequester(request: PendingRequest) {
+        requesterByTask[request.taskId] = request
+    }
+    private fun forgetRequester(taskId: String) {
+        requesterByTask.remove(taskId)
+    }
+
     private fun sendSuccessReply(taskId: String, resultText: String) {
+        val request = requesterByTask[taskId]
+        if (request?.source == "share") return
         val replyIntent = Intent(TaskerRequestReceiver.ACTION_TASKER_REPLY).apply {
             putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
             putExtra(TaskerRequestReceiver.EXTRA_STATUS, TaskerRequestReceiver.STATUS_SUCCESS)
             putExtra(TaskerRequestReceiver.EXTRA_RESULT_TEXT, resultText)
+            request?.requesterPackage?.let { setPackage(it) }
         }
         sendBroadcast(replyIntent)
     }
 
     private fun sendErrorReply(taskId: String, errorCode: String, errorMessage: String) {
+        val request = requesterByTask[taskId]
+        if (request?.source == "share") return
         val replyIntent = Intent(TaskerRequestReceiver.ACTION_TASKER_REPLY).apply {
             putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
             putExtra(TaskerRequestReceiver.EXTRA_STATUS, TaskerRequestReceiver.STATUS_ERROR)
             putExtra(TaskerRequestReceiver.EXTRA_ERROR_MESSAGE, "$errorCode: $errorMessage")
+            request?.requesterPackage?.let { setPackage(it) }
         }
         sendBroadcast(replyIntent)
     }
@@ -643,7 +698,12 @@ class InferenceService : Service(), TranscriptionListener {
 
         if (globalAutoCopy || perAppAutoCopy) {
             val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText(getString(R.string.clipboard_label_transcription), transcriptionText)
+            // TASK-647: the clipboard is an exit surface; the AI-disclaimer
+            // signature (when enabled) rides exactly here.
+            val sig = TranscriptSignature.effectiveSpec(
+                preferencesManager, getString(R.string.signature_default_text))
+            val signedText = TranscriptSignature.apply(transcriptionText, sig.text, sig.position)
+            val clip = ClipData.newPlainText(getString(R.string.clipboard_label_transcription), signedText)
             clipboardManager.setPrimaryClip(clip)
             Log.i(TAG, "Auto-copied transcription to clipboard (${transcriptionText.length} chars), source=$sourcePackage, global=$globalAutoCopy, perApp=$perAppAutoCopy")
 
@@ -672,6 +732,11 @@ class InferenceService : Service(), TranscriptionListener {
                 preferencesManager.outputFolderUri.first(),
                 preferencesManager.transcriptExportFormat.first(),
                 text, segments, failedChunkCount, sourcePackage,
+                signature = TranscriptSignature.effectiveSpec(
+                    preferencesManager, getString(R.string.signature_default_text)).let { it.text },
+                signaturePosition = TranscriptSignature.effectiveSpec(
+                    preferencesManager, getString(R.string.signature_default_text)).position,
+            
             )
         }
         if (name != null) {
@@ -821,7 +886,15 @@ class InferenceService : Service(), TranscriptionListener {
         failedChunkCount: Int = 0,
         copiedToClipboard: Boolean = false,
         streamedWithoutVad: Boolean = false,
+        refinedFrom: String? = null,
+        notRefined: Boolean = false,
+        segments: List<TimedSegment>,
     ) {
+        // TASK-598 F5: the notification's whole text (body, copy, share,
+        // page rebuilds) derives the speaker-annotated form when the run
+        // carries labels, the same derivation as the History surfaces and
+        // the auto-save TXT arm; raw transcript when it does not.
+        val text = SubtitleFormatter.annotatedOrStored(transcriptionText, segments)
         val prefs = if (sourcePackage != null) {
             try {
                 perAppPreferencesManager.getCurrentPreferences(sourcePackage)
@@ -835,7 +908,11 @@ class InferenceService : Service(), TranscriptionListener {
 
         val id = ResultNotificationFactory.nextNotificationId()
         val spec = ResultNotificationSpec(
-            transcriptionText = transcriptionText,
+            transcriptionText = text,
+            signatureText = TranscriptSignature.effectiveSpec(
+                preferencesManager, getString(R.string.signature_default_text)).let { it.text },
+            signaturePosition = TranscriptSignature.effectiveSpec(
+                preferencesManager, getString(R.string.signature_default_text)).position,
             taskId = taskId,
             sourcePackage = sourcePackage,
             confidence = confidence,
@@ -845,26 +922,23 @@ class InferenceService : Service(), TranscriptionListener {
             notificationId = id,
             copiedToClipboard = copiedToClipboard,
             streamedWithoutVad = streamedWithoutVad,
+            refinedFrom = refinedFrom,
+            notRefined = notRefined,
             firstPostedAt = System.currentTimeMillis()
         )
         val notification = resultNotificationFactory.build(spec, prefs)
         notificationManager.notify(id, notification)
-        Log.i(TAG, "Showed result notification (${transcriptionText.length} chars), source=$sourcePackage, showShare=${prefs.showShareAction} (id=$id)")
+        Log.i(TAG, "Showed result notification (${text.length} chars), source=$sourcePackage, showShare=${prefs.showShareAction} (id=$id)")
     }
 
-    private fun showErrorNotification(errorMessage: String) {
-        val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setContentTitle(getString(R.string.transcription_failed))
-            .setContentText(errorMessage)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(buildLaunchPendingIntent())
-            .setAutoCancel(true)
-            .build()
+    private fun showErrorNotification(errorMessage: String, isMemoryFailure: Boolean) {
+        // TASK-625: composition lives in ResultNotificationFactory (both error
+        // surfaces and the TEST_SPI simulate op share this one builder).
+        val notification = resultNotificationFactory.errorNotification(errorMessage, isMemoryFailure)
 
         val id = ResultNotificationFactory.nextNotificationId()
         notificationManager.notify(id, notification)
-        Log.i(TAG, "Showed error notification: $errorMessage (id=$id)")
+        Log.i(TAG, "Showed error notification: $errorMessage (memoryAction=$isMemoryFailure, id=$id)")
     }
 
     private fun showNoModelNotification() {
@@ -893,19 +967,29 @@ class InferenceService : Service(), TranscriptionListener {
 
     private fun buildLaunchPendingIntent(
         navigateToModelTab: Boolean = false,
-        highlightTaskId: String? = null
+        highlightTaskId: String? = null,
+        navigateToSettingsRow: SettingsFocusRow? = null
     ): android.app.PendingIntent {
         val requestCode = when {
-            highlightTaskId != null -> highlightTaskId.hashCode()
+            highlightTaskId != null ->
+                RC_HASH_BASE + highlightTaskId.hashCode().let { if (it < 0) it.inv() else it }
+            navigateToSettingsRow != null -> RC_LAUNCH_SETTINGS_ROW
             navigateToModelTab -> RC_LAUNCH_MODEL_TAB
             else -> RC_LAUNCH_DEFAULT
         }
         val openIntent = Intent(this, MainActivity::class.java).apply {
-            if (highlightTaskId != null) {
+            // In-app deep links (highlight, settings row) hand the extra to the
+            // live activity (onNewIntent) instead of clearing its task.
+            if (highlightTaskId != null || navigateToSettingsRow != null) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra(MainActivity.EXTRA_HIGHLIGHT_TASK_ID, highlightTaskId)
             } else {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            when {
+                highlightTaskId != null ->
+                    putExtra(MainActivity.EXTRA_HIGHLIGHT_TASK_ID, highlightTaskId)
+                navigateToSettingsRow != null ->
+                    putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, navigateToSettingsRow.name)
             }
             if (navigateToModelTab) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_MODEL_TAB, true)

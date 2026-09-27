@@ -70,14 +70,15 @@ class TestSpiConformanceTest {
             .filter { it !in setOf("op", "paths") }
 
         // Flows deliberately NOT in get: partial-transcription resume state
-        // (write-path only), benchmark history, the retired GGUF backend's
-        // state, the one-shot external-migration marker, and the path flows
+        // (write-path only), benchmark history, the one-shot external-migration
+        // marker, and the path flows
         // that render inside "paths"/"activeModelPath" instead.
         val excluded = setOf(
             "partialTranscriptionText", "partialTranscriptionTimestamp",
             "allBenchmarkResults",
-            "customTransducerModelPath", "customTransducerModelType", "ggufModelPath",
+            "customTransducerModelPath", "customTransducerModelType",
             "externalMigrationDone",
+            "pendingBackendLoad", // TASK-640: crash marker, write-path only
             "modelPath", // rendered as activeModelPath/paths.llm
             "externalModelsJson", // op=records covers it
         )
@@ -91,6 +92,8 @@ class TestSpiConformanceTest {
             when (prop) {
                 "progressiveTranscription" -> "progressiveEnabled"
                 "keepAliveTimeout" -> "keepAliveTimeoutMinutes"
+                // TASK-681: the LAN-offload key is readable only masked.
+                "remoteOmnivoiceApiKey" -> "remoteOmnivoiceApiKeyMasked"
                 else -> prop
             }
         }.toSet() + "activeModelPath"

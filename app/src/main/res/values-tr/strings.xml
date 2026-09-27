@@ -37,6 +37,7 @@
     <string name="saved_model_found">Kayıtlı model bulundu</string>
     <string name="saved_model_not_found">Kayıtlı model bulunamadı</string>
     <string name="model_selected">Model seçildi: %1$s</string>
+    <string name="model_import_invalid_file">Seçilen dosya kullanılabilir bir LiteRT-LM modeli gibi görünmüyor (%1$s)</string>
     <string name="model_copy_failed">Model dosyası kopyalanamadı</string>
     <string name="model_file_not_found">Model dosyası şurada bulunamadı: %1$s</string>
     <string name="model_loading">Model belleğe yükleniyor…</string>
@@ -95,7 +96,9 @@
     <string name="summary_skipped_context">Özet atlandı: transkript, özet geçişinin işleyebileceği uzunluğu aşıyor.</string>
     <string name="summary_skipped_no_model">Özet atlandı: Gemma modeli yapılandırılmamış. Özetleri etkinleştirmek için Modeller sekmesinden indirin.</string>
     <string name="summary_skipped_failed">Özet oluşturulamadı; transkript sağlam.</string>
+    <string name="summary_skipped_timeout">Özet zaman limitini aştı; transkript sağlam.</string>
     <string name="summary_skipped_guard">Özet atlandı: üretilen özet uzunluk sınırlarının dışında kaldı (bir özet için çok kısa veya çok uzun).</string>
+    <string name="summary_partial_note">(transkriptin bazı bölümleri özetlenemedi)</string>
     <string name="copy_summary">Özeti kopyala</string>
     <string name="copy_original">Orijinali kopyala</string>
     <string name="logs_model_label">Model: %1$s</string>
@@ -274,10 +277,53 @@
     <string name="oom_crash_warning">Cihazın belleği azaldığı için uygulama kapatıldı. Yeniden metin çıkarmadan önce diğer uygulamaları kapatmayı veya daha küçük bir model kullanmayı deneyin.</string>
     <string name="native_crash_title">Uygulama beklenmedik şekilde kapandı</string>
     <string name="native_crash_go_to_model">Model sekmesine git</string>
-    <string name="model_load_low_memory">Bu model için yeterli boş bellek yok (%1$s boş, yaklaşık %2$s gerekiyor). Diğer uygulamaları kapatın veya daha küçük bir model kullanın. Zorunlu yükleme Ayarlar\'dan yapılabilir.</string>
-    <string name="transcribe_low_memory">Bu modelle transkripsiyon için yeterli boş bellek yok (yaklaşık %1$s boş, %2$s gerekiyor). Diğer uygulamaları kapatıp tekrar deneyin veya ayarlarda Model yüklemeyi zorla seçeneğini açın.</string>
-    <string name="force_model_load">Model yüklemeyi zorla</string>
-    <string name="force_model_load_desc">Bellek yetersiz görünse bile modeli yükle. Az RAM\'li cihazlarda uygulamayı kapatabilir.</string>
+    <string name="model_load_low_memory">Bu model için yeterli boş bellek yok (%1$s boş, yaklaşık %2$s gerekiyor). Bellek koruması etkin: diğer uygulamaları kapatın, daha küçük bir model kullanın veya yine de denemek için bunu Ayarlar\'dan kapatın.</string>
+    <string name="memory_margin_warning_title">Model bu telefonun bellek sınırına yakın</string>
+    <string name="memory_margin_warning_body">%1$s modeli bu telefonun kaldırabileceği sınıra yakın olabilir. Transkript yine de çalışır; bu tür yüklemeleri engellemek için Ayarlar\'dan bellek korumasını etkinleştirebilirsin.</string>
+    <string name="transcribe_low_memory">Bu modelle transkripsiyon için yeterli boş bellek yok (yaklaşık %1$s boş, %2$s gerekiyor). Bellek koruması etkin: diğer uygulamaları kapatıp tekrar deneyin veya yine de denemek için bunu Ayarlar\'dan kapatın.</string>
+    <string name="external_model_quarantined_title">Çöküşten sonra harici model devre dışı bırakıldı</string>
+    <string name="external_model_quarantined_text">"%1$s" yüklenmesi uygulamayı kapattığı için tekrarlayan çökmeleri önlemek amacıyla devre dışı bırakıldı. Tekrar denemek için modeli Modeller sekmesinde silip yeniden içe aktarın.</string>
+    <string name="memory_protection">Bellek koruması</string>
+    <string name="memory_protection_desc">Boş bellek yetersiz görünüyorsa model yüklenmesini engeller, böylece uygulamanın sessizce kapanması önlenir. Varsayılan olarak kapalıdır: uygulama normalde modeli her zaman çalıştırmayı dener.</string>
+    <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
+    <string name="external_automation_title">Harici otomasyon (Tasker)</string>
+    <string name="external_automation_description">Diğer uygulamaların otomasyon API\'si (örnek: Tasker) aracılığıyla transkripsiyon başlatmasına izin verir. Varsayılan olarak kapalıdır.</string>
+    <string name="external_automation_disabled">Harici otomasyon devre dışı. Ayarlar > Gelişmiş > Harici otomasyon bölümünden etkinleştirin.</string>
+    <string name="remote_omnivoice_name">LAN devri (OmniVoice)</string>
+    <string name="remote_offload_title">LAN devri (deneysel)</string>
+    <string name="remote_offload_description">Uzun veya ağır transkripsiyonları Wi-Fi ağınızdaki kendi OmniVoice sunucunuza devreder. Etkinleştirildiğinde Model sekmesinden seçin.</string>
+    <string name="remote_offload_disclosure">Bu özellik etkinken ve seçiliyken, bu transkripsiyonların sesi yalnızca aşağıya girdiğiniz sunucu adresine, kendi ağınız üzerinden gönderilir. Geri kalan her şey bu cihazda transkribe edilir. Varsayılan olarak kapalıdır: siz açmadıkça telefonunuzdan hiçbir şey çıkmaz.</string>
+    <string name="remote_offload_endpoint_label">Sunucu adresi</string>
+    <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
+    <string name="remote_offload_key_label">API anahtarı</string>
+    <string name="remote_offload_model_label">Model adı</string>
+    <string name="remote_offload_model_hint">OmniVoice sunucunuzun çözdüğü model adı; varsayılan whisper-1.</string>
+    <string name="remote_offload_save">Kaydet</string>
+    <string name="remote_offload_test">Bağlantıyı sına</string>
+    <string name="remote_offload_test_running">Sınanıyor…</string>
+    <string name="remote_offload_test_success">Bağlantı çalışıyor.</string>
+    <string name="remote_test_reason_unreachable">Sunucuya erişilemiyor. Adresi ve OmniVoice\'in çalıştığını kontrol edin.</string>
+    <string name="remote_test_reason_auth">Sunucu API anahtarını reddetti.</string>
+    <string name="remote_test_reason_timeout">%1$d saniye içinde yanıt yok; sunucu meşgul olabilir.</string>
+    <string name="remote_test_reason_server">Sunucu bir hata döndürdü (HTTP %1$d).</string>
+    <string name="error_remote_timeout">OmniVoice sunucunuzdaki transkripsiyon %1$d dakika içinde tamamlanmadı ve durduruldu.</string>
+    <string name="error_remote_unreachable">OmniVoice sunucunuza erişilemiyor. Çalıştığını ve Ayarlar\'daki adresin doğru olduğunu kontrol edin.</string>
+    <string name="error_remote_server">OmniVoice sunucusu isteği reddetti (HTTP %1$d).</string>
+    <string name="remote_offload_status">OmniVoice sunucunuzda transkribe ediliyor…</string>
+    <!-- TASK-679: yerleşik modeller paneli (Ayarlar > Gelişmiş) ve OOM sonrası iz kaydı. -->
+    <string name="memory_diagnostics_title">Cihaz belleği</string>
+    <string name="memory_diagnostics_subtitle">Şu anda yüklü modeller, boş RAM ve son bellek yetersizliği kaydı.</string>
+    <string name="memory_diagnostics_resident_label">Yerleşik modeller</string>
+    <string name="memory_diagnostics_resident_none">Şu anda yüklü model yok</string>
+    <string name="memory_diagnostics_ram_label">Boş RAM</string>
+    <string name="memory_diagnostics_ram_value">%2$s içinden %1$s boş</string>
+    <string name="memory_diagnostics_ram_unknown">Bu cihazda okunamıyor</string>
+    <string name="memory_diagnostics_heap_label">Uygulama bellek sınırı</string>
+    <string name="memory_diagnostics_breadcrumb_label">Son bellek yetersizliği olayı</string>
+    <string name="memory_diagnostics_breadcrumb_none">Kayıt yok</string>
+    <string name="memory_diagnostics_breadcrumb_hint">Bir transkripsiyon bellek nedeniyle başarısız olduğunda, hangi modellerin yüklü olduğunu ve isteğin ne yaptığını tek bir satır kaydeder.</string>
+    <string name="memory_diagnostics_scrub_note">Tanılama verileri yalnızca model adları ve bellek sayıları içerir: asla transkript metni veya dosya yolları içermez.</string>
+    <string name="memory_diagnostics_copy">Tanılamayı kopyala</string>
     <string name="copy">Kopyala</string>
     <string name="share">Paylaş</string>
     <string name="char_counter">%2$d karakterden %1$d</string>
@@ -320,6 +366,7 @@
     <string name="active_badge">Etkin</string>
     <string name="model_selected_message">%1$s seçildi</string>
     <string name="model_use_missing_files">%1$s için model dosyaları eksik veya tamamlanmamış. Model sekmesinden varyantı yeniden indirin.</string>
+    <string name="model_demoted_notice">Otomatik olarak seçilmez: bu model konuşma varken metin üretmedi. Ona bir şans daha vermek için yeniden seçin.</string>
     <string name="delete">Sil</string>
     <string name="download">İndir</string>
     <string name="model_update_button">Güncelle</string>
@@ -475,6 +522,13 @@
     <string name="punctuation_prompt_description">Noktalama adımı için yönerge. Yerleşik olanı kullanmak için boş bırakın.</string>
     <string name="punctuation_prompt_placeholder">Yerleşik istem</string>
     <string name="summary_prompt_title">Özet istemi</string>
+    <string name="signature_setting_title">Transkript imzası (yapay zeka uyarısı)</string>
+    <string name="signature_setting_description">Uygulamadan çıkan her transkripte (kopyalar, paylaşımlar ve dışa aktarılan dosyalar) bir imza satırı ekler. Uygulama ekranları sade metinde kalır.</string>
+    <string name="signature_text_title">İmza metni</string>
+    <string name="signature_text_description">Standart uyarı için boş bırakın.</string>
+    <string name="signature_position_title">Konum</string>
+    <string name="signature_position_prepend">Transkriptten önce</string>
+    <string name="signature_position_append">Transkriptten sonra</string>
     <string name="summary_prompt_description">Yapay zekâ özeti talimatını değiştirin. Boş bırakılırsa yerleşik istem (iki-üç cümle) kullanılır.</string>
     <string name="punctuation_default_prompt">Bu transkripte noktalama ve büyük harfler ekle. Her kelimeyi tam yazıldığı gibi koru; hiçbir şeyi düzeltme, çevirme, ekleme veya çıkarma. Yalnızca düzeltilmiş transkripti yaz.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
@@ -616,6 +670,7 @@
     <string name="notification_no_model_title">Model yüklü değil</string>
     <string name="notification_no_model_message">Uygulamayı açın ve bir model indirin</string>
     <string name="notification_no_model_action">Uygulamayı aç</string>
+    <string name="error_open_memory_protection_setting">Ayarı aç</string>
 
     <!-- Tasker fallback notification -->
     <string name="notification_channel_tasker_fallback">Tasker Otomasyonu</string>
@@ -699,6 +754,8 @@
     <string name="performance_stats_hours_ago">%1$dh önce</string>
     <string name="performance_stats_days_ago">%1$dd önce</string>
     <string name="performance_stats_total_audio">Toplam: %1$s ses işlendi</string>
+    <string name="performance_stats_accuracy_title">Doğruluk</string>
+    <string name="performance_stats_accuracy_footnote">Gerçek mesaj kümelerimiz ve temiz kümeler, FLEURS sınıfı örnekler veya topluluk kıyaslamalarıyla ölçüldü; listelenmeyenler ölçülmemiştir.</string>
 
     <!-- Transcription active protection -->
     <string name="dialog_transcription_active_title">Metin Çıkarma Sürüyor</string>
@@ -739,6 +796,7 @@
     <string name="loading_model">%1$s modeli yükleniyor…</string>
     <string name="preprocessing_audio">Ses ön işlemeden geçiyor…</string>
     <string name="clipboard_label_transcription">Metin Çıkarma</string>
+    <string name="signature_default_text">Telefonda yerel olarak bir yapay zeka modeliyle transkribe edildi.</string>
 
     <!-- Settings accessibility -->
     <string name="open_prompt_settings">Komut ayarlarını aç</string>
@@ -754,30 +812,10 @@
     <string name="pip_enter_button">PiP</string>
     <string name="pip_enter_description">Resim içinde resim penceresinde göster</string>
 
-    <!-- GGUF model descriptions -->
-    <string name="model_title_gemma4_gguf_q4km">Gemma 4 GGUF (Q4_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q4km">4,9 GB · Apache 2.0 · llama.cpp ile metin üretimi. Kalite ve boyutun en iyi dengesi.</string>
-    <string name="model_title_gemma4_gguf_q5km">Gemma 4 GGUF (Q5_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q5km">5,3 GB · Apache 2.0 · llama.cpp ile daha yüksek kaliteli metin üretimi.</string>
-    <string name="model_title_gemma4_gguf_q8">Gemma 4 GGUF (Q8_0)</string>
-    <string name="model_desc_gemma4_gguf_q8">7,4 GB · Apache 2.0 · llama.cpp ile en iyi kalitede metin üretimi. 8GB+ RAM gerektirir.</string>
     <string name="model_title_gemma_4_e2b">Gemma 4 E2B</string>
     <string name="model_title_gemma_4_e4b">Gemma 4 E4B</string>
     <string name="model_title_gemma_3n_e2b">Gemma 3n E2B</string>
     <string name="model_title_gemma_3n_e4b">Gemma 3n E4B</string>
-    <string name="backend_gemma4_gguf">Gemma 4 (GGUF)</string>
-    <string name="gguf_inference_unavailable">GGUF çıkarımı yerel llama.cpp kitaplığı gerektirir. Android ARM64 için libllama.so derleyin.</string>
-    <string name="gguf_model_download_error">GGUF modeli indirilemedi</string>
-
-    <!-- GGUF model download section -->
-    <string name="gguf_title">Gemma 4 GGUF (Metin Üretimi)</string>
-    <string name="gguf_description">Metin üretimi için cihaz içi LLM; bulut bağımlılığı yok. Yerel llama.cpp kitaplığı gerektirir.</string>
-    <string name="gguf_unsupported_arch">Bu cihazda desteklenmiyor (ARM64 gerekir).</string>
-    <string name="gguf_download_confirm_title">%1$s indirilsin mi?</string>
-    <string name="gguf_download_confirm_message">Bu, yaklaşık %1$dMB indirir. GGUF modelleri internet olmadan yerel metin üretimini sağlar.</string>
-    <string name="gguf_downloaded">%1$s başarıyla indirildi</string>
-    <string name="gguf_delete_message">%1$s silinsin mi? Bu, yaklaşık %2$dMB depolama alanı boşaltır.</string>
-    <string name="gguf_deleted">%1$s silindi</string>
 
     <!-- Language filter -->
     <string name="lang_filter_label">Dile göre filtrele</string>
@@ -922,6 +960,7 @@
     <string name="external_option_itn">Ters metin normalleştirme</string>
     <string name="external_ctc_subtype">CTC alt türü</string>
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
+    <string name="external_ctc_subtype_omnilingual">Çok dilli CTC (1600+ dil, deneysel)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
     <string name="external_notice_single_pass">Çok uzun sesler büyük modellerle tek geçişte işlenemeyebilir. Sesi kısaltın veya daha küçük bir model seçin.</string>
     <string name="external_notice_family">Metin çıkarma hatasız şekilde kilitleniyorsa mimari yanlış olabilir: modeli silin ve başka bir mimari seçerek yeniden içe aktarın.</string>
@@ -962,6 +1001,9 @@
     <string name="action_transcribe_audio">Sesi metne çıkar</string>
     <string name="subtitle_fallback_status">Altyazılar ayıklanamadı; ses metne çıkarılıyor</string>
     <string name="subtitle_choice_notification_text">Seçiminiz bekleniyor…</string>
+    <!-- TASK-677 (GH #92 import half): subtitle-file ingest -->
+    <string name="subtitle_import_failed">Altyazı dosyası okunamadı</string>
+    <string name="logs_subtitle_sourced">Altyazılardan (transkripsiyon yok)</string>
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">Arka planda çalışmaya izin ver</string>
     <string name="battery_exemption_description">Sistem, arka planda tanımayı durdurdu. Tanıma yarıda kesilmesin diye uygulamanın arka planda çalışmasına izin verin.</string>
@@ -985,7 +1027,8 @@
     <string name="a11y_back">Geri</string>
     <string name="litertlm_importing">İçe aktarılıyor…</string>
     <string name="model_ram_warning">Bu cihazda %1$s için yeterli bellek olmayabilir. Yükleme başarısız olabilir; daha hafif modeller daha güvenli.</string>
-    <string name="error_oom_transcription">Bu sesi transkribe etmek için yeterli bellek yok. Daha kısa bir dosya, daha küccük bir model deneyin veya diğer uygulamaları kapatın. Yine başarısız olursa, Ayarlar > Gelişmiş > Model yüklemeyi zorla bu kontrolü atlayabilir.</string>
+    <string name="error_oom_transcription">Bu sesi transkribe etmek için yeterli bellek yok. Daha kısa bir dosya, daha küçük bir model deneyin veya diğer uygulamaları kapatın. Denemeyi tamamen önlemek için Ayarlar > Gelişmiş bölümünden bellek korumasını açın.</string>
+    <string name="error_oom_transcription_protected">Bellek koruması açık olsa bile bu sesi yazıya dökmek için yeterli bellek yok. Daha kısa bir dosya veya daha küçük bir model deneyin ya da diğer uygulamaları kapatın.</string>
     <string name="external_family_detected">Algılandı: %1$s</string>
     <string name="external_family_pick_title">Bu model hangi aileden?</string>
     <string name="subtitle_timeout_title">Otomatik seçim süresi</string>
@@ -1014,6 +1057,7 @@
     <string name="language_chip_detected_body">Otomatik algılandı: %1$s. Yanlış dil mi? Transkripsiyon dilini değiştirip sesi yeniden dönüştürün.</string>
     <string name="language_chip_pinned_body">Sabitlendi: %1$s. Değiştirmek için transkripsiyon dili ayarını açın.</string>
     <string name="language_chip_open_setting">Dil ayarını aç</string>
+    <string name="language_chip_re_run">Başka bir dille yeniden çalıştır</string>
     <string name="curated_section_title">Diliniz için</string>
     <string name="curated_browse_all">Tüm dilleri görüntüle</string>
     <string name="curated_suggest_model">Diliniz için bir model önerin</string>
@@ -1023,4 +1067,31 @@
     <string name="text_scale_small">Küçük</string>
     <string name="text_scale_large">Büyük</string>
     <string name="text_scale_xlarge">Çok büyük</string>
+    <string name="logs_first_pass_label">İlk geçiş (%1$s)</string>
+    <string name="copy_first_pass">İlk geçişi kopyala</string>
+    <string name="refining_status">%1$s ile rafine ediliyor…</string>
+    <string name="speaker_labels_status">Konuşmacılar tanımlanıyor…</string>
+    <string name="speaker_labels_title">Konuşmacıları tanımla</string>
+    <string name="speaker_labels_description">Her cümleye bir konuşmacı etiketi ekler. İlk kullanımda yaklaşık~47 MB model indirir; işlem süresini artırır.</string>
+    <string name="transcription_not_refined">Rafine edilmedi (anında önizleme)</string>
+    <string name="transcription_refined_from">%1$s ile rafine edildi</string>
+    <string name="refinement_title">İki aşamalı transkripsiyon</string>
+    <string name="refinement_description">Hızlı modelle anında önizleme göster, sonra arka planda seçili modelle rafine et</string>
+    <string name="curated_why_distil_it">İtalyanca için ince ayarlı: en isabetli seçim</string>
+    <string name="curated_why_parakeet">Çok hızlı (yaklaşık 17 kat) ve yine de çok isabetli</string>
+    <string name="curated_why_german_whisper">Almanca için ince ayarlı: en isabetli seçenek</string>
+    <string name="curated_why_canary">Kompakt: küçük indirme, hızlı sonuçlar</string>
+    <string name="curated_why_swiss_german">İsviçre Almanca lehçeleri için</string>
+    <string name="curated_why_kroko">Akış: konuşurken metin görünür</string>
+    <string name="language_chip_setting_note">Yalnızca Whisper ve SenseVoice modelleri dili algılayabilir.</string>
+    <string name="technical_details_title">Teknik ayrıntıları göster</string>
+    <string name="technical_details_description">Transkripsiyon kayıtlarında teknik işleme satırını (çözümleme yolu, parçalar, VAD, bellek) gösterir. Varsayılan olarak kapalıdır; ayrıntılar raporlara her zaman eklenir.</string>
+    <string name="external_family_moonshine">Moonshine</string>
+    <string name="external_family_moonshine_help">Preprocess + encode + uncached/cached decode + tokens (v1) ya da encoder_model.ort + decoder_model_merged.ort + tokens (v2) bekler; İngilizce ve bazı 2026 dışa aktarımları</string>
+    <string name="external_family_dolphin">Dolphin</string>
+    <string name="external_family_dolphin_help">model + tokens dosyalarını bekler; çok dilli (zh/en tabanı)</string>
+  <plurals name="subtitle_import_skipped_cues">
+    <item quantity="one">satır atlandı</item>
+    <item quantity="other">satır atlandı</item>
+  </plurals>
 </resources>

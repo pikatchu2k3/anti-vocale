@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,8 @@ class PreferencesManagerImpl(
         private val LANGUAGE_PREFERENCE = stringPreferencesKey("language_preference")
         private val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
         private val TEXT_SCALE = stringPreferencesKey("text_scale")
+        private val REFINEMENT_ENABLED = booleanPreferencesKey("refinement_enabled")
+        private val SPEAKER_LABELS_ENABLED = booleanPreferencesKey("speaker_labels_enabled")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val TRANSCRIPTION_BACKEND = stringPreferencesKey("transcription_backend")
         private val SHERPA_MODEL_PATH_PREFIX = "sherpa_model_path_"
@@ -58,8 +61,11 @@ class PreferencesManagerImpl(
         private val GIGAAM_MODEL_PATH = stringPreferencesKey("gigaam_model_path")
         private val EXTERNAL_CATALOG_URL = stringPreferencesKey("external_catalog_url")
         private val EXTERNAL_MIGRATION_DONE = booleanPreferencesKey("external_migration_done")
-        private val GGUF_MODEL_PATH = stringPreferencesKey("gguf_model_path")
+        private val PENDING_BACKEND_LOAD = stringPreferencesKey("pending_backend_load")
         private val AUTO_COPY_ENABLED = booleanPreferencesKey("auto_copy_enabled")
+        private val SIGNATURE_ENABLED = booleanPreferencesKey("signature_enabled")
+        private val SIGNATURE_TEXT = stringPreferencesKey("signature_text")
+        private val SIGNATURE_POSITION = stringPreferencesKey("signature_position")
         private val OUTPUT_FOLDER_URI = stringPreferencesKey("output_folder_uri")
         private val TRANSCRIPT_EXPORT_FORMAT = stringPreferencesKey("transcript_export_format")
         private val VAD_ENABLED = booleanPreferencesKey("vad_enabled")
@@ -78,14 +84,27 @@ class PreferencesManagerImpl(
         private val VAD_ADVISORY_DISMISSED = booleanPreferencesKey("vad_advisory_dismissed")
         private val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         private val GROUP_LOGS_BY_CONVERSATION = booleanPreferencesKey("group_logs_by_conversation")
+        private val SHOW_TECHNICAL_DETAILS = booleanPreferencesKey("show_technical_details")
         private val ADVANCED_SHARING_ENABLED = booleanPreferencesKey("advanced_sharing_enabled")
         private val SHOW_RETRANSCRIBE_BUTTON = booleanPreferencesKey("show_retranscribe_button")
-        private val FORCE_MODEL_LOAD = booleanPreferencesKey("force_model_load")
+        // TASK-631: replaces the old force-load key with NO migration; that key's only
+        // signal was an opt-out of the block, which the new default (no block) grants
+        // to everyone, so a stored old value is deliberately never read again.
+        private val MEMORY_PROTECTION = booleanPreferencesKey("memory_protection")
+        // TASK-274: consent gate for the exported automation receivers.
+        private val EXTERNAL_AUTOMATION_ENABLED = booleanPreferencesKey("external_automation_enabled")
+        // TASK-681: the LAN-offload (OmniVoice) consent gate and its config triple.
+        private val REMOTE_OMNIVOICE_ENABLED = booleanPreferencesKey("remote_omnivoice_enabled")
+        private val REMOTE_OMNIVOICE_ENDPOINT = stringPreferencesKey("remote_omnivoice_endpoint")
+        private val REMOTE_OMNIVOICE_API_KEY = stringPreferencesKey("remote_omnivoice_api_key")
+        private val REMOTE_OMNIVOICE_MODEL = stringPreferencesKey("remote_omnivoice_model")
         private val COMPACT_RESULT_ACTIONS = booleanPreferencesKey("compact_result_actions")
         private val LANGUAGE_CHIP_ENABLED = booleanPreferencesKey("language_chip_enabled")
         private val PARTIAL_TRANSCRIPTION_TEXT = stringPreferencesKey("partial_transcription_text")
         private val PARTIAL_TRANSCRIPTION_TIMESTAMP = longPreferencesKey("partial_transcription_timestamp")
         private val EXTERNAL_MODELS_JSON = stringPreferencesKey("external_models_json")
+        // TASK-675: silent-model demotion set (backend ids).
+        private val DEMOTED_BACKENDS = stringSetPreferencesKey("demoted_backends")
     }
 
     private val cache = AtomicReference(CachedPreferences())
@@ -102,9 +121,12 @@ class PreferencesManagerImpl(
         val customTransducerModelPath: String? = null,
         val customTransducerModelType: String = PreferencesManager.DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE,
         val externalMigrationDone: Boolean = false,
+        val pendingBackendLoad: String? = null,
         val externalCatalogUrl: String = PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL,
-        val ggufModelPath: String? = null,
         val autoCopyEnabled: Boolean = PreferencesManager.DEFAULT_AUTO_COPY_ENABLED,
+        val signatureEnabled: Boolean = PreferencesManager.DEFAULT_SIGNATURE_ENABLED,
+        val signatureText: String = PreferencesManager.DEFAULT_SIGNATURE_TEXT,
+        val signaturePosition: String = PreferencesManager.DEFAULT_SIGNATURE_POSITION,
         val outputFolderUri: String? = null,
         val transcriptExportFormat: String = PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         val vadEnabled: Boolean = PreferencesManager.DEFAULT_VAD_ENABLED,
@@ -121,9 +143,15 @@ class PreferencesManagerImpl(
         val vadAdvisoryDismissed: Boolean = false,
         val onboardingCompleted: Boolean = false,
         val groupLogsByConversation: Boolean = PreferencesManager.DEFAULT_GROUP_LOGS_BY_CONVERSATION,
+        val showTechnicalDetails: Boolean = PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
         val advancedSharingEnabled: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
-        val forceModelLoad: Boolean = PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
+        val memoryProtection: Boolean = PreferencesManager.DEFAULT_MEMORY_PROTECTION,
+        val externalAutomationEnabled: Boolean = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
+        val remoteOmnivoiceEndpoint: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
+        val remoteOmnivoiceApiKey: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
+        val remoteOmnivoiceModel: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL,
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         val languageChipEnabled: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         val externalModelsJson: String? = null
@@ -147,9 +175,12 @@ class PreferencesManagerImpl(
         customTransducerModelType = this[CUSTOM_TRANSDUCER_MODEL_TYPE]
             ?: PreferencesManager.DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE,
         externalMigrationDone = this[EXTERNAL_MIGRATION_DONE] ?: false,
+        pendingBackendLoad = this[PENDING_BACKEND_LOAD],
         externalCatalogUrl = this[EXTERNAL_CATALOG_URL] ?: PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL,
-        ggufModelPath = this[GGUF_MODEL_PATH],
         autoCopyEnabled = this[AUTO_COPY_ENABLED] ?: PreferencesManager.DEFAULT_AUTO_COPY_ENABLED,
+        signatureEnabled = this[SIGNATURE_ENABLED] ?: PreferencesManager.DEFAULT_SIGNATURE_ENABLED,
+        signatureText = this[SIGNATURE_TEXT] ?: PreferencesManager.DEFAULT_SIGNATURE_TEXT,
+        signaturePosition = this[SIGNATURE_POSITION] ?: PreferencesManager.DEFAULT_SIGNATURE_POSITION,
         outputFolderUri = this[OUTPUT_FOLDER_URI],
         transcriptExportFormat = this[TRANSCRIPT_EXPORT_FORMAT] ?: PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         vadEnabled = this[VAD_ENABLED] ?: PreferencesManager.DEFAULT_VAD_ENABLED,
@@ -166,9 +197,16 @@ class PreferencesManagerImpl(
         vadAdvisoryDismissed = this[VAD_ADVISORY_DISMISSED] ?: false,
         onboardingCompleted = this[ONBOARDING_COMPLETED] ?: false,
         groupLogsByConversation = this[GROUP_LOGS_BY_CONVERSATION] ?: PreferencesManager.DEFAULT_GROUP_LOGS_BY_CONVERSATION,
+        showTechnicalDetails = this[SHOW_TECHNICAL_DETAILS] ?: PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
         advancedSharingEnabled = this[ADVANCED_SHARING_ENABLED] ?: PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
-        forceModelLoad = this[FORCE_MODEL_LOAD] ?: PreferencesManager.DEFAULT_FORCE_MODEL_LOAD,
+        memoryProtection = this[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION,
+        externalAutomationEnabled = this[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
+        remoteOmnivoiceEndpoint = this[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
+        remoteOmnivoiceApiKey = this[REMOTE_OMNIVOICE_API_KEY] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
+        remoteOmnivoiceModel = this[REMOTE_OMNIVOICE_MODEL]
+            ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL,
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         languageChipEnabled = this[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         externalModelsJson = this[EXTERNAL_MODELS_JSON]
@@ -240,6 +278,24 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(textScale = value) }
     }
 
+    override val refinementEnabled: Flow<Boolean> =
+        dataStore.data.map { it[REFINEMENT_ENABLED] ?: false }
+
+    override suspend fun saveRefinementEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[REFINEMENT_ENABLED] = enabled
+        }
+    }
+
+    override val speakerLabelsEnabled: Flow<Boolean> =
+        dataStore.data.map { it[SPEAKER_LABELS_ENABLED] ?: false }
+
+    override suspend fun saveSpeakerLabelsEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SPEAKER_LABELS_ENABLED] = enabled
+        }
+    }
+
     override suspend fun saveThemePreference(theme: String) {
         dataStore.edit { preferences ->
             preferences[THEME_PREFERENCE] = theme
@@ -301,11 +357,11 @@ class PreferencesManagerImpl(
         .map { it[CUSTOM_TRANSDUCER_MODEL_TYPE] ?: PreferencesManager.DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE }
         .onStart { emit(cache.get().customTransducerModelType) }
 
-    override val ggufModelPath: Flow<String?> = dataStore.data.map { it[GGUF_MODEL_PATH] }
-        .onStart { emit(cache.get().ggufModelPath) }
-
     override val externalMigrationDone: Flow<Boolean> = dataStore.data.map { it[EXTERNAL_MIGRATION_DONE] ?: false }
         .onStart { emit(cache.get().externalMigrationDone) }
+
+    override val pendingBackendLoad: Flow<String?> = dataStore.data.map { it[PENDING_BACKEND_LOAD] }
+        .onStart { emit(cache.get().pendingBackendLoad) }
 
     override val externalCatalogUrl: Flow<String> = dataStore.data.map { it[EXTERNAL_CATALOG_URL] ?: PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL }
         .onStart { emit(cache.get().externalCatalogUrl) }
@@ -317,6 +373,19 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(externalCatalogUrl = url) }
     }
 
+    override suspend fun clearExternalCatalogUrl() {
+        dataStore.edit { preferences -> preferences.remove(EXTERNAL_CATALOG_URL) }
+        cache.updateAndGet { it.copy(externalCatalogUrl = PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL) }
+    }
+
+    override suspend fun savePendingBackendLoad(backendId: String?) {
+        dataStore.edit { preferences ->
+            if (backendId == null) preferences.remove(PENDING_BACKEND_LOAD)
+            else preferences[PENDING_BACKEND_LOAD] = backendId
+        }
+        cache.updateAndGet { it.copy(pendingBackendLoad = backendId) }
+    }
+
     override suspend fun saveExternalMigrationDone(done: Boolean) {
         dataStore.edit { preferences ->
             preferences[EXTERNAL_MIGRATION_DONE] = done
@@ -324,28 +393,38 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(externalMigrationDone = done) }
     }
 
-    override suspend fun saveGgufModelPath(path: String) {
-        dataStore.edit { preferences ->
-            preferences[GGUF_MODEL_PATH] = path
-        }
-        cache.updateAndGet { it.copy(ggufModelPath = path) }
-    }
-
-    override suspend fun clearGgufModelPath() {
-        dataStore.edit { preferences ->
-            preferences.remove(GGUF_MODEL_PATH)
-        }
-        cache.updateAndGet { it.copy(ggufModelPath = null) }
-    }
-
     override val autoCopyEnabled: Flow<Boolean> = dataStore.data.map { it[AUTO_COPY_ENABLED] ?: PreferencesManager.DEFAULT_AUTO_COPY_ENABLED }
         .onStart { emit(cache.get().autoCopyEnabled) }
+
+    override val signatureEnabled: Flow<Boolean> = dataStore.data.map { it[SIGNATURE_ENABLED] ?: PreferencesManager.DEFAULT_SIGNATURE_ENABLED }
+        .onStart { emit(cache.get().signatureEnabled) }
+    override val signatureText: Flow<String> = dataStore.data.map { it[SIGNATURE_TEXT] ?: PreferencesManager.DEFAULT_SIGNATURE_TEXT }
+        .onStart { emit(cache.get().signatureText) }
+    override val signaturePosition: Flow<String> = dataStore.data.map { it[SIGNATURE_POSITION] ?: PreferencesManager.DEFAULT_SIGNATURE_POSITION }
+        .onStart { emit(cache.get().signaturePosition) }
 
     override suspend fun saveAutoCopyEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[AUTO_COPY_ENABLED] = enabled
         }
         cache.updateAndGet { it.copy(autoCopyEnabled = enabled) }
+    }
+
+    override suspend fun saveSignatureEnabled(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[SIGNATURE_ENABLED] = enabled }
+        cache.updateAndGet { it.copy(signatureEnabled = enabled) }
+    }
+
+    override suspend fun saveSignatureText(text: String) {
+        val trimmed = text.trim()
+        dataStore.edit { preferences -> preferences[SIGNATURE_TEXT] = trimmed }
+        cache.updateAndGet { it.copy(signatureText = trimmed) }
+    }
+
+    override suspend fun saveSignaturePosition(position: String) {
+        require(position in PreferencesManager.SIGNATURE_POSITIONS) { "unknown signature position: $position" }
+        dataStore.edit { preferences -> preferences[SIGNATURE_POSITION] = position }
+        cache.updateAndGet { it.copy(signaturePosition = position) }
     }
 
     override val outputFolderUri: Flow<String?> = dataStore.data.map { it[OUTPUT_FOLDER_URI] }
@@ -612,6 +691,16 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(groupLogsByConversation = enabled) }
     }
 
+    override val showTechnicalDetails: Flow<Boolean> = dataStore.data.map { it[SHOW_TECHNICAL_DETAILS] ?: PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS }
+        .onStart { emit(cache.get().showTechnicalDetails) }
+
+    override suspend fun saveShowTechnicalDetails(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SHOW_TECHNICAL_DETAILS] = enabled
+        }
+        cache.updateAndGet { it.copy(showTechnicalDetails = enabled) }
+    }
+
     override val advancedSharingEnabled: Flow<Boolean> = dataStore.data.map { it[ADVANCED_SHARING_ENABLED] ?: PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED }
         .onStart { emit(cache.get().advancedSharingEnabled) }
 
@@ -632,8 +721,95 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(showRetranscribeButton = enabled) }
     }
 
-    override val forceModelLoad: Flow<Boolean> = dataStore.data.map { it[FORCE_MODEL_LOAD] ?: PreferencesManager.DEFAULT_FORCE_MODEL_LOAD }
-        .onStart { emit(cache.get().forceModelLoad) }
+    override val memoryProtection: Flow<Boolean> = dataStore.data.map { it[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION }
+        .onStart { emit(cache.get().memoryProtection) }
+
+    override val externalAutomationEnabled: Flow<Boolean> = dataStore.data.map { it[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED }
+        .onStart { emit(cache.get().externalAutomationEnabled) }
+
+    // TASK-681: the LAN-offload gate and its config triple. Re-emits on
+    // unrelated writes are fine here, like the siblings above: the
+    // collectors only compare values.
+    override val remoteOmnivoiceEnabled: Flow<Boolean> = dataStore.data.map { it[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED }
+        .onStart { emit(cache.get().remoteOmnivoiceEnabled) }
+
+    override val remoteOmnivoiceEndpoint: Flow<String> = dataStore.data.map { it[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT }
+        .onStart { emit(cache.get().remoteOmnivoiceEndpoint) }
+
+    override val remoteOmnivoiceApiKey: Flow<String> = dataStore.data.map { it[REMOTE_OMNIVOICE_API_KEY] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY }
+        .onStart { emit(cache.get().remoteOmnivoiceApiKey) }
+
+    override val remoteOmnivoiceModel: Flow<String> = dataStore.data.map {
+        it[REMOTE_OMNIVOICE_MODEL] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL
+    }
+        .onStart { emit(cache.get().remoteOmnivoiceModel) }
+
+    /**
+     * TASK-681: the gate write carries the coupled invariant: disabling the
+     * service removes it from the selectable space, so a persisted selection
+     * pointing at it resets to the default IN THE SAME transaction (every
+     * writer gets the reset, and there is no torn disabled-but-selected
+     * state between two writes).
+     */
+    override suspend fun saveRemoteOmnivoiceEnabled(enabled: Boolean) {
+        var resetBackend = false
+        dataStore.edit { preferences ->
+            preferences[REMOTE_OMNIVOICE_ENABLED] = enabled
+            if (!enabled && preferences[TRANSCRIPTION_BACKEND] == com.antivocale.app.transcription.RemoteOmnivoiceBackend.BACKEND_ID) {
+                preferences[TRANSCRIPTION_BACKEND] = PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND
+                resetBackend = true
+            }
+        }
+        cache.updateAndGet {
+            it.copy(
+                remoteOmnivoiceEnabled = enabled,
+                transcriptionBackend = if (resetBackend) PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND else it.transcriptionBackend,
+            )
+        }
+    }
+
+    /** TASK-681: one user action, one transaction; see the interface KDoc. */
+    override suspend fun saveRemoteOmnivoiceConfig(endpoint: String, apiKey: String, model: String) {
+        val endpointValue = endpoint.trim()
+        val keyValue = apiKey.trim()
+        val modelValue = model.trim()
+        dataStore.edit { preferences ->
+            preferences[REMOTE_OMNIVOICE_ENDPOINT] = endpointValue
+            preferences[REMOTE_OMNIVOICE_API_KEY] = keyValue
+            preferences[REMOTE_OMNIVOICE_MODEL] = modelValue
+        }
+        cache.updateAndGet {
+            it.copy(
+                remoteOmnivoiceEndpoint = endpointValue,
+                remoteOmnivoiceApiKey = keyValue,
+                remoteOmnivoiceModel = modelValue,
+            )
+        }
+    }
+
+    override suspend fun saveRemoteOmnivoiceEndpoint(url: String) {
+        val trimmed = url.trim()
+        dataStore.edit { preferences ->
+            preferences[REMOTE_OMNIVOICE_ENDPOINT] = trimmed
+        }
+        cache.updateAndGet { it.copy(remoteOmnivoiceEndpoint = trimmed) }
+    }
+
+    override suspend fun saveRemoteOmnivoiceApiKey(key: String) {
+        val trimmed = key.trim()
+        dataStore.edit { preferences ->
+            preferences[REMOTE_OMNIVOICE_API_KEY] = trimmed
+        }
+        cache.updateAndGet { it.copy(remoteOmnivoiceApiKey = trimmed) }
+    }
+
+    override suspend fun saveRemoteOmnivoiceModel(model: String) {
+        val trimmed = model.trim()
+        dataStore.edit { preferences ->
+            preferences[REMOTE_OMNIVOICE_MODEL] = trimmed
+        }
+        cache.updateAndGet { it.copy(remoteOmnivoiceModel = trimmed) }
+    }
 
     override val compactResultActions: Flow<Boolean> = dataStore.data.map { it[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS }
         .onStart { emit(cache.get().compactResultActions) }
@@ -654,11 +830,18 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(languageChipEnabled = enabled) }
     }
 
-    override suspend fun saveForceModelLoad(enabled: Boolean) {
+    override suspend fun saveMemoryProtection(enabled: Boolean) {
         dataStore.edit { preferences ->
-            preferences[FORCE_MODEL_LOAD] = enabled
+            preferences[MEMORY_PROTECTION] = enabled
         }
-        cache.updateAndGet { it.copy(forceModelLoad = enabled) }
+        cache.updateAndGet { it.copy(memoryProtection = enabled) }
+    }
+
+    override suspend fun saveExternalAutomationEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[EXTERNAL_AUTOMATION_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(externalAutomationEnabled = enabled) }
     }
 
     override val externalModelsJson: Flow<String?> = dataStore.data.map { it[EXTERNAL_MODELS_JSON] }
@@ -672,5 +855,27 @@ class PreferencesManagerImpl(
             preferences[EXTERNAL_MODELS_JSON] = json
         }
         cache.updateAndGet { it.copy(externalModelsJson = json) }
+    }
+
+    // TASK-675: the demotion set is read-modify-written INSIDE the edit
+    // transaction (the mergeMeasuredModelMemorySample rule), so a demotion
+    // landing while the user re-selects the model cannot lose the clear (or
+    // vice versa).
+    override val demotedBackends: Flow<Set<String>> =
+        dataStore.data.map { it[DEMOTED_BACKENDS] ?: emptySet() }
+
+    override suspend fun markBackendDemoted(backendId: String) {
+        dataStore.edit { preferences ->
+            preferences[DEMOTED_BACKENDS] = (preferences[DEMOTED_BACKENDS] ?: emptySet()) + backendId
+        }
+    }
+
+    override suspend fun clearDemotedBackend(backendId: String) {
+        dataStore.edit { preferences ->
+            val next = (preferences[DEMOTED_BACKENDS] ?: emptySet()) - backendId
+            // An empty set removes the key: a fresh install and a fully
+            // cleared state read identically.
+            if (next.isEmpty()) preferences.remove(DEMOTED_BACKENDS) else preferences[DEMOTED_BACKENDS] = next
+        }
     }
 }

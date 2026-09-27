@@ -34,6 +34,7 @@
     <string name="saved_model_found">נמצא מודל שמור</string>
     <string name="saved_model_not_found">לא נמצא מודל שמור</string>
     <string name="model_selected">נבחר מודל: %1$s</string>
+    <string name="model_import_invalid_file">הקובץ שנבחר אינו נראה כקובץ מודל LiteRT-LM שמיש (%1$s)</string>
     <string name="model_copy_failed">העתקת קובץ המודל נכשלה</string>
     <string name="model_file_not_found">קובץ מודל לא נמצא בנתיב: %1$s</string>
     <string name="model_loading">טוען את המודל לזיכרון…</string>
@@ -93,7 +94,9 @@
     <string name="summary_skipped_context">הסיכום דולג: התמליל חורג מהאורך שעיבוד הסיכום מסוגל להתמודד איתו.</string>
     <string name="summary_skipped_no_model">הסיכום דולג: לא הוגדר מודל Gemma. הורד אותו מהלשונית מודלים כדי לאפשר סיכומים.</string>
     <string name="summary_skipped_failed">יצירת הסיכום נכשלה; התמליל עצמו שלם.</string>
+    <string name="summary_skipped_timeout">יצירת הסיכום חרגה ממגבלת הזמן; התמליל עצמו שלם.</string>
     <string name="summary_skipped_guard">הסיכום דולג: הסיכום שנוצר חרג ממגבלות האורך (קצר מדי או ארוך מדי מכדי להיחשב סיכום).</string>
+    <string name="summary_partial_note">(לא ניתן היה לסכם חלקים מהתמליל)</string>
     <string name="copy_summary">העתקת הסיכום</string>
     <string name="copy_original">העתקת המקור</string>
     <string name="logs_model_label">מודל: %1$s</string>
@@ -273,10 +276,53 @@
     <string name="oom_crash_warning">האפליקציה נסגרה כי הזיכרון במכשיר אזל. נסה לסגור אפליקציות אחרות או להשתמש במודל קטן יותר לפני תמלול חוזר.</string>
     <string name="native_crash_title">האפליקציה נסגרה באופן בלתי צפוי</string>
     <string name="native_crash_go_to_model">מעבר ללשונית מודלים</string>
-    <string name="model_load_low_memory">אין מספיק זיכרון פנוי למודל הזה (%1$s זמינים, דרושים כ-%2$s). סגור אפליקציות אחרות או השתמש במודל קטן יותר. טעינה בכפייה זמינה בהגדרות.</string>
-    <string name="transcribe_low_memory">אין מספיק זיכרון פנוי לתמלל עם המודל הזה (כ-%1$s פנויים, דרושים %2$s). סגור אפליקציות אחרות ונסה שוב, או הפעל טעינת מודל בכפייה בהגדרות.</string>
-    <string name="force_model_load">טעינת מודל בכפייה</string>
-    <string name="force_model_load_desc">טוען את המודל גם כשנראה שאין מספיק זיכרון. עלול לסגור את האפליקציה במכשירים עם מעט RAM.</string>
+    <string name="model_load_low_memory">אין מספיק זיכרון פנוי למודל הזה (%1$s זמינים, דרושים כ-%2$s). הגנת הזיכרון פעילה: סגור אפליקציות אחרות, השתמש במודל קטן יותר, או כבה אותה בהגדרות כדי לנסות בכל זאת.</string>
+    <string name="memory_margin_warning_title">מודל קרוב למגבלת הזיכרון של הטלפון הזה</string>
+    <string name="memory_margin_warning_body">ייתכן שהמודל %1$s קרוב למה שהטלפון הזה יכול להחזיק. התמלול ממשיך בכל מקרה; תוכל להפעיל את הגנת הזיכרון בהגדרות כדי לחסום טעינות כאלה.</string>
+    <string name="transcribe_low_memory">אין מספיק זיכרון פנוי לתמלל עם המודל הזה (כ-%1$s פנויים, דרושים %2$s). הגנת הזיכרון פעילה: סגור אפליקציות אחרות ונסה שוב, או כבה אותה בהגדרות כדי לנסות בכל זאת.</string>
+    <string name="external_model_quarantined_title">מודל חיצוני הושבת לאחר קריסה</string>
+    <string name="external_model_quarantined_text">טעינת "%1$s" סגרה את האפליקציה, ולכן הוא הושבת כדי למנוע קריסות חוזרות. מחקו וייבאו מחדש את המודל בלשונית המודלים כדי לנסות שוב.</string>
+    <string name="memory_protection">הגנת זיכרון</string>
+    <string name="memory_protection_desc">חוסם טעינת מודל כשנראה שאין מספיק זיכרון פנוי, כדי למנוע סגירה שקטה של האפליקציה. כבוי כברירת מחדל: בדרך כלל האפליקציה תמיד מנסה להריץ את המודל.</string>
+    <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
+    <string name="external_automation_title">אוטומציה חיצונית (Tasker)</string>
+    <string name="external_automation_description">מאפשר לאפליקציות אחרות להתחיל תמלול דרך API האוטומציה (למשל Tasker). כבוי כברירת מחדל.</string>
+    <string name="external_automation_disabled">אוטומציה חיצונית כבויה. הפעל אותה בהגדרות > מתקדם > אוטומציה חיצונית.</string>
+    <string name="remote_omnivoice_name">העברה לשרת LAN (OmniVoice)</string>
+    <string name="remote_offload_title">העברה לשרת LAN (ניסיוני)</string>
+    <string name="remote_offload_description">מעביר תמלולים ארוכים או כבדים לשרת ה-OmniVoice שלכם ברשת ה-Wi-Fi. לאחר ההפעלה בחרו אותו בלשונית המודלים.</string>
+    <string name="remote_offload_disclosure">כשהתכונה מופעלת ונבחרת, האודיו של אותם תמלולים נשלח רק אל כתובת השרת שתזינו למטה, ברשת שלכם. כל השאר מתומלל על המכשיר הזה. כבויה כברירת מחדל: שום דבר לא יוצא מהטלפון אלא אם תפעילו.</string>
+    <string name="remote_offload_endpoint_label">כתובת השרת</string>
+    <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
+    <string name="remote_offload_key_label">מפתח API</string>
+    <string name="remote_offload_model_label">שם המודל</string>
+    <string name="remote_offload_model_hint">שם המודל שהשרת OmniVoice שלכם פותר; ברירת המחדל היא whisper-1.</string>
+    <string name="remote_offload_save">שמירה</string>
+    <string name="remote_offload_test">בדיקת חיבור</string>
+    <string name="remote_offload_test_running">בודק…</string>
+    <string name="remote_offload_test_success">החיבור עובד.</string>
+    <string name="remote_test_reason_unreachable">אין גישה לשרת. בדקו את הכתובת וש-OmniVoice פועל.</string>
+    <string name="remote_test_reason_auth">השרת דחה את מפתח ה-API.</string>
+    <string name="remote_test_reason_timeout">אין תשובה תוך %1$d שניות; ייתכן שהשרת עסוק.</string>
+    <string name="remote_test_reason_server">השרת החזיר שגיאה (HTTP %1$d).</string>
+    <string name="error_remote_timeout">התמלול בשרת ה-OmniVoice שלכם לא הסתיים בתוך %1$d דקות ונעצר.</string>
+    <string name="error_remote_unreachable">אין אפשרות להגיע לשרת ה-OmniVoice. בדקו שהוא פועל ושהכתובת בהגדרות נכונה.</string>
+    <string name="error_remote_server">שרת ה-OmniVoice דחה את הבקשה (HTTP %1$d).</string>
+    <string name="remote_offload_status">מתמלל בשרת ה-OmniVoice שלכם…</string>
+    <!-- TASK-679: לוח המודלים הטעונים (הגדרות > מתקדם) ונתיב האיתור לאחר אזילת זיכרון. -->
+    <string name="memory_diagnostics_title">זיכרון המכשיר</string>
+    <string name="memory_diagnostics_subtitle">מודלים שנטענו כרגע, זיכרון RAM פנוי והרישום האחרון של אזילת זיכרון.</string>
+    <string name="memory_diagnostics_resident_label">מודלים טעונים</string>
+    <string name="memory_diagnostics_resident_none">כרגע לא נטען אף מודל</string>
+    <string name="memory_diagnostics_ram_label">RAM פנוי</string>
+    <string name="memory_diagnostics_ram_value">%1$s פנויים מתוך %2$s</string>
+    <string name="memory_diagnostics_ram_unknown">לא ניתן לקריאה במכשיר זה</string>
+    <string name="memory_diagnostics_heap_label">מגבלת הזיכרון של האפליקציה</string>
+    <string name="memory_diagnostics_breadcrumb_label">אירוע אזילת הזיכרון האחרון</string>
+    <string name="memory_diagnostics_breadcrumb_none">שום דבר לא נרשם</string>
+    <string name="memory_diagnostics_breadcrumb_hint">כאשר תמלול נכשל בגלל זיכרון, שורה אחת רושמת אילו מודלים היו טעונים ומה הבקשה עשתה.</string>
+    <string name="memory_diagnostics_scrub_note">נתוני האבחון מכילים רק שמות מודלים ומספרי זיכרון: לעולם לא טקסט מתומלל או נתיבי קבצים.</string>
+    <string name="memory_diagnostics_copy">העתקת נתוני אבחון</string>
     <string name="copy">העתקה</string>
     <string name="share">שיתוף</string>
     <string name="char_counter">%1$d מתוך %2$d תווים</string>
@@ -320,6 +366,7 @@
     <string name="active_badge">פעיל</string>
     <string name="model_selected_message">%1$s נבחר</string>
     <string name="model_use_missing_files">קבצי המודל של %1$s חסרים או חלקיים. הורד מחדש את הגרסה מהלשונית מודלים.</string>
+    <string name="model_demoted_notice">לא נבחר אוטומטית: המודל הזה לא הניב טקסט למרות שהיה דיבור. בחרו בו שוב כדי לתת לו הזדמנות נוספת.</string>
     <string name="delete">מחיקה</string>
     <string name="download">הורדה</string>
     <string name="model_update_button">עדכון</string>
@@ -476,6 +523,13 @@
     <string name="punctuation_prompt_description">הוראה לשלב הפיסוק. השאר ריק כדי להשתמש בפרומפט המובנה.</string>
     <string name="punctuation_prompt_placeholder">פרומפט מובנה</string>
     <string name="summary_prompt_title">פרומפט סיכום</string>
+    <string name="signature_setting_title">חתימת תמליל (כתב ויתור בינה מלאכותית)</string>
+    <string name="signature_setting_description">מוסיף שורת חתימה לכל תמליל שיוצא מהאפליקציה: העתקות, שיתופים וקבצים מיוצאים. המסכים של האפליקציה נשארים עם הטקסט הפשוט.</string>
+    <string name="signature_text_title">טקסט החתימה</string>
+    <string name="signature_text_description">השאר ריק לכתב הוויתור הרגיל.</string>
+    <string name="signature_position_title">מקום</string>
+    <string name="signature_position_prepend">לפני התמליל</string>
+    <string name="signature_position_append">אחרי התמליל</string>
     <string name="summary_prompt_description">מחליף את הוראת הסיכום של ה-AI. ריק משתמש בפרומפט המובנה של שניים עד שלושה משפטים.</string>
     <string name="punctuation_default_prompt">הוסף פיסוק ואותיות רישיות לתמליל הזה. שמור על כל מילה בדיוק כפי שנכתבה; אל תתקן, תתרגם, תוסיף או תסיר דבר. החזר רק את התמליל המתוקן.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
@@ -617,6 +671,7 @@
     <string name="notification_no_model_title">מודל לא מותקן</string>
     <string name="notification_no_model_message">פתח את האפליקציה והורד מודל</string>
     <string name="notification_no_model_action">פתיחת האפליקציה</string>
+    <string name="error_open_memory_protection_setting">פתיחת ההגדרה</string>
 
     <!-- Tasker fallback notification -->
     <string name="notification_channel_tasker_fallback">אוטומציה של Tasker</string>
@@ -701,6 +756,8 @@
     <string name="performance_stats_hours_ago">לפני %1$d שע׳</string>
     <string name="performance_stats_days_ago">לפני %1$d ימים</string>
     <string name="performance_stats_total_audio">סה״כ: %1$s אודיו שעובד</string>
+    <string name="performance_stats_accuracy_title">דיוק</string>
+    <string name="performance_stats_accuracy_footnote">נמדד על מסגרות של הודעות קוליות אמיתיות ומסגרות נקיות, דגימות מסוג FLEURS או מדדי קהילה; מה שאינו מופיע ברשימה לא נמדד.</string>
 
     <!-- Transcription active protection -->
     <string name="dialog_transcription_active_title">תמלול בעיצומו</string>
@@ -741,6 +798,7 @@
     <string name="loading_model">טוען מודל %1$s…</string>
     <string name="preprocessing_audio">מעבד מקדים את האודיו…</string>
     <string name="clipboard_label_transcription">תמלול</string>
+    <string name="signature_default_text">תומלל מקומית בטלפון עם מודל בינה מלאכותית.</string>
 
     <!-- Settings accessibility -->
     <string name="open_prompt_settings">פתיחת הגדרות פרומפט</string>
@@ -756,30 +814,10 @@
     <string name="pip_enter_button">PiP</string>
     <string name="pip_enter_description">הצגה בחלון תמונה-בתוך-תמונה</string>
 
-    <!-- GGUF model descriptions -->
-    <string name="model_title_gemma4_gguf_q4km">Gemma 4 GGUF (Q4_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q4km">4.9 GB · Apache 2.0 · יצירת טקסט דרך llama.cpp. האיזון הטוב ביותר בין איכות לגודל.</string>
-    <string name="model_title_gemma4_gguf_q5km">Gemma 4 GGUF (Q5_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q5km">5.3 GB · Apache 2.0 · יצירת טקסט באיכות גבוהה יותר דרך llama.cpp.</string>
-    <string name="model_title_gemma4_gguf_q8">Gemma 4 GGUF (Q8_0)</string>
-    <string name="model_desc_gemma4_gguf_q8">7.4 GB · Apache 2.0 · יצירת טקסט באיכות הגבוהה ביותר דרך llama.cpp. דורש 8GB RAM ומעלה.</string>
     <string name="model_title_gemma_4_e2b">Gemma 4 E2B</string>
     <string name="model_title_gemma_4_e4b">Gemma 4 E4B</string>
     <string name="model_title_gemma_3n_e2b">Gemma 3n E2B</string>
     <string name="model_title_gemma_3n_e4b">Gemma 3n E4B</string>
-    <string name="backend_gemma4_gguf">Gemma 4 (GGUF)</string>
-    <string name="gguf_inference_unavailable">הסקת GGUF דורשת את ספריית llama.cpp המקורית. יש לבנות את libllama.so עבור Android ARM64.</string>
-    <string name="gguf_model_download_error">הורדת מודל GGUF נכשלה</string>
-
-    <!-- GGUF model download section -->
-    <string name="gguf_title">Gemma 4 GGUF (יצירת טקסט)</string>
-    <string name="gguf_description">מודל LLM מקומי ליצירת טקסט, ללא תלות בענן. דורש את ספריית llama.cpp המקורית.</string>
-    <string name="gguf_unsupported_arch">לא נתמך במכשיר זה (דורש ARM64).</string>
-    <string name="gguf_download_confirm_title">להוריד את %1$s?</string>
-    <string name="gguf_download_confirm_message">פעולה זו תוריד כ-%1$dMB. מודלי GGUF מאפשרים יצירת טקסט מקומית ללא אינטרנט.</string>
-    <string name="gguf_downloaded">%1$s הורד בהצלחה</string>
-    <string name="gguf_delete_message">למחוק את %1$s? פעולה זו תפנה כ-%2$dMB אחסון.</string>
-    <string name="gguf_deleted">%1$s נמחק</string>
 
     <!-- Language filter -->
     <string name="lang_filter_label">סינון לפי שפה</string>
@@ -926,6 +964,7 @@
     <string name="external_option_itn">נרמול טקסט הפוך (ITN)</string>
     <string name="external_ctc_subtype">תת-סוג CTC</string>
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
+    <string name="external_ctc_subtype_omnilingual">CTC רב-לשוני (1600+ שפות, ניסיוני)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
     <string name="external_notice_single_pass">ייתכן שמודלים גדולים לא יעבדו אודיו ארוך מאוד בהעברה אחת. קצר את האודיו או בחר מודל קטן יותר.</string>
     <string name="external_notice_family">אם התמלול קורס בלי הודעת שגיאה, ייתכן שהארכיטקטורה שגויה: מחק וייבא מחדש את המודל עם ארכיטקטורה אחרת שנבחרה.</string>
@@ -967,6 +1006,9 @@
     <string name="action_transcribe_audio">תמלול האודיו</string>
     <string name="subtitle_fallback_status">חילוץ הכתוביות נכשל; מתמלל את האודיו</string>
     <string name="subtitle_choice_notification_text">ממתין לבחירה שלך…</string>
+    <!-- TASK-677 (GH #92 import half): subtitle-file ingest -->
+    <string name="subtitle_import_failed">לא ניתן לקרוא את קובץ הכתוביות</string>
+    <string name="logs_subtitle_sourced">מתוך כתוביות (ללא תמלול)</string>
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">אפשר פעולה ברקע</string>
     <string name="battery_exemption_description">המערכת עצרה את הזיהוי בזמן שהאפליקציה הייתה ברקע. אפשר ל-Anti-Vocale לפעול ברקע כדי שהזיהוי לא יופרע.</string>
@@ -990,7 +1032,8 @@
     <string name="a11y_back">חזרה</string>
     <string name="litertlm_importing">מייבא…</string>
     <string name="model_ram_warning">ייתכן שאין ל%1$s מספיק זיכרון במכשיר זה. הטעינה עלולה להיכשל או לקרוס; מודלים קלים יותר בטוחים יותר.</string>
-    <string name="error_oom_transcription">אין מספיק זיכרון לתמלל את האודיו הזה. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. אם זה עדיין נכשל, הגדרות > מתקדם > כפה טעינת מודל יכול לדלג על בדיקה זו.</string>
+    <string name="error_oom_transcription">אין מספיק זיכרון לתמלל את האודיו הזה. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. כדי להימנע מהניסיון לחלוטין, הפעל הגנת זיכרון בהגדרות > מתקדם.</string>
+    <string name="error_oom_transcription_protected">אין די זיכרון לתמלול האודיו הזה גם כשהגנת הזיכרון פעילה. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות.</string>
     <string name="external_family_detected">זוהה: %1$s</string>
     <string name="external_family_pick_title">לאיזו משפחה שייך המודל?</string>
     <string name="subtitle_timeout_title">פסק זמן בחירה אוטומטית</string>
@@ -1021,6 +1064,7 @@
     <string name="language_chip_detected_body">זוהתה אוטומטית: %1$s. שפה שגויה? שנה את שפת התמלול ותמלל את השמע שוב.</string>
     <string name="language_chip_pinned_body">מוגדרת: %1$s. לשינוי, פתח את הגדרת שפת התמלול.</string>
     <string name="language_chip_open_setting">פתח הגדרת שפה</string>
+    <string name="language_chip_re_run">הפעלה מחדש עם שפה</string>
     <string name="curated_section_title">עבור השפה שלך</string>
     <string name="curated_browse_all">עיין בכל השפות</string>
     <string name="curated_suggest_model">הצע מודל עבור השפה שלך</string>
@@ -1030,4 +1074,31 @@
     <string name="text_scale_small">קטן</string>
     <string name="text_scale_large">גדול</string>
     <string name="text_scale_xlarge">גדול מאוד</string>
+    <string name="logs_first_pass_label">מעבר ראשון (%1$s)</string>
+    <string name="copy_first_pass">העתק מעבר ראשון</string>
+    <string name="refining_status">מחדד עם %1$s…</string>
+    <string name="speaker_labels_status">מזהה דוברים…</string>
+    <string name="speaker_labels_title">זיהוי דוברים</string>
+    <string name="speaker_labels_description">מוסיף תווית דובר לכל משפט. בשימוש הראשון מוריד כ-~47 מ״ב של מודלים; מוסיף זמן עיבוד.</string>
+    <string name="transcription_not_refined">לא מחודד (תצוגה מיידית)</string>
+    <string name="transcription_refined_from">חודד מ-%1$s</string>
+    <string name="refinement_title">תמלול דו-שלבי</string>
+    <string name="refinement_description">הצג מיד תצוגה מקדימה עם המודל המהיר, ואז חדד אותה ברקע עם המודל הנבחר</string>
+    <string name="curated_why_distil_it">כוונן לאיטלקית: הבחירה המדויקת ביותר</string>
+    <string name="curated_why_parakeet">מהיר מאוד (פי 17 בערך) ועדיין מדויק מאוד</string>
+    <string name="curated_why_german_whisper">כוונן לגרמנית: האפשרות המדויקת ביותר</string>
+    <string name="curated_why_canary">קומפקטי: הורדה קטנה, תוצאות מהירות</string>
+    <string name="curated_why_swiss_german">לניבים של גרמנית שוויצרית</string>
+    <string name="curated_why_kroko">סטרימינג: הטקסט מופיע תוך כדי דיבור</string>
+    <string name="language_chip_setting_note">רק דגמי Whisper ו-SenseVoice יכולים לזהות את השפה.</string>
+    <string name="technical_details_title">הצגת פרטים טכניים</string>
+    <string name="technical_details_description">מציג את שורת העיבוד הטכנית (נתיב פענוח, מקטעים, VAD, זיכרון) ברשומות התמלול. כבוי כברירת מחדל; הפרטים נכללים תמיד בדוחות.</string>
+    <string name="external_family_moonshine">Moonshine</string>
+    <string name="external_family_moonshine_help">דורש preprocess + encode + uncached/cached decode + tokens (v1) או encoder_model.ort + decoder_model_merged.ort + tokens (v2); אנגלית וכמה ייצואי 2026</string>
+    <string name="external_family_dolphin">Dolphin</string>
+    <string name="external_family_dolphin_help">דורש קבצי model + tokens; רב-לשוני (בסיס zh/en)</string>
+  <plurals name="subtitle_import_skipped_cues">
+    <item quantity="one">שורה דילגה</item>
+    <item quantity="other">שורות דילגו</item>
+  </plurals>
 </resources>

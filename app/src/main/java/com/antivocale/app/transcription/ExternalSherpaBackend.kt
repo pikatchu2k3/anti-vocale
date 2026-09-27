@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ModelFamily
+import com.antivocale.app.data.download.DownloadedModelIntegrity
+import com.antivocale.app.data.download.details
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
@@ -52,6 +54,21 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         fun familyChunkCapSeconds(family: ModelFamily): Int? = when (family) {
             ModelFamily.WHISPER -> 30
             ModelFamily.CANARY -> 10
+            // Moonshine (GH #89): the whisper-sized window guess was WRONG for
+            // the 2026-02-27 v2 .ort exports. Measured on the eval harness
+            // (sherpa 1.13.8, TASK-619, 2026-09-22): uk/ar/vi decode correctly
+            // up to 9.2s of TOTAL input and return EMPTY above ~9.25s (sherpa
+            // catches the onnxruntime broadcast failure inside the
+            // optimum-exported decoder and silently yields ""), so a 30s cap
+            // produced silent blanks on most voice-message-length audio. The
+            // app's decode path appends a 1s silence pad to every chunk, so
+            // the cap must leave room for it: 8+1=9.0s total, inside the
+            // ceiling (verified: 8s+pad TEXT, 9s+pad EMPTY). The es export of
+            // the same line tolerates 21s+, but 8s stays correct for every
+            // variant (per-record caps tracked on the follow-up task);
+            // re-measure if a v3 shape arrives. Dolphin decodes whole files
+            // like SenseVoice (no cap).
+            ModelFamily.MOONSHINE -> 8
             else -> null
         }
 
@@ -137,7 +154,11 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         // when the family's model file is missing critical metadata, killing the app silently.
         val support = ModelFamilySupport.forFamily(record.family)
         return withContext(Dispatchers.IO) {
-            val missing = support.requiredRoles().filterNot { File(dir, it).exists() }
+            // record.files.keys: the canonical names the import wrote (the
+            // generation truth), re-verified against the directory itself so
+            // a deleted file still fails loudly.
+            val missing = support.requiredRolesFor(record.files.keys.toList())
+                .filterNot { File(dir, it).exists() }
             if (missing.isNotEmpty()) {
                 return@withContext Result.failure(TranscriptionException.ModelLoadError(
                     "missing files in ${record.dir}: $missing"))
@@ -162,6 +183,25 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 Log.e(TAG, "Family validation failed for ${record.backendId}: ${e.message}")
                 return@withContext Result.failure(TranscriptionException.ModelLoadError(
                     "family validation failed for ${record.backendId}: ${e.message ?: "no detail provided"}", e))
+            }
+
+            // TASK-304: cheap header/magic gate before the native recognizer
+            // is constructed: files corrupted AFTER import (partial
+            // re-download, disk issues) fail here in milliseconds with the
+            // specific finding instead of inside OfflineRecognizer
+            // construction. ~10 8-byte reads per load.
+            // runCatching: an IOException (file vanished mid-load) must degrade
+            // to a ModelLoadError, not escape the sealed Result contract.
+            val integrityFindings = runCatching { DownloadedModelIntegrity.validate(dir) }
+                .getOrElse { e ->
+                    return@withContext Result.failure(TranscriptionException.ModelLoadError(
+                        "integrity check could not read the model files: ${e.message}"))
+                }
+            if (integrityFindings.isNotEmpty()) {
+                val detail = integrityFindings.details()
+                Log.e(TAG, "Integrity gate failed for ${record.backendId}: $detail")
+                return@withContext Result.failure(TranscriptionException.ModelLoadError(
+                    "integrity check failed: $detail. The model files may be corrupt; try re-importing them."))
             }
 
             // TASK-368: streaming records build the OnlineRecognizer instead. The
@@ -259,7 +299,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
 
                 val result = rec.getResult(stream)
                 val transcription = result.text
-                val detectedLang = result.lang.ifBlank { null }
+                val detectedLang = TranscriptionResult.normalizedDetectedLanguage(result.lang)
 
                 if (transcription.isBlank()) {
                     // GH #96: silence windows decode blank; see SherpaBackend.
@@ -356,4 +396,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
     }
 
     override fun getModelPath(): String? = modelDir
+
+    /** TASK-644: a native decode is in flight (the transcribe bracket). */
+    override fun isBusy(): Boolean = keepAlive.workInFlightCount() > 0
 }

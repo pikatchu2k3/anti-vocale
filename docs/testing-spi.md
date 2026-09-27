@@ -18,18 +18,23 @@ This SPI is deliberately separate from the production exported receivers (`PROCE
 
 ```text
 Action: com.antivocale.app.TEST_SPI   (string extras, one op per broadcast)
-  op     get | set | records | import | help   (missing or unknown op answers with help)
+  op     get | set | records | import | notify_memory_error | help   (missing or unknown op answers with help)
   key    one of the set keys below    (op=set)
   value  the new value                (op=set)
   entry  catalog entry id             (op=set, only for key=sherpa_path)
 ```
 
+`notify_memory_error` (TASK-625 trial tool, no extras) posts the production
+memory-failure error notification through the same ResultNotificationFactory
+builder both error surfaces use, so the Open-setting action can be exercised
+on device without engineering a real out-of-memory failure.
+
 | Op | Extras | Response |
 |---|---|---|
-| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `subtitleChoiceTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `forceModelLoad`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `transcriptExportFormat`, `externalCatalogUrl`, `measuredModelMemory` (TASK-575: read-only key=runs join of the measured load footprints), `textScalePreference` |
+| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `subtitleChoiceTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `memoryProtection`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `showTechnicalDetails`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `transcriptExportFormat`, `externalCatalogUrl`, `measuredModelMemory` (TASK-575: read-only key=runs join of the measured load footprints), `demotedBackends` (TASK-675: read-only JSON array of backend ids demoted for silent decodes; a manual re-selection clears an entry), `textScalePreference`, `refinementEnabled`, `speakerLabelsEnabled` |
 | `set` | `key`, `value`, plus `entry` for `sherpa_path` | confirmation JSON echoing `key`/`value` (`entry` too when used), or an error object with `error` and the full `supportedKeys` list |
-| `nav` | `dest` | JSON ack echoing the destination, or an error naming the valid tokens. Starts the app and routes to the destination: `tab:history`, `tab:models`, `tab:settings`, `settings:<section>` (transcription, appearance, advanced, feedback: expands and scrolls), `settings:<subpage>` (icon_picker, prompt, per_app), `models:import` (opens the community-catalog import dialog). One broadcast replaces the swipe-and-dump slog through Settings (TASK-486). |
-| `import` | `url` | JSON with the imported `record` (same shape as `records` elements, plus the derived `backendId`); runs the same url-classifying import the dialog uses (catalog-entry JSON or HuggingFace repo url). Added for the TASK-550 device pass so imports need no UI driving |
+| `nav` | `dest` | JSON ack echoing the destination, or an error naming the valid tokens. Starts the app and routes to the destination: `tab:history`, `tab:models`, `tab:settings`, `settings:<section>` (transcription, appearance, advanced, feedback: expands and scrolls), `settings:<subpage>` (icon_picker, prompt, per_app, export), `models:import` (opens the community-catalog import dialog). One broadcast replaces the swipe-and-dump slog through Settings (TASK-486). |
+| `import` | `url`, `family` (optional), `model_type` (optional) | JSON with the imported `record` (same shape as `records` elements, plus the derived `backendId`); runs the same url-classifying import the dialog uses (catalog-entry JSON or HuggingFace repo url). Added for the TASK-550 device pass so imports need no UI driving. `family` (TASK-618) optionally overrides the import family by ModelFamily name (URL imports are detect-then-tell: the chooser belongs to the dialog UI, the headless equivalent is this extra); unknown names are rejected without importing. `model_type` carries the CTC subtype the dialog's selector owns (`nemo_ctc`/`zipformer_ctc`/`omnilingual_ctc`; family=CTC cannot succeed without it) |
 | `records` | none | JSON array of the imported external models; each element is the record's persisted JSON plus the derived `backendId`. All records are listed, including dangling ones whose directory no longer exists, because dangling state is precisely what a debugging session needs to see |
 | `help` | none | the op list, the set keys, the usage line, and the `PROCESS_REQUEST` pointer |
 
@@ -38,6 +43,8 @@ Set keys and value formats:
 | Key | Writes | Value |
 |---|---|---|
 | `vad` | `saveVadEnabled` | `true` or `false` (strict; anything else is an error) |
+| `refinement_enabled` | `saveRefinementEnabled` | `true` or `false` (GH #43 two-pass toggle) |
+| `speaker_labels_enabled` | `saveSpeakerLabelsEnabled` | `true` or `false` (GH #83 speaker labeling toggle) |
 | `punctuation` | `savePunctuationMode` | `off`, `auto`, `always` (the settings dropdown's exact set; anything else is rejected) |
 | `punctuation_prompt` | `savePunctuationPrompt` | free text, 500-char cap; blank = the localized built-in prompt |
 | `keep_alive` | `saveKeepAliveTimeout` | positive integer (minutes); 0/negative rejected (would silently fall back to the default) |
@@ -48,10 +55,19 @@ Set keys and value formats:
 | `backend` | `saveTranscriptionBackend` | a catalog id (`sherpa-onnx`, `whisper`, `qwen3-asr`, `nemotron-streaming`, `gigaam`), `llm`, or `external:<record id>`; unknown ids are rejected without writing |
 | `advanced_sharing` | `saveAdvancedSharingEnabled` | `true` or `false` (strict) |
 | `auto_copy` | `saveAutoCopyEnabled` | `true` or `false` (strict) |
+| `signature_enabled` | `saveSignatureEnabled` | true/false |
+| `signature_text` | `saveSignatureText` | free text (blank = localized default at assembly) |
+| `signature_position` | `saveSignaturePosition` | `prepend` or `append` |
 | `compact_result_actions` | `saveCompactResultActions` | `true` or `false` (strict) |
 | `language_chip` | `saveLanguageChipEnabled` | `true` or `false` (strict); TASK-546: gates the detected-language chip on results |
-| `force_model_load` | `saveForceModelLoad` | `true` or `false` (strict) |
+| `memory_protection` | `saveMemoryProtection` | `true` or `false` (strict) |
+| `external_automation` | `saveExternalAutomationEnabled` | `true` or `false` (strict); TASK-274: consent gate for the exported automation receivers (Tasker surface) |
+| `remote_enabled` | `saveRemoteOmnivoiceEnabled` | `true` or `false` (strict); TASK-681: LAN-offload consent gate; disabling while it is the selected backend resets the backend to the default |
+| `remote_endpoint` | `saveRemoteOmnivoiceEndpoint` | OmniVoice base URL, e.g. `http://192.168.1.10:3900`; TASK-681 |
+| `remote_api_key` | `saveRemoteOmnivoiceApiKey` | the server's OMNIVOICE_API_KEY; TASK-681 |
+| `remote_model` | `saveRemoteOmnivoiceModel` | pass-through model name the server resolves (default `whisper-1`); TASK-681 |
 | `group_logs` | `saveGroupLogsByConversation` | `true` or `false` (strict) |
+| `technical_details` | `saveShowTechnicalDetails` | `true` or `false` (strict); TASK-616: gates the technical processing-context line on transcript entries |
 | `show_retranscribe` | `saveShowRetranscribeButton` | `true` or `false` (strict) |
 | `theme` | `saveThemePreference` | `DEFAULT`, `WHATSAPP`, or `TELEGRAM` (ThemeType names) |
 | `theme_mode` | `saveThemeMode` | `SYSTEM`, `DARK`, or `LIGHT` (ThemeMode names) |
@@ -66,12 +82,12 @@ Set keys and value formats:
 | `summary_prompt` | `saveSummaryPrompt` | free text, 500-char cap; blank = the built-in two-to-three-sentence prompt |
 | `swipe_action` | `saveSwipeActionMode` | `REVEAL` or `IMMEDIATE_DELETE` (the Logs settings dropdown's exact set) |
 | `default_prompt` | `saveDefaultPrompt` | free text, 500-char cap (like `punctuation_prompt`); the Tasker default prompt |
-| `external_catalog_url` | `saveExternalCatalogUrl` | URL of the community-catalog JSON source |
+| `external_catalog_url` | `saveExternalCatalogUrl` | URL of the community-catalog JSON source | (TASK-649: a dropped/empty value CLEARS the key; the shell drops empty --es extras)
 | `output_folder` | `saveOutputFolderUri` | SAF tree URI; a blank value clears the preference back to unset (`null`). Only URIs the app was granted through the SAF picker work: the SPI stores the string but cannot take the persistable URI grant, so a never-granted tree fails silently at the next auto-save. Set folders that came out of a real picker session |
 
 Paths are written as given and not validated against the filesystem. A test that writes a bogus path and then transcribes will fail at model load; set paths that came out of `op=get` or `op=records`, or a real download directory.
 
-Deliberately NOT reachable through the SPI (kept out on purpose): `partialTranscription*` (transient crash-recovery state) and benchmark results (their own domain, reset from the UI); legacy one-shot markers (`externalMigrationDone`, `customTransducer*`); the disabled GGUF path (`ggufModelPath`); `externalModelsJson` (read via `op=records`, written by the import pipeline).
+Deliberately NOT reachable through the SPI (kept out on purpose): `partialTranscription*` (transient crash-recovery state) and benchmark results (their own domain, reset from the UI); legacy one-shot markers (`externalMigrationDone`, `customTransducer*`); the TASK-640 crash marker (`pendingBackendLoad`: write-path only, armed around native loads); `externalModelsJson` (read via `op=records`, written by the import pipeline).
 
 ## Ready-to-paste: navigation
 
@@ -149,7 +165,7 @@ adb shell am broadcast -a com.antivocale.app.TEST_SPI -n com.antivocale.app.debu
 adb shell am broadcast -a com.antivocale.app.TEST_SPI -n com.antivocale.app.debug/com.antivocale.app.receiver.TestSpiReceiver --es op set --es key provider --es value nnapi
 ```
 
-Saved model paths (llm uses the generic preference; sherpa catalog backends need `entry`):
+Saved model paths (llm uses the generic preference; sherpa catalog backends need `entry`). TASK-626 caveat: writing a `sherpa_path` whose directory does not exist while the backend is warm forces a reload at the NEXT transcription, and the loader persists the auto-resolved variant over the written value; a get right after the transcription can read a path the test never wrote. Set valid directories, or read the preference before transcribing.
 
 ```bash
 adb shell am broadcast -a com.antivocale.app.TEST_SPI -n com.antivocale.app.debug/com.antivocale.app.receiver.TestSpiReceiver --es op set --es key model_path --es value /data/local/tmp/gemma.taskml

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.antivocale.app.transcription.TimedSegment
+import com.antivocale.app.util.TranscriptSignature
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,6 +39,9 @@ object TranscriptFileSaver {
         segments: List<TimedSegment>,
         failedChunkCount: Int,
         sourcePackage: String? = null,
+        /** TASK-647: the AI-disclaimer signature for the exported file; blank = off. */
+        signature: String = "",
+        signaturePosition: String = "append",
     ): String? {
         if (treeUriString.isNullOrBlank()) {
             android.util.Log.w(TAG, "Auto-save skipped: no output folder configured")
@@ -46,11 +50,53 @@ object TranscriptFileSaver {
         val decision = SubtitleFormatter.resolveExport(
             SubtitleFormatter.Format.fromStored(storedFormat), transcript, segments, failedChunkCount,
         )
+        val content = signedExport(decision, signature, signaturePosition)
         // The "first words" preview must come from the transcript: the
         // formatted payload opens with timestamps ("WEBVTT", "00:00:01")
         // and names the file after the clock instead of the words.
-        return save(context, Uri.parse(treeUriString), decision.format, decision.content, sourcePackage, transcript)
+        return save(context, Uri.parse(treeUriString), decision.format, content, sourcePackage, transcript)
     }
+
+    /** TASK-647: the disclaimer header for timed formats (a comment block
+     *  every player renders or safely ignores; VTT has NOTE, SRT has no
+     *  official comment so a blank-separated line is the convention). */
+    /**
+     * TASK-647: the export's signed content. Plain text rides the signature
+     * inline (the same assembly as copy/share); the timed subtitle formats
+     * take it as a leading NOTE/comment block instead, never inline (a
+     * stray line would corrupt cue timing/rendering). Pure and tested.
+     */
+    internal fun signedExport(
+        decision: SubtitleFormatter.ExportDecision,
+        signature: String,
+        signaturePosition: String,
+    ): String = if (signature.isBlank()) decision.content else when (decision.format) {
+        SubtitleFormatter.Format.TXT, SubtitleFormatter.Format.TXT_TIMED ->
+            TranscriptSignature.apply(decision.content, signature, signaturePosition)
+        SubtitleFormatter.Format.SRT, SubtitleFormatter.Format.VTT ->
+            noteBlock(decision.format, signature, decision.content)
+    }
+
+    /**
+     * The signature must be ONE line without the cue separator: a multi-line
+     * signature (the field allows it) would end the VTT NOTE block early,
+     * and '-->' anywhere invalidates WebVTT (strict parsers reject the file).
+     */
+    private fun sanitized(signature: String): String =
+        signature.replace("\r?\n".toRegex(), " ").replace("-->", "-")
+
+    private fun noteBlock(format: SubtitleFormatter.Format, signature: String, content: String): String =
+        if (format == SubtitleFormatter.Format.VTT) {
+            // WEBVTT must stay the first line; the NOTE goes right after it.
+            val headerEnd = content.indexOf('\n')
+            if (headerEnd < 0) content else {
+                content.substring(0, headerEnd + 1) + "NOTE ${sanitized(signature)}\n\n" + content.substring(headerEnd + 1)
+            }
+        } else {
+            // SRT has no official comment: a plain line before the first cue
+            // is the convention players ignore or show as a banner.
+            "$signature\n\n$content"
+        }
 
     /**
      * Writes [text] to a new file under [treeUri] in [format]. Taking the

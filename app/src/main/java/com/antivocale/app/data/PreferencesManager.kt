@@ -1,5 +1,7 @@
 package com.antivocale.app.data
 
+import com.antivocale.app.BuildConfig
+
 import kotlinx.coroutines.flow.Flow
 
 interface PreferencesManager {
@@ -14,6 +16,16 @@ interface PreferencesManager {
     /** TASK-576: app text-size step (TextScale name); SYSTEM = no extra scaling. */
     val textScalePreference: Flow<String>
     suspend fun saveTextScale(value: String)
+
+    /** GH #43: two-pass transcription (fast streaming preview, then refine). */
+    val refinementEnabled: Flow<Boolean>
+
+    /** GH #83: post-transcription speaker labeling on the cue timeline. */
+    val speakerLabelsEnabled: Flow<Boolean>
+    suspend fun saveRefinementEnabled(enabled: Boolean)
+
+    /** GH #83. */
+    suspend fun saveSpeakerLabelsEnabled(enabled: Boolean)
     val themeMode: Flow<String>
     val transcriptionBackend: Flow<String>
     /**
@@ -33,8 +45,15 @@ interface PreferencesManager {
      *  index published in our repo; an override persists until changed back. */
     val externalCatalogUrl: Flow<String>
     suspend fun saveExternalCatalogUrl(url: String)
-    val ggufModelPath: Flow<String?>
+    /** TASK-643: reset by REMOVING the key, so the default re-resolves per build. */
+    suspend fun clearExternalCatalogUrl()
     val autoCopyEnabled: Flow<Boolean>
+
+    /** TASK-647: AI-disclaimer signature applied to every exit surface (copy/share/export). */
+    val signatureEnabled: Flow<Boolean>
+    val signatureText: Flow<String>
+    val signaturePosition: Flow<String>
+
     val outputFolderUri: Flow<String?>
     /** GH #92: auto-save file format, a [SubtitleFormatter.Format] name. Default TXT. */
     val transcriptExportFormat: Flow<String>
@@ -64,15 +83,63 @@ interface PreferencesManager {
     val transcriptionLanguage: Flow<String>
     val swipeActionMode: Flow<String>
     val groupLogsByConversation: Flow<Boolean>
+    /** TASK-616: render the technical processing-context line on expanded entries. */
+    val showTechnicalDetails: Flow<Boolean>
     val advancedSharingEnabled: Flow<Boolean>
     val showRetranscribeButton: Flow<Boolean>
-    val forceModelLoad: Flow<Boolean>
+    val memoryProtection: Flow<Boolean>
+
+    /** TASK-274: consent gate for the exported automation receivers (Tasker surface). */
+    val externalAutomationEnabled: Flow<Boolean>
+
+    /**
+     * TASK-681: the LAN-offload consent gate. Off by default; while off the
+     * backend has no surface anywhere and nothing leaves the device. The
+     * disclosure paragraph the Settings card renders is the contract this
+     * toggle gates.
+     */
+    val remoteOmnivoiceEnabled: Flow<Boolean>
+
+    /** TASK-681: OmniVoice base URL as entered by the user ("" = not configured). */
+    val remoteOmnivoiceEndpoint: Flow<String>
+
+    /** TASK-681: the OMNIVOICE_API_KEY bearer for the user's own server. */
+    val remoteOmnivoiceApiKey: Flow<String>
+
+    /** TASK-681: the pass-through model name sent to the server. */
+    val remoteOmnivoiceModel: Flow<String>
+    suspend fun saveRemoteOmnivoiceEnabled(enabled: Boolean)
+
+    /**
+     * TASK-681: persists the config triple as ONE write (one user action,
+     * one DataStore transaction; no torn endpoint-without-key state). The
+     * fine-grained savers below stay for the debug SPI.
+     */
+    suspend fun saveRemoteOmnivoiceConfig(endpoint: String, apiKey: String, model: String)
+    suspend fun saveRemoteOmnivoiceEndpoint(url: String)
+    suspend fun saveRemoteOmnivoiceApiKey(key: String)
+    suspend fun saveRemoteOmnivoiceModel(model: String)
     val compactResultActions: Flow<Boolean>
     /** TASK-546: show the detected-language chip on results. */
     val languageChipEnabled: Flow<Boolean>
 
     val externalModelsJson: Flow<String?>
     suspend fun saveExternalModelsJson(json: String)
+
+    /**
+     * TASK-675: backend ids demoted for silent decodes (a model that loaded
+     * but produced no text while speech was present, twice in one app
+     * process). Auto-selection and the curated recommendation cards skip
+     * these; a manual selection clears the entry. Plain set semantics: add
+     * and remove are idempotent and never raise.
+     */
+    val demotedBackends: Flow<Set<String>>
+
+    /** TASK-675: adds [backendId] to the demoted set (no-op when already present). */
+    suspend fun markBackendDemoted(backendId: String)
+
+    /** TASK-675: removes [backendId] from the demoted set (no-op when absent). */
+    suspend fun clearDemotedBackend(backendId: String)
 
     suspend fun saveModelPath(path: String)
     suspend fun clearModelPath()
@@ -88,9 +155,11 @@ interface PreferencesManager {
 
     suspend fun saveExternalMigrationDone(done: Boolean)
 
-    suspend fun saveGgufModelPath(path: String)
-    suspend fun clearGgufModelPath()
     suspend fun saveAutoCopyEnabled(enabled: Boolean)
+    suspend fun saveSignatureEnabled(enabled: Boolean)
+    suspend fun saveSignatureText(text: String)
+    suspend fun saveSignaturePosition(position: String)
+
     suspend fun saveOutputFolderUri(uri: String?)
     /** GH #92: see [transcriptExportFormat]. */
     suspend fun saveTranscriptExportFormat(format: String)
@@ -110,9 +179,14 @@ interface PreferencesManager {
     suspend fun saveTranscriptionLanguage(language: String)
     suspend fun saveSwipeActionMode(mode: String)
     suspend fun saveGroupLogsByConversation(enabled: Boolean)
+    /** TASK-616: see [showTechnicalDetails]. */
+    suspend fun saveShowTechnicalDetails(enabled: Boolean)
     suspend fun saveAdvancedSharingEnabled(enabled: Boolean)
     suspend fun saveShowRetranscribeButton(enabled: Boolean)
-    suspend fun saveForceModelLoad(enabled: Boolean)
+    suspend fun saveMemoryProtection(enabled: Boolean)
+
+    /** TASK-274: see [externalAutomationEnabled]. */
+    suspend fun saveExternalAutomationEnabled(enabled: Boolean)
     suspend fun saveCompactResultActions(enabled: Boolean)
     suspend fun saveLanguageChipEnabled(enabled: Boolean)
 
@@ -147,6 +221,15 @@ interface PreferencesManager {
 
     val partialTranscriptionText: Flow<String?>
     val partialTranscriptionTimestamp: Flow<Long?>
+
+    /**
+     * TASK-640: the backend id whose native load is in flight. Set before the
+     * recognizer construction, cleared when it returns; a native death leaves
+     * it set, and the next launch quarantines the model (external ids) instead
+     * of walking into the same crash again.
+     */
+    val pendingBackendLoad: Flow<String?>
+    suspend fun savePendingBackendLoad(backendId: String?)
     suspend fun savePartialTranscriptionState(text: String)
     suspend fun clearPartialTranscriptionState()
 
@@ -157,6 +240,12 @@ interface PreferencesManager {
         const val DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES = 5
         val DEFAULT_THREAD_COUNT = maxOf(2, Runtime.getRuntime().availableProcessors() - 2).coerceAtMost(8)
         const val DEFAULT_AUTO_COPY_ENABLED = false
+        /** TASK-647: blank text = use the localized default at assembly time. */
+        const val DEFAULT_SIGNATURE_ENABLED = false
+        const val DEFAULT_SIGNATURE_TEXT = ""
+        const val DEFAULT_SIGNATURE_POSITION = "append"
+        val SIGNATURE_POSITIONS = listOf("prepend", "append")
+
         /** GH #92: plain .txt is the default; timed formats are strictly opt-in. */
         const val DEFAULT_TRANSCRIPT_EXPORT_FORMAT = "TXT"
         const val DEFAULT_VAD_ENABLED = false
@@ -196,15 +285,34 @@ interface PreferencesManager {
         val SWIPE_ACTION_MODES = com.antivocale.app.ui.tabs.SwipeActionMode.NAMES
         const val DEFAULT_INFERENCE_PROVIDER = "auto"
         const val DEFAULT_GROUP_LOGS_BY_CONVERSATION = true
+        /** TASK-616: the technical line is diagnostic detail; hidden unless asked for. */
+        const val DEFAULT_SHOW_TECHNICAL_DETAILS = false
         const val DEFAULT_ADVANCED_SHARING_ENABLED = false
         const val DEFAULT_SHOW_RETRANSCRIBE_BUTTON = true
-        const val DEFAULT_FORCE_MODEL_LOAD = false
+        /** TASK-631: protection is opt-in; by default the app never refuses a load on its own. */
+        const val DEFAULT_MEMORY_PROTECTION = false
+        /** TASK-274: the automation receivers are opt-in; off, they answer with the error
+         *  naming this setting instead of running the request. */
+        const val DEFAULT_EXTERNAL_AUTOMATION_ENABLED = false
+        /** TASK-681: LAN offload is opt-in; off, no audio ever leaves the device. */
+        const val DEFAULT_REMOTE_OMNIVOICE_ENABLED = false
+        const val DEFAULT_REMOTE_OMNIVOICE_ENDPOINT = ""
+        const val DEFAULT_REMOTE_OMNIVOICE_API_KEY = ""
+        /** One source with the backend's own default (the field the server resolves). */
+        const val DEFAULT_REMOTE_OMNIVOICE_MODEL =
+            com.antivocale.app.transcription.RemoteOmnivoiceBackend.DEFAULT_MODEL
         const val DEFAULT_COMPACT_RESULT_ACTIONS = true
         /** TASK-546: the chip mitigates invisible wrong-language detection; on by default. */
         const val DEFAULT_LANGUAGE_CHIP_ENABLED = true
 
-        /** The maintained community index, published from this repo. */
-        const val DEFAULT_EXTERNAL_CATALOG_URL =
-            "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/index.json"
+        /**
+         * The maintained community index, published from this repo.
+         * TASK-643: version-scoped (index-<versionName>.json, derived by
+         * gradle from the release bump). Apps <=1.13.x keep reading the
+         * unsuffixed index.json, which is frozen: new entries land only in
+         * the newest version's file, so an entry never reaches an app older
+         * than the modelType it requires.
+         */
+        val DEFAULT_EXTERNAL_CATALOG_URL: String get() = BuildConfig.CATALOG_INDEX_URL
     }
 }

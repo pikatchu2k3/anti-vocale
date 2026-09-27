@@ -37,6 +37,7 @@
     <string name="saved_model_found">Znaleziono zapisany model</string>
     <string name="saved_model_not_found">Nie znaleziono zapisanego modelu</string>
     <string name="model_selected">Wybrano model: %1$s</string>
+    <string name="model_import_invalid_file">Wybrany plik nie wygląda na użyteczny model LiteRT-LM (%1$s)</string>
     <string name="model_copy_failed">Nie udało się skopiować pliku modelu</string>
     <string name="model_file_not_found">Nie znaleziono pliku modelu w: %1$s</string>
     <string name="model_loading">Wczytywanie modelu do pamięci…</string>
@@ -97,7 +98,9 @@
     <string name="summary_skipped_context">Pominięto podsumowanie: transkrypcja przekracza długość, jaką podsumowanie potrafi przetworzyć.</string>
     <string name="summary_skipped_no_model">Pominięto podsumowanie: brak modelu Gemma. Pobierz go w karcie Modele, aby włączyć podsumowania.</string>
     <string name="summary_skipped_failed">Nie udało się wygenerować podsumowania; transkrypcja jest nienaruszona.</string>
+    <string name="summary_skipped_timeout">Podsumowanie przekroczyło limit czasu; transkrypcja jest nienaruszona.</string>
     <string name="summary_skipped_guard">Pominięto podsumowanie: wygenerowane podsumowanie wyszło poza limity długości (za krótkie lub za długie na podsumowanie).</string>
+    <string name="summary_partial_note">(niektórych części transkrypcji nie udało się podsumować)</string>
     <string name="copy_summary">Kopiuj podsumowanie</string>
     <string name="copy_original">Kopiuj oryginał</string>
     <string name="logs_model_label">Model: %1$s</string>
@@ -278,10 +281,53 @@
     <string name="oom_crash_warning">Aplikacja została zamknięta, ponieważ urządzeniu kończyła się pamięć. Przed ponowną transkrypcją spróbuj zamknąć inne aplikacje lub użyć mniejszego modelu.</string>
     <string name="native_crash_title">Aplikacja zamknęła się nieoczekiwanie</string>
     <string name="native_crash_go_to_model">Przejdź do karty Model</string>
-    <string name="model_load_low_memory">Za mało wolnej pamięci dla tego modelu (dostępne %1$s, potrzeba ok. %2$s). Zamknij inne aplikacje lub użyj mniejszego modelu. Wymuszone wczytanie jest dostępne w Ustawieniach.</string>
-    <string name="transcribe_low_memory">Za mało wolnej pamięci, aby transkrybować tym modelem (około %1$s wolne, wymagane %2$s). Zamknij inne aplikacje i spróbuj ponownie albo włącz Wymuszaj ładowanie modelu w ustawieniach.</string>
-    <string name="force_model_load">Wymuś wczytanie modelu</string>
-    <string name="force_model_load_desc">Wczytaj model nawet, gdy pamięci wydaje się brakować. Może zamknąć aplikację na urządzeniach z małą ilością RAM.</string>
+    <string name="model_load_low_memory">Za mało wolnej pamięci dla tego modelu (dostępne %1$s, potrzeba ok. %2$s). Ochrona pamięci jest aktywna: zamknij inne aplikacje, użyj mniejszego modelu albo wyłącz ją w Ustawieniach, aby spróbować mimo to.</string>
+    <string name="memory_margin_warning_title">Model blisko limitu pamięci tego telefonu</string>
+    <string name="memory_margin_warning_body">Model %1$s może być blisko granicy możliwości tego telefonu. Transkrypcja i tak zostanie wykonana; możesz włączyć ochronę pamięci w Ustawieniach, aby blokować takie wczytywanie.</string>
+    <string name="transcribe_low_memory">Za mało wolnej pamięci, aby transkrybować tym modelem (około %1$s wolne, wymagane %2$s). Ochrona pamięci jest aktywna: zamknij inne aplikacje i spróbuj ponownie albo wyłącz ją w ustawieniach, aby spróbować mimo to.</string>
+    <string name="external_model_quarantined_title">Model zewnętrzny wyłączony po awarii</string>
+    <string name="external_model_quarantined_text">Wczytanie "%1$s" zamknęło aplikację, więc został wyłączony, aby uniknąć powtarzających się awarii. Usuń i zaimportuj model ponownie w zakładce Modele.</string>
+    <string name="memory_protection">Ochrona pamięci</string>
+    <string name="memory_protection_desc">Blokuje wczytywanie modelu, gdy wolnej pamięci wydaje się brakować, aby uniknąć cichego zamykania aplikacji. Wyłączona domyślnie: normalnie aplikacja zawsze próbuje uruchomić model.</string>
+    <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
+    <string name="external_automation_title">Automatyzacja zewnętrzna (Tasker)</string>
+    <string name="external_automation_description">Pozwala innym aplikacjom rozpoczynać transkrypcje przez API automatyzacji (np. Tasker). Domyślnie wyłączona.</string>
+    <string name="external_automation_disabled">Automatyzacja zewnętrzna jest wyłączona. Włącz ją w Ustawienia > Zaawansowane > Automatyzacja zewnętrzna.</string>
+    <string name="remote_omnivoice_name">Odciążenie LAN (OmniVoice)</string>
+    <string name="remote_offload_title">Odciążenie LAN (eksperymentalne)</string>
+    <string name="remote_offload_description">Przekazuje długie lub wymagające transkrypcje własnemu serwerowi OmniVoice w Twojej sieci Wi-Fi. Po włączeniu wybierz go w zakładce Modele.</string>
+    <string name="remote_offload_disclosure">Gdy ta funkcja jest włączona i wybrana, dźwięk tych transkrypcji jest wysyłany wyłącznie na adres serwera podany poniżej, w Twojej własnej sieci. Wszystko inne jest transkrybowane na tym urządzeniu. Domyślnie wyłączone: nic nie opuszcza telefonu, dopóki tego nie włączysz.</string>
+    <string name="remote_offload_endpoint_label">Adres serwera</string>
+    <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
+    <string name="remote_offload_key_label">Klucz API</string>
+    <string name="remote_offload_model_label">Nazwa modelu</string>
+    <string name="remote_offload_model_hint">Nazwa modelu, którą rozpoznaje Twój serwer OmniVoice; domyślnie whisper-1.</string>
+    <string name="remote_offload_save">Zapisz</string>
+    <string name="remote_offload_test">Testuj połączenie</string>
+    <string name="remote_offload_test_running">Testowanie…</string>
+    <string name="remote_offload_test_success">Połączenie działa.</string>
+    <string name="remote_test_reason_unreachable">Serwer nieosiągalny. Sprawdź adres i czy OmniVoice działa.</string>
+    <string name="remote_test_reason_auth">Serwer odrzucił klucz API.</string>
+    <string name="remote_test_reason_timeout">Brak odpowiedzi w ciągu %1$d sekund; serwer może być zajęty.</string>
+    <string name="remote_test_reason_server">Serwer zwrócił błąd (HTTP %1$d).</string>
+    <string name="error_remote_timeout">Transkrypcja na Twoim serwerze OmniVoice nie zakończyła się w %1$d minut i została przerwana.</string>
+    <string name="error_remote_unreachable">Nie można połączyć się z Twoim serwerem OmniVoice. Sprawdź, czy działa i czy adres w ustawieniach jest poprawny.</string>
+    <string name="error_remote_server">Serwer OmniVoice odrzucił żądanie (HTTP %1$d).</string>
+    <string name="remote_offload_status">Transkrybowanie na Twoim serwerze OmniVoice…</string>
+    <!-- TASK-679: panel modeli rezydentnych (Ustawienia > Zaawansowane) i okruch po OOM. -->
+    <string name="memory_diagnostics_title">Pamięć urządzenia</string>
+    <string name="memory_diagnostics_subtitle">Modele wczytane teraz, wolny RAM i ostatni zapis braku pamięci.</string>
+    <string name="memory_diagnostics_resident_label">Modele rezydentne</string>
+    <string name="memory_diagnostics_resident_none">Obecnie żaden model nie jest wczytany</string>
+    <string name="memory_diagnostics_ram_label">Wolny RAM</string>
+    <string name="memory_diagnostics_ram_value">%1$s wolne z %2$s</string>
+    <string name="memory_diagnostics_ram_unknown">Nieodczytywalne na tym urządzeniu</string>
+    <string name="memory_diagnostics_heap_label">Limit pamięci aplikacji</string>
+    <string name="memory_diagnostics_breadcrumb_label">Ostatnie zdarzenie braku pamięci</string>
+    <string name="memory_diagnostics_breadcrumb_none">Nic nie zarejestrowano</string>
+    <string name="memory_diagnostics_breadcrumb_hint">Gdy transkrypcja nie powiedzie się z powodu pamięci, jeden wiersz zapisuje, które modele były wczytane i co robiło żądanie.</string>
+    <string name="memory_diagnostics_scrub_note">Dane diagnostyczne zawierają tylko nazwy modeli i liczby pamięci: nigdy tekst transkrypcji ani ścieżki plików.</string>
+    <string name="memory_diagnostics_copy">Kopiuj dane diagnostyczne</string>
     <string name="copy">Kopiuj</string>
     <string name="share">Udostępnij</string>
     <string name="char_counter">%1$d z %2$d znaków</string>
@@ -326,6 +372,7 @@
     <string name="active_badge">Aktywny</string>
     <string name="model_selected_message">Wybrano %1$s</string>
     <string name="model_use_missing_files">Pliki modelu %1$s są brakujące lub niekompletne. Pobierz ponownie wariant z karty Model.</string>
+    <string name="model_demoted_notice">Nie jest wybierany automatycznie: ten model nie wygenerował tekstu, choć była mowa. Wybierz go ponownie, aby dać mu jeszcze jedną szansę.</string>
     <string name="delete">Usuń</string>
     <string name="download">Pobierz</string>
     <string name="model_update_button">Zaktualizuj</string>
@@ -483,6 +530,13 @@
     <string name="punctuation_prompt_description">Instrukcja dla kroku interpunkcji. Zostaw puste, aby użyć wbudowanej.</string>
     <string name="punctuation_prompt_placeholder">Wbudowany prompt</string>
     <string name="summary_prompt_title">Prompt podsumowania</string>
+    <string name="signature_setting_title">Podpis transkrypcji (zastrzeżenie AI)</string>
+    <string name="signature_setting_description">Dodaje wiersz podpisu do każdej transkrypcji opuszczającej aplikację: kopii, udostępnień i eksportowanych plików. Ekrany aplikacji zachowują zwykły tekst.</string>
+    <string name="signature_text_title">Tekst podpisu</string>
+    <string name="signature_text_description">Zostaw puste, aby użyć standardowego zastrzeżenia.</string>
+    <string name="signature_position_title">Położenie</string>
+    <string name="signature_position_prepend">Przed transkrypcją</string>
+    <string name="signature_position_append">Po transkrypcji</string>
     <string name="summary_prompt_description">Własna instrukcja podsumowania AI. Puste używa wbudowanej (dwa-trzy zdania).</string>
     <string name="punctuation_default_prompt">Dodaj interpunkcję i wielkie litery do tej transkrypcji. Zachowaj każde słowo dokładnie jak napisane; niczego nie poprawiaj, nie tłumacz, nie dodawaj ani nie usuwaj. Zwróć tylko poprawioną transkrypcję.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
@@ -624,6 +678,7 @@
     <string name="notification_no_model_title">Model niezainstalowany</string>
     <string name="notification_no_model_message">Otwórz aplikację i pobierz model</string>
     <string name="notification_no_model_action">Otwórz aplikację</string>
+    <string name="error_open_memory_protection_setting">Otwórz ustawienie</string>
 
     <!-- Tasker fallback notification -->
     <string name="notification_channel_tasker_fallback">Automatyzacja Tasker</string>
@@ -709,6 +764,8 @@
     <string name="performance_stats_hours_ago">%1$dh temu</string>
     <string name="performance_stats_days_ago">%1$dd temu</string>
     <string name="performance_stats_total_audio">Łącznie: przetworzono %1$s audio</string>
+    <string name="performance_stats_accuracy_title">Dokładność</string>
+    <string name="performance_stats_accuracy_footnote">Mierzone na naszych zbiorach prawdziwych wiadomości i zbiorach czystych, próbkach typu FLEURS lub benchmarkach społeczności; tego, czego nie ma na liście, nie zmierzono.</string>
 
     <!-- Transcription active protection -->
     <string name="dialog_transcription_active_title">Transkrypcja w toku</string>
@@ -749,6 +806,7 @@
     <string name="loading_model">Wczytywanie modelu %1$s…</string>
     <string name="preprocessing_audio">Wstępne przetwarzanie audio…</string>
     <string name="clipboard_label_transcription">Transkrypcja</string>
+    <string name="signature_default_text">Transkrybowano lokalnie na telefonie za pomocą modelu AI.</string>
 
     <!-- Settings accessibility -->
     <string name="open_prompt_settings">Otwórz ustawienia podpowiedzi</string>
@@ -764,30 +822,10 @@
     <string name="pip_enter_button">PiP</string>
     <string name="pip_enter_description">Pokaż w oknie obraz w obrazie</string>
 
-    <!-- GGUF model descriptions -->
-    <string name="model_title_gemma4_gguf_q4km">Gemma 4 GGUF (Q4_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q4km">4,9 GB · Apache 2.0 · Generowanie tekstu przez llama.cpp. Najlepszy balans jakości i rozmiaru.</string>
-    <string name="model_title_gemma4_gguf_q5km">Gemma 4 GGUF (Q5_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q5km">5,3 GB · Apache 2.0 · Wyższa jakość generowania tekstu przez llama.cpp.</string>
-    <string name="model_title_gemma4_gguf_q8">Gemma 4 GGUF (Q8_0)</string>
-    <string name="model_desc_gemma4_gguf_q8">7,4 GB · Apache 2.0 · Najlepsza jakość generowania tekstu przez llama.cpp. Wymaga 8GB+ RAM.</string>
     <string name="model_title_gemma_4_e2b">Gemma 4 E2B</string>
     <string name="model_title_gemma_4_e4b">Gemma 4 E4B</string>
     <string name="model_title_gemma_3n_e2b">Gemma 3n E2B</string>
     <string name="model_title_gemma_3n_e4b">Gemma 3n E4B</string>
-    <string name="backend_gemma4_gguf">Gemma 4 (GGUF)</string>
-    <string name="gguf_inference_unavailable">Wnioskowanie GGUF wymaga natywnej biblioteki llama.cpp. Zbuduj libllama.so dla Android ARM64.</string>
-    <string name="gguf_model_download_error">Nie udało się pobrać modelu GGUF</string>
-
-    <!-- GGUF model download section -->
-    <string name="gguf_title">Gemma 4 GGUF (generowanie tekstu)</string>
-    <string name="gguf_description">Lokalny LLM do generowania tekstu na urządzeniu; bez zależności od chmury. Wymaga natywnej biblioteki llama.cpp.</string>
-    <string name="gguf_unsupported_arch">Nieobsługiwane na tym urządzeniu (wymaga ARM64).</string>
-    <string name="gguf_download_confirm_title">Pobrać %1$s?</string>
-    <string name="gguf_download_confirm_message">To pobierze ok. %1$dMB. Modele GGUF umożliwiają lokalne generowanie tekstu bez internetu.</string>
-    <string name="gguf_downloaded">Pomyślnie pobrano %1$s</string>
-    <string name="gguf_delete_message">Usunąć %1$s? Zwolni to ok. %2$dMB pamięci.</string>
-    <string name="gguf_deleted">Usunięto %1$s</string>
 
     <!-- Language filter -->
     <string name="lang_filter_label">Filtruj według języka</string>
@@ -936,6 +974,7 @@
     <string name="external_option_itn">Odwrotna normalizacja tekstu</string>
     <string name="external_ctc_subtype">Podtyp CTC</string>
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
+    <string name="external_ctc_subtype_omnilingual">Wielojęzyczny CTC (1600+ języków, eksperymentalnie)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
     <string name="external_notice_single_pass">Bardzo długie audio może nie zostać przetworzone przez duży model w jednym przebiegu. Skróć audio lub wybierz mniejszy model.</string>
     <string name="external_notice_family">Jeśli transkrypcja kończy się awarią bez błędu, architektura może być błędna: usuń model i zaimportuj go ponownie z wybraną inną architekturą.</string>
@@ -978,6 +1017,9 @@
     <string name="action_transcribe_audio">Przepisz audio</string>
     <string name="subtitle_fallback_status">Nie udało się wyodrębnić napisów; przepisywanie audio</string>
     <string name="subtitle_choice_notification_text">Oczekiwanie na Twój wybór…</string>
+    <!-- TASK-677 (GH #92 import half): subtitle-file ingest -->
+    <string name="subtitle_import_failed">Nie udało się odczytać pliku napisów</string>
+    <string name="logs_subtitle_sourced">Z napisów (bez transkrypcji)</string>
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">Zezwól na działanie w tle</string>
     <string name="battery_exemption_description">System przerwał rozpoznawanie w tle. Zezwól aplikacji na działanie w tle, aby transkrypcja nie została przerwana.</string>
@@ -1001,7 +1043,8 @@
     <string name="a11y_back">Wstecz</string>
     <string name="litertlm_importing">Importowanie…</string>
     <string name="model_ram_warning">%1$s może nie mieć wystarczającej pamięci na tym urządzeniu. Ładowanie może się nie powieść; lżejsze modele są bezpieczniejsze.</string>
-    <string name="error_oom_transcription">Za mało pamięci, aby transkrybować to audio. Spróbuj krótszego pliku, mniejszego modelu lub zamknij inne aplikacje. Jeśli nadal się nie uda, Ustawienia > Zaawansowane > Wymuś załadowanie modelu może pominąć to sprawdzanie.</string>
+    <string name="error_oom_transcription">Za mało pamięci, aby transkrybować to audio. Spróbuj krótszego pliku, mniejszego modelu lub zamknij inne aplikacje. Aby całkowicie uniknąć próby, włącz ochronę pamięci w Ustawienia > Zaawansowane.</string>
+    <string name="error_oom_transcription_protected">Za mało pamięci, aby transkrybować ten plik audio nawet przy włączonej ochronie pamięci. Spróbuj krótszego pliku, mniejszego modelu albo zamknij inne aplikacje.</string>
     <string name="external_family_detected">Wykryto: %1$s</string>
     <string name="external_family_pick_title">Do której rodziny należy ten model?</string>
     <string name="subtitle_timeout_title">Czas automatycznego wyboru</string>
@@ -1032,6 +1075,7 @@
     <string name="language_chip_detected_body">Wykryty automatycznie: %1$s. Zły język? Zmień język transkrypcji i przetranskrybuj audio ponownie.</string>
     <string name="language_chip_pinned_body">Przypięty: %1$s. Aby zmienić, otwórz ustawienie języka transkrypcji.</string>
     <string name="language_chip_open_setting">Otwórz ustawienie języka</string>
+    <string name="language_chip_re_run">Uruchom ponownie w innym języku</string>
     <string name="curated_section_title">Dla Twojego języka</string>
     <string name="curated_browse_all">Przeglądaj wszystkie języki</string>
     <string name="curated_suggest_model">Zaproponuj model dla swojego języka</string>
@@ -1041,4 +1085,31 @@
     <string name="text_scale_small">Mały</string>
     <string name="text_scale_large">Duży</string>
     <string name="text_scale_xlarge">Bardzo duży</string>
+    <string name="logs_first_pass_label">Pierwsze przejście (%1$s)</string>
+    <string name="copy_first_pass">Skopiuj pierwsze przejście</string>
+    <string name="refining_status">Ulepszanie przez %1$s…</string>
+    <string name="speaker_labels_status">Identyfikowanie mówców…</string>
+    <string name="speaker_labels_title">Identyfikuj mówców</string>
+    <string name="speaker_labels_description">Dodaje etykietę mówcy do każdego zdania. Przy pierwszym użyciu pobiera ok.~47 MB modeli; wydłuża czas przetwarzania.</string>
+    <string name="transcription_not_refined">Nie ulepszone (natychmiastowy podgląd)</string>
+    <string name="transcription_refined_from">Ulepszone z %1$s</string>
+    <string name="refinement_title">Transkrypcja dwuetapowa</string>
+    <string name="refinement_description">Pokaż natychmiast podgląd szybkim modelem, a następnie ulepsz go w tle wybranym modelem</string>
+    <string name="curated_why_distil_it">Dostrojony do włoskiego: najdokładniejszy wybór</string>
+    <string name="curated_why_parakeet">Bardzo szybki (około 17x) i wciąż bardzo dokładny</string>
+    <string name="curated_why_german_whisper">Dostrojony do niemieckiego: najbardziej dokładna opcja</string>
+    <string name="curated_why_canary">Kompaktowy: małe pobieranie, szybkie wyniki</string>
+    <string name="curated_why_swiss_german">Dla szwajcarskich dialektów niemieckiego</string>
+    <string name="curated_why_kroko">Streaming: tekst pojawia się podczas mówienia</string>
+    <string name="language_chip_setting_note">Tylko modele Whisper i SenseVoice potrafią wykryć język.</string>
+    <string name="technical_details_title">Pokaż szczegóły techniczne</string>
+    <string name="technical_details_description">Pokazuje techniczny wiersz przetwarzania (ścieżkę dekodowania, fragmenty, VAD, pamięć) we wpisach transkrypcji. Domyślnie wyłączone; szczegóły są zawsze zawarte w zgłoszeniach.</string>
+    <string name="external_family_moonshine">Moonshine</string>
+    <string name="external_family_moonshine_help">Wymaga preprocess + encode + uncached/cached decode + tokens (v1) lub encoder_model.ort + decoder_model_merged.ort + tokens (v2); angielski i niektóre eksporty 2026</string>
+    <string name="external_family_dolphin">Dolphin</string>
+    <string name="external_family_dolphin_help">Wymaga plików model + tokens; wielojęzyczny (baza zh/en)</string>
+  <plurals name="subtitle_import_skipped_cues">
+    <item quantity="one">linia pominięta</item>
+    <item quantity="other">linie pominięte</item>
+  </plurals>
 </resources>

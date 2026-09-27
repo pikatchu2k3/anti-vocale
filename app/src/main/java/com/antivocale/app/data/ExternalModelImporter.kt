@@ -5,6 +5,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.antivocale.app.data.download.DownloadConfig
+import com.antivocale.app.data.download.DownloadedModelIntegrity
+import com.antivocale.app.data.download.details
 import com.antivocale.app.data.download.HashVerifier
 import com.antivocale.app.data.download.ResumeDownloadHelper
 import com.antivocale.app.transcription.ModelFamilyDetector
@@ -78,6 +80,14 @@ class ExternalModelImporter(
 ) : ExternalModelImportOperations {
 
     companion object {
+        /**
+         * True for catalog-entry JSON urls (repo urls answer false): the ONE
+         * classification [importFromUrl] picks between its two entries with,
+         * and the TEST_SPI import guard reuses, so a caller-side copy cannot
+         * diverge from the dialog path it mirrors (seventh review round).
+         */
+        fun isCatalogEntryUrl(url: String): Boolean = url.trim().endsWith(".json")
+
         private const val TAG = "ExternalModelImporter"
         internal const val COPY_BUFFER = 64 * 1024
 
@@ -143,19 +153,33 @@ class ExternalModelImporter(
         }
         val looksLike = detected?.let { " The files look like a $it model: pick the $it family and retry." }.orEmpty()
         return IllegalArgumentException(
-            "missing required files for ${familyDisplayName(family)} (${ModelFamilySupport.forFamily(family).requiredRoles().joinToString("/")}); found: $names.$looksLike")
+            "missing required files for ${familyDisplayName(family)} (${ModelFamilySupport.forFamily(family).requiredRolesFor(names).joinToString("/")}); found: $names.$looksLike")
     }
 
     /**
      * Family-aware modelType resolution via the shared table
      * ([ModelFamilySupport.defaultModelType]): TRANSDUCER defaults to
-     * "nemo_transducer", WHISPER/SENSE_VOICE/CANARY to "", and CTC has no safe
+     * "nemo_transducer", WHISPER/SENSE_VOICE/CANARY/MOONSHINE/DOLPHIN to "", and CTC has no safe
      * default (it selects the sherpa config subtype) so it must be passed
      * explicitly.
+     *
+     * An EXPLICIT modelType is validated against the family HERE (seventh
+     * review round): this is the one record-creation path every funnel
+     * (dialog, SAF, directory, catalog, TEST_SPI) converges on, and an
+     * incoherent pair would otherwise persist and native-exit exit(255) at
+     * first load with no import-time defense. The debug SPI carries its own
+     * copy of the check only because its tests stub this importer with a fake.
      */
-    private fun resolveModelType(modelType: String?, family: ModelFamily): String =
-        modelType ?: ModelFamilySupport.defaultModelType(family)
+    private fun resolveModelType(modelType: String?, family: ModelFamily): String {
+        val resolved = modelType ?: ModelFamilySupport.defaultModelType(family)
             ?: throw IllegalArgumentException(ModelFamilySupport.CTC_MODEL_TYPE_REQUIRED)
+        if (modelType != null && !ModelFamilySupport.isValidModelType(family, resolved)) {
+            throw IllegalArgumentException(
+                "model_type '$modelType' is not valid for ${family.name}; " +
+                    "this family accepts: ${ModelFamilySupport.validModelTypes(family).joinToString("/")}")
+        }
+        return resolved
+    }
 
     /**
      * ONNX split-file sidecars (AC #9): a sibling `<source>.data` (or `.weights`)
@@ -296,11 +320,12 @@ class ExternalModelImporter(
     }
 
     /**
-     * URL import: classifies the url (a HuggingFace repo URL, or a catalog-entry JSON
-     * url otherwise) and delegates to the matching entry. The classification lives
-     * here, next to the two entries it picks between, so callers pass the url through.
-     * The family/options/languages parameters apply to repo imports only: entry JSON
-     * is driven by the entry itself.
+     * URL import: classifies the url via [isCatalogEntryUrl] (a HuggingFace
+     * repo URL, or a catalog-entry JSON url) and delegates to the matching
+     * entry. The classification lives in this file, next to the two entries
+     * it picks between, so callers pass the url through. The
+     * family/options/languages parameters apply to repo imports only: entry
+     * JSON is driven by the entry itself.
      */
     override suspend fun importFromUrl(
         url: String,
@@ -311,7 +336,7 @@ class ExternalModelImporter(
         streaming: Boolean,
         onProgress: ExternalImportProgress,
     ): ExternalModelRecord =
-        if (url.trim().endsWith(".json")) {
+        if (isCatalogEntryUrl(url)) {
             importFromEntryJson(url, onProgress)
         } else if (HuggingFaceRepoListing.parseRepoId(url) != null) {
             importFromHuggingFaceRepo(url, modelType, family, options, languages, streaming, onProgress)
@@ -492,6 +517,15 @@ class ExternalModelImporter(
         }
         support.validateImportedModel(metadataValue)
 
+        // TASK-304: cheap header/magic integrity at registration, before the
+        // record persists: a wrong or truncated file becomes an import-time
+        // error in milliseconds (the same gate the catalog download path
+        // already runs) instead of a slow native-load failure later.
+        val integrityFindings = DownloadedModelIntegrity.validate(targetDir)
+        if (integrityFindings.isNotEmpty()) {
+            throw IllegalArgumentException("integrity check failed: " + integrityFindings.details())
+        }
+
         // Same-hash dedupe BEFORE creating a new record. The fresh copy is removed
         // unless it landed on the existing record's own directory (same-path
         // re-import: the files are identical, deleting them would destroy the record).
@@ -572,7 +606,10 @@ class ExternalModelImporter(
             throw e
         }
 
-    private fun sanitizeDirName(name: String): String =
+    /** TASK-658: internal so ModelAccuracyTest can anchor the accuracy
+     *  artifact's Python-side sanitize mirror against THIS rule (the drift
+     *  tripwire the generator script alone cannot provide). */
+    internal fun sanitizeDirName(name: String): String =
         name.replace(Regex("[^A-Za-z0-9._-]"), "-")
             .replace(Regex("-+"), "-")
             .trim('-', '.')

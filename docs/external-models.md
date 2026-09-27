@@ -1,6 +1,6 @@
 # External Models
 
-Anti-Vocale supports importing user-provided sherpa-onnx models alongside the built-in backends. Five model families are supported: Transducer, Whisper, CTC, SenseVoice, and Canary. This document describes the import formats and how to share models with other users.
+Anti-Vocale supports importing user-provided sherpa-onnx models alongside the built-in backends. Seven model families are supported: Transducer, Whisper, CTC, SenseVoice, Canary, Moonshine, and Dolphin. This document describes the import formats and how to share models with other users.
 
 ## What import is for, and what it does not promise
 
@@ -10,10 +10,10 @@ That an import dialog exists does not mean every model on HuggingFace will work.
 
 So the flow, in practice:
 
-- **Catalog entries** are validated: they install with one tap, their integrity is pinned by SHA-256, and they are the recommended path for everyone.
+- **Catalog entries** are validated: they install with one tap, their integrity is pinned by SHA-256, and they are the recommended path for everyone. A file that corrupts on disk afterwards is caught at load time: the app removes the model directory and offers a clean re-download instead of crashing (TASK-660).
 - **A URL or folder import** of a model that happens to match a family can work, but you are the tester: nothing guarantees the export was sane. If an import lands broken, delete its entry and import again; a fresh import adds a new entry rather than replacing the old one.
 - **A model that fits no family**, or a new architecture worth supporting, needs work on our side first (a compatible sherpa-onnx export, validation on device, then a catalog entry). If you want a specific model supported, open an issue: that is how the catalog grows.
-- **You do not have to wait for us.** Producing a compatible export is the same work we would do, and anyone can start it: get the model into a sherpa-onnx export matching one of the families above, import it by URL or folder, and test it on real audio. If you use a coding agent, the repo ships a skill that codifies this whole pipeline, gotchas included: [`.claude/skills/community-model-conversion/SKILL.md`](https://github.com/RisorseArtificiali/anti-vocale/blob/main/.claude/skills/community-model-conversion/SKILL.md). If the export works, open an issue proposing it for the community catalog (links to the files and what you changed), or skip us entirely: the catalog picker reads its index from a JSON URL, and the dialog's "change" option lets you point the app at any index you host, with "Restore the official catalog" always one tap away. The [mirrored-upstreams section](#mirrored-upstreams-test-catalog) shows working examples of how entries are packaged.
+- **You do not have to wait for us.** Producing a compatible export is the same work we would do, and anyone can start it: get the model into a sherpa-onnx export matching one of the families above, import it by URL or folder, and test it on real audio. If you use a coding agent, the repo ships a skill that codifies this whole pipeline, gotchas included: [`.claude/skills/community-model-conversion/SKILL.md`](https://github.com/RisorseArtificiali/anti-vocale/blob/main/.claude/skills/community-model-conversion/SKILL.md). If the export works, open an issue proposing it for the community catalog (links to the files and what you changed), or skip us entirely: the catalog picker reads its index from a JSON URL, and the dialog's "change" option lets you point the app at any index you host, with "Restore the official catalog" always one tap away. The official index is version-scoped (index-&lt;version&gt;.json, TASK-643): each release reads its own file, so an entry that needs a newer app never reaches the installed base, and the unsuffixed index.json stays frozen as the legacy set for older apps. The [mirrored-upstreams section](#mirrored-upstreams-test-catalog) shows working examples of how entries are packaged.
 
 ## Model families
 
@@ -23,9 +23,11 @@ The family selector above the import buttons picks the architecture; expected fi
 |---|---|---|---|
 | Transducer (NeMo/Zipformer) | `encoder` + `decoder` + `joiner`/`joint` + tokens `.onnx`/`.txt` | `nemo_transducer` (default), `""` (zipformer), `conformer_transducer` | none |
 | Whisper | `encoder` + `decoder` + tokens | `""` | `whisper.language` (optional; blank = auto, falls back to the record's first language) |
-| CTC | `encoder` + tokens | `nemo_ctc` or `zipformer_ctc` (explicit, no default) | none |
+| CTC | `encoder` + tokens | `nemo_ctc`, `zipformer_ctc` or `omnilingual_ctc` (explicit, no default) | none |
 | SenseVoice | `model` + tokens | `""` | `sensevoice.language` (optional), `sensevoice.itn` (`true`/`false`) |
 | Canary (NeMo) | `encoder` + `decoder` + tokens | `""` | `canary.language` (one of `en`, `es`, `de`, `fr`; conditions the recognizer itself: there is no auto-detection) |
+| Moonshine | v1: `preprocess` + `encode` + `uncached_decode` + `cached_decode` + tokens; v2: `encoder_model.ort` + `decoder_model_merged.ort` + tokens | `""` | none (English and the 2026 exports; 8 s chunking: the 2026-02-27 v2 .ort exports decode empty above ~9 s of input) |
+| Dolphin | `model` + tokens | `""` | none (multi-language zh/en base; same file shape as SenseVoice, so an unhinted set asks which family) |
 
 Exact file names don't matter; roles are matched by keyword (CTC prefers `ctc`-hinted candidates, Transducer prefers `rnnt`-hinted tokens). A joiner/joint file in the candidate pool is rejected for Whisper and CTC as a transducer signature, so a wrong family fails at import time instead of crashing at transcription.
 
@@ -99,11 +101,13 @@ A single-model manifest with integrity pins. This is how third parties share a m
 
 #### Schema
 
+**Adding an entry = adding a license check** (TASK-415 rule): the curated index is free-licenses-only (apache-2.0, MIT, BSD, CC-BY, CC-BY-SA), because F-Droid policy treats runtime-downloaded non-free models as a NonFreeAsset anti-feature for the whole app. Before an entry lands, read the source repo's license from the HF API machine fields (`license` and the `license:*` tags), not the card prose; when the mirror is untagged, anchor the verdict on the upstream model repo, and record the license in the audit table in the task tracker. Custom licenses need a clause-level read: a permissive grant is not enough (the FunASR Model License grants free use but terminates on criticism, which fails DFSG-3; the Niagara ABR license restricts commercial use, which is non-free outright). User-initiated URL imports are outside our curation and unaffected.
+
 | Field | Required | Description |
 |---|---|---|
 | `name` | yes | Display name shown in the Model tab |
-| `family` | no (default `TRANSDUCER`) | one of `TRANSDUCER`, `WHISPER`, `CTC`, `SENSE_VOICE`, `CANARY`; unknown values are rejected |
-| `modelType` | no (family-aware default) | `nemo_transducer` for TRANSDUCER without the field, `""` for WHISPER/SENSE_VOICE/CANARY; CTC requires `nemo_ctc` or `zipformer_ctc` |
+| `family` | no (default `TRANSDUCER`) | one of `TRANSDUCER`, `WHISPER`, `CTC`, `SENSE_VOICE`, `CANARY`, `MOONSHINE`, `DOLPHIN`; unknown values are rejected |
+| `modelType` | no (family-aware default) | `nemo_transducer` for TRANSDUCER without the field, `""` for WHISPER/SENSE_VOICE/CANARY/MOONSHINE/DOLPHIN; CTC requires `nemo_ctc`, `zipformer_ctc` or `omnilingual_ctc` |
 | `languages` | yes for new entries (`family` present) | normalized ISO codes (`["ar"]`); doubles as the Whisper default language |
 | `options` | no | flat map of family options (`{"whisper.language": "ar"}`) |
 | `streaming` | no (default `false`) | `true` for streaming zipformer transducers (decoded via the online recognizer, whole-clip batch); `TRANSDUCER` family only, rejected otherwise |
@@ -153,7 +157,7 @@ Per-family required keys (the app validates these at import time):
 | `nemo_transducer` | `vocab_size`, `subsampling_factor`, `model_type` |
 | icefall transducer (`""` / zipformer) | `vocab_size` |
 | `whisper` | `model_type` whose value starts with `whisper` (value-checked, not just key-present) |
-| `nemo_ctc` / `zipformer_ctc` (CTC family) | none (structural discriminators only) |
+| `nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc` (CTC family) | none (structural discriminators only) |
 
 Note `vocab_size` is the vocab file line count MINUS one (sherpa adds the blank).
 `subsampling_factor` comes from the original training config (the NVIDIA conformers
@@ -222,7 +226,7 @@ structurally loadable.
 
 ## Family selector
 
-The dropdown above the import buttons sets the model family (see the table above). Below it, a conditional options panel: Whisper gets an optional language field, SenseVoice an optional language plus an inverse-text-normalization switch, CTC a subtype selector (`nemo_ctc` / `zipformer_ctc`), Canary a fixed four-language field (en/es/de/fr, defaulting to en). The languages field applies to all families.
+The dropdown above the import buttons sets the model family (see the table above). Below it, a conditional options panel: Whisper gets an optional language field, SenseVoice an optional language plus an inverse-text-normalization switch, CTC a subtype selector (`nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc`), Canary a fixed four-language field (en/es/de/fr, defaulting to en). Moonshine and Dolphin add no options (their recognizers take none); Moonshine accepts both its generations' file shapes and Dolphin shares SenseVoice's, so a `model`+tokens set without a family-name hint asks which family it is. The languages field applies to all families.
 
 The URL import dialog also offers autocomplete suggestions from a small bundled catalog (searchable by name or language code, e.g. "ar" or "arabic"); tapping a suggestion fills the URL and the family.
 

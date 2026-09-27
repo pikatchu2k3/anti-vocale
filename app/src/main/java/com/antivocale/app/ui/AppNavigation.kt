@@ -12,6 +12,15 @@ import java.util.concurrent.atomic.AtomicLong
  * depended on it. The debug bridge keeps its own object; everything the
  * release build uses lives here.
  */
+
+/**
+ * TASK-625: a single Settings row to scroll into view and briefly highlight.
+ * Set by the memory-failure error notification's action, which names the
+ * Memory protection setting; the value travels as its enum name in
+ * [com.antivocale.app.MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW].
+ */
+enum class SettingsFocusRow { MEMORY_PROTECTION }
+
 object AppNavigation {
     private val seqCounter = AtomicLong(0)
 
@@ -43,6 +52,21 @@ object AppNavigation {
     val TAB_KEYS = listOf("history", "models", "settings")
 
     /**
+     * Tab indices derived from [TAB_KEYS] and checked once: a key rename or
+     * reorder anywhere fails loudly HERE, not as a silent -1 that crashes
+     * Crossfade at a distant tap (TASK-617 F2). Every tab-switch site reads
+     * these instead of a raw literal.
+     */
+    val TAB_INDEX_HISTORY = tabIndex("history")
+    val TAB_INDEX_MODELS = tabIndex("models")
+    val TAB_INDEX_SETTINGS = tabIndex("settings")
+
+    /** The only mint is this private, checked helper: a future fourth tab
+     *  cannot copy half the derivation and reintroduce a -1. */
+    private fun tabIndex(key: String): Int =
+        TAB_KEYS.indexOf(key).also { check(it >= 0) { "$key missing from TAB_KEYS" } }
+
+    /**
      * The export sub-page key (TASK-543), pinned because three sites must
      * agree: [SUBPAGE_KEYS], SettingsTab's comparison, and MainScreen's
      * auto-save-hint hand-off. A drifted literal in any of them navigates
@@ -57,6 +81,11 @@ object AppNavigation {
         data class SettingsSection(val key: String) : Destination
         data class ModelTarget(val key: String) : Destination
     }
+
+    /** TASK-625: parses the settings-row extra; null on unknown values. */
+    fun parseSettingsFocusRow(name: String?): SettingsFocusRow? =
+        if (name.isNullOrBlank()) null
+        else runCatching { SettingsFocusRow.valueOf(name) }.getOrNull()
 
     fun parse(dest: String?): Destination? {
         if (dest.isNullOrBlank()) return null

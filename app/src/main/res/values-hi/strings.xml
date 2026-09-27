@@ -34,6 +34,7 @@
     <string name="saved_model_found">सेव किया गया मॉडल मिला</string>
     <string name="saved_model_not_found">सेव किया गया मॉडल नहीं मिला</string>
     <string name="model_selected">मॉडल चुना गया: %1$s</string>
+    <string name="model_import_invalid_file">चयनित फ़ाइल उपयोग करने योग्य LiteRT-LM मॉडल नहीं लगती (%1$s)</string>
     <string name="model_copy_failed">मॉडल फ़ाइल कॉपी करने में विफल</string>
     <string name="model_file_not_found">मॉडल फ़ाइल यहाँ नहीं मिली: %1$s</string>
     <string name="model_loading">मॉडल मेमोरी में लोड हो रहा है…</string>
@@ -254,10 +255,53 @@
     <string name="oom_crash_warning">डिवाइस की मेमोरी कम होने की वजह से ऐप बंद कर दिया गया। फिर ट्रांसक्राइब करने से पहले दूसरे ऐप बंद करें या कोई छोटा मॉडल इस्तेमाल करें।</string>
     <string name="native_crash_title">ऐप अचानक बंद हुआ</string>
     <string name="native_crash_go_to_model">मॉडल टैब पर जाएं</string>
-    <string name="model_load_low_memory">इस मॉडल के लिए ज़रूरी मेमोरी काफ़ी नहीं है (%1$s उपलब्ध, लगभग %2$s चाहिए)। दूसरे ऐप बंद करें या छोटा मॉडल इस्तेमाल करें। सेटिंग में फ़ोर्स्ड लोडिंग उपलब्ध है।</string>
-    <string name="transcribe_low_memory">इस मॉडल से ट्रांसक्राइब करने के लिए पर्याप्त खाली मेमोरी नहीं है (लगभग %1$s खाली, %2$s चाहिए)। अन्य ऐप्स बंद करके पुनः प्रयास करें, या सेटिंग में मॉडल लोड बाध्य करें चालू करें।</string>
-    <string name="force_model_load">मॉडल ज़बरदस्ती लोड करें</string>
-    <string name="force_model_load_desc">मेमोरी कम लगने पर भी मॉडल लोड करें। कम RAM वाले डिवाइस पर ऐप बंद हो सकता है।</string>
+    <string name="model_load_low_memory">इस मॉडल के लिए ज़रूरी मेमोरी काफ़ी नहीं है (%1$s उपलब्ध, लगभग %2$s चाहिए)। मेमोरी सुरक्षा सक्रिय है: दूसरे ऐप बंद करें, छोटा मॉडल इस्तेमाल करें, या फिर भी कोशिश करने के लिए इसे सेटिंग में बंद कर दें।</string>
+    <string name="memory_margin_warning_title">इस फ़ोन की मेमोरी सीमा के पास मॉडल</string>
+    <string name="memory_margin_warning_body">%1$s मॉडल इस फ़ोन की क्षमता के पास हो सकता है। ट्रांसक्रिप्शन फिर भी होगा; ऐसी लोडिंग को रोकने के लिए आप सेटिंग्स में मेमोरी सुरक्षा चालू कर सकते हैं।</string>
+    <string name="transcribe_low_memory">इस मॉडल से ट्रांसक्राइब करने के लिए पर्याप्त खाली मेमोरी नहीं है (लगभग %1$s खाली, %2$s चाहिए)। मेमोरी सुरक्षा सक्रिय है: अन्य ऐप्स बंद करके पुनः प्रयास करें, या फिर भी कोशिश करने के लिए इसे सेटिंग में बंद कर दें।</string>
+    <string name="external_model_quarantined_title">क्रैश के बाद बाहरी मॉडल अक्षम किया गया</string>
+    <string name="external_model_quarantined_text">"%1$s" लोड करने से ऐप बंद हो गई, इसलिए बार-बार क्रैश से बचने के लिए इसे अक्षम कर दिया गया है। दोबारा कोशिश करने के लिए मॉडल को मॉडल्स टैब में हटाकर फिर से आयात करें।</string>
+    <string name="memory_protection">मेमोरी सुरक्षा</string>
+    <string name="memory_protection_desc">जब खाली मेमोरी काफ़ी न लगे तो मॉडल लोड होने से रोकें, ताकि ऐप चुपचाप बंद न हो। डिफ़ॉल्ट रूप से बंद है: सामान्यतः ऐप हमेशा मॉडल चलाने की कोशिश करता है।</string>
+    <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
+    <string name="external_automation_title">बाहरी ऑटोमेशन (Tasker)</string>
+    <string name="external_automation_description">दूसरे ऐप्स को ऑटोमेशन API (जैसे Tasker) से ट्रांसक्रिप्शन शुरू करने देता है। डिफ़ॉल्ट रूप से बंद है।</string>
+    <string name="external_automation_disabled">बाहरी ऑटोमेशन बंद है। इसे सेटिंग > अतिरिक्त सेटिंग > बाहरी ऑटोमेशन में चालू करें।</string>
+    <string name="remote_omnivoice_name">LAN ऑफ़लोड (OmniVoice)</string>
+    <string name="remote_offload_title">LAN ऑफ़लोड (प्रायोगिक)</string>
+    <string name="remote_offload_description">लंबी या भारी ट्रांसक्रिप्शन को अपने Wi-Fi नेटवर्क पर चलने वाले अपने OmniVoice सर्वर को भेजता है। सक्षम होने पर इसे Model टैब में चुनें।</string>
+    <string name="remote_offload_disclosure">जब यह सक्षम और चुना गया हो, तो उन ट्रांसक्रिप्शन का ऑडियो केवल नीचे दर्ज किए गए सर्वर पते पर, आपके अपने नेटवर्क में भेजा जाता है। बाकी सब कुछ इसी डिवाइस पर ट्रांसक्राइब होता है। यह डिफ़ॉल्ट रूप से बंद है: जब तक आप इसे चालू न करें, फ़ोन से कुछ भी बाहर नहीं जाता।</string>
+    <string name="remote_offload_endpoint_label">सर्वर पता</string>
+    <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
+    <string name="remote_offload_key_label">API कुंजी</string>
+    <string name="remote_offload_model_label">मॉडल का नाम</string>
+    <string name="remote_offload_model_hint">आपका OmniVoice सर्वर जिस मॉडल नाम को पहचानता है; डिफ़ॉल्ट whisper-1 है।</string>
+    <string name="remote_offload_save">सहेजें</string>
+    <string name="remote_offload_test">कनेक्शन जाँचें</string>
+    <string name="remote_offload_test_running">जाँच हो रही है…</string>
+    <string name="remote_offload_test_success">कनेक्शन काम कर रहा है।</string>
+    <string name="remote_test_reason_unreachable">सर्वर उपलब्ध नहीं है। पता जाँचें और यह कि OmniVoice चल रहा है।</string>
+    <string name="remote_test_reason_auth">सर्वर ने API कुंजी अस्वीकार कर दी।</string>
+    <string name="remote_test_reason_timeout">%1$d सेकंड में कोई उत्तर नहीं; सर्वर व्यस्त हो सकता है।</string>
+    <string name="remote_test_reason_server">सर्वर ने त्रुटि लौटाई (HTTP %1$d)।</string>
+    <string name="error_remote_timeout">आपके OmniVoice सर्वर पर ट्रांसक्रिप्शन %1$d मिनट में पूरा नहीं हुआ और रोक दिया गया।</string>
+    <string name="error_remote_unreachable">आपके OmniVoice सर्वर तक नहीं पहुँचा जा सकता। जाँचें कि वह चल रहा है और Settings में पता सही है।</string>
+    <string name="error_remote_server">OmniVoice सर्वर ने अनुरोध अस्वीकार कर दिया (HTTP %1$d)।</string>
+    <string name="remote_offload_status">आपके OmniVoice सर्वर पर ट्रांसक्रिप्ट किया जा रहा है…</string>
+    <!-- TASK-679: रेज़िडेंट-मॉडल पैनल (सेटिंग्स > उन्नत) और पोस्ट-OOM ब्रेडक्रंब। -->
+    <string name="memory_diagnostics_title">डिवाइस की मेमोरी</string>
+    <string name="memory_diagnostics_subtitle">अभी लोड किए गए मॉडल, खाली RAM और मेमोरी की कमी का अंतिम रिकॉर्ड।</string>
+    <string name="memory_diagnostics_resident_label">रेज़िडेंट मॉडल</string>
+    <string name="memory_diagnostics_resident_none">इस समय कोई मॉडल लोड नहीं है</string>
+    <string name="memory_diagnostics_ram_label">खाली RAM</string>
+    <string name="memory_diagnostics_ram_value">%2$s में से %1$s खाली</string>
+    <string name="memory_diagnostics_ram_unknown">इस डिवाइस पर पढ़ा नहीं जा सकता</string>
+    <string name="memory_diagnostics_heap_label">ऐप की मेमोरी सीमा</string>
+    <string name="memory_diagnostics_breadcrumb_label">मेमोरी की कमी की अंतिम घटना</string>
+    <string name="memory_diagnostics_breadcrumb_none">कुछ भी रिकॉर्ड नहीं हुआ</string>
+    <string name="memory_diagnostics_breadcrumb_hint">जब कोई ट्रांस्क्रिप्शन मेमोरी की कमी से विफल होता है, तो एक पंक्ति रिकॉर्ड करती है कि कौन से मॉडल लोड थे और अनुरोध क्या कर रहा था।</string>
+    <string name="memory_diagnostics_scrub_note">डायग्नोस्टिक्स में केवल मॉडल नाम और मेमोरी संख्याएँ होती हैं: कभी भी ट्रांस्क्रिप्ट टेक्स्ट या फ़ाइल पाथ नहीं।</string>
+    <string name="memory_diagnostics_copy">डायग्नोस्टिक्स कॉपी करें</string>
     <string name="copy">कॉपी करें</string>
     <string name="share">शेयर करें</string>
     <string name="char_counter">%2$d में से %1$d अक्षर</string>
@@ -294,6 +338,7 @@
     <string name="active_badge">सक्रिय</string>
     <string name="model_selected_message">%1$s चुना गया</string>
     <string name="model_use_missing_files">%1$s की मॉडल फ़ाइलें ग़ायब या अधूरी हैं। मॉडल टैब से उस वैरिएंट को फिर से डाउनलोड करें।</string>
+    <string name="model_demoted_notice">अब यह मॉडल अपने आप नहीं चुना जाता: भाषण मौजूद होने पर भी इसने कोई टेक्स्ट नहीं बनाया। इसे फिर से चुनकर इसे एक और मौका दें।</string>
     <string name="delete">मिटाएं</string>
     <string name="download">डाउनलोड करें</string>
     <string name="model_update_button">अपडेट करें</string>
@@ -445,6 +490,13 @@
     <string name="punctuation_prompt_description">विराम चिह्न चरण के लिए निर्देश। अंतर्निहित प्रॉम्प्ट के लिए खाली छोड़ें।</string>
     <string name="punctuation_prompt_placeholder">अंतर्निहित प्रॉम्प्ट</string>
     <string name="summary_prompt_title">सारांश प्रॉम्प्ट</string>
+    <string name="signature_setting_title">ट्रांसक्रिप्शन हस्ताक्षर (एआई अस्वीकरण)</string>
+    <string name="signature_setting_description">ऐप से बाहर जाने वाले हर ट्रांसक्रिप्ट (कॉपी, शेयर और निर्यात फ़ाइलें) में एक हस्ताक्षर पंक्ति जोड़ता है। ऐप की स्क्रीन सादा पाठ में रहती हैं।</string>
+    <string name="signature_text_title">हस्ताक्षर पाठ</string>
+    <string name="signature_text_description">मानक अस्वीकरण के लिए खाली छोड़ें।</string>
+    <string name="signature_position_title">स्थिति</string>
+    <string name="signature_position_prepend">ट्रांसक्रिप्ट से पहले</string>
+    <string name="signature_position_append">ट्रांसक्रिप्ट के बाद</string>
     <string name="summary_prompt_description">AI सारांश के निर्देश बदलें। खाली छोड़ने पर अंतर्निहित (दो-तीन वाक्य) प्रॉम्प्ट चलेगा।</string>
     <string name="punctuation_default_prompt">इस ट्रांसक्रिप्शन में विराम चिह्न और बड़े अक्षर जोड़ें। हर शब्द बिल्कुल वैसा ही रखें जैसा लिखा है; कुछ भी ठीक न करें, अनुवाद न करें, जोड़ें नहीं या हटाएँ नहीं। केवल सुधारी हुई ट्रांसक्रिप्शन ही लिखें।</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
@@ -586,6 +638,7 @@
     <string name="notification_no_model_title">मॉडल इंस्टॉल नहीं है</string>
     <string name="notification_no_model_message">ऐप खोलें और मॉडल डाउनलोड करें</string>
     <string name="notification_no_model_action">ऐप खोलें</string>
+    <string name="error_open_memory_protection_setting">सेटिंग खोलें</string>
 
     <!-- Tasker fallback notification -->
     <string name="notification_channel_tasker_fallback">Tasker ऑटोमेशन</string>
@@ -665,6 +718,8 @@
     <string name="performance_stats_hours_ago">%1$d घंटे पहले</string>
     <string name="performance_stats_days_ago">%1$d दिन पहले</string>
     <string name="performance_stats_total_audio">कुल: %1$s ऑडियो प्रोसेस हुआ</string>
+    <string name="performance_stats_accuracy_title">सटीकता</string>
+    <string name="performance_stats_accuracy_footnote">हमारे वास्तविक संदेश सेट और साफ़ टेस्ट सेट, FLEURS-वर्ग नमूनों या कम्युनिटी बेंचमार्क पर मापा गया; जो सूचीबद्ध नहीं है वह मापा नहीं गया है।</string>
 
     <!-- Transcription active protection -->
     <string name="dialog_transcription_active_title">ट्रांसक्रिप्शन जारी है</string>
@@ -705,6 +760,7 @@
     <string name="loading_model">%1$s मॉडल लोड हो रहा है…</string>
     <string name="preprocessing_audio">ऑडियो प्रीप्रोसेस हो रहा है…</string>
     <string name="clipboard_label_transcription">ट्रांसक्रिप्शन</string>
+    <string name="signature_default_text">फ़ोन पर स्थानीय रूप से एआई मॉडल से ट्रांसक्राइब किया गया।</string>
 
     <!-- Settings accessibility -->
     <string name="open_prompt_settings">प्रॉम्प्ट सेटिंग खोलें</string>
@@ -720,30 +776,10 @@
     <string name="pip_enter_button">PiP</string>
     <string name="pip_enter_description">पिक्चर-इन-पिक्चर विंडो में दिखाएं</string>
 
-    <!-- GGUF model descriptions -->
-    <string name="model_title_gemma4_gguf_q4km">Gemma 4 GGUF (Q4_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q4km">4.9 GB · Apache 2.0 · llama.cpp से टेक्स्ट जनरेशन। क्वालिटी और साइज़ का सबसे अच्छा संतुलन।</string>
-    <string name="model_title_gemma4_gguf_q5km">Gemma 4 GGUF (Q5_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q5km">5.3 GB · Apache 2.0 · llama.cpp से बेहतर क्वालिटी वाला टेक्स्ट जनरेशन।</string>
-    <string name="model_title_gemma4_gguf_q8">Gemma 4 GGUF (Q8_0)</string>
-    <string name="model_desc_gemma4_gguf_q8">7.4 GB · Apache 2.0 · llama.cpp से सर्वोच्च क्वालिटी टेक्स्ट जनरेशन। 8GB+ RAM चाहिए।</string>
     <string name="model_title_gemma_4_e2b">Gemma 4 E2B</string>
     <string name="model_title_gemma_4_e4b">Gemma 4 E4B</string>
     <string name="model_title_gemma_3n_e2b">Gemma 3n E2B</string>
     <string name="model_title_gemma_3n_e4b">Gemma 3n E4B</string>
-    <string name="backend_gemma4_gguf">Gemma 4 (GGUF)</string>
-    <string name="gguf_inference_unavailable">GGUF इन्फ़रेंस के लिए नेटिव llama.cpp लाइब्रेरी चाहिए। Android ARM64 के लिए libllama.so बिल्ड करें।</string>
-    <string name="gguf_model_download_error">GGUF मॉडल डाउनलोड करने में विफल</string>
-
-    <!-- GGUF model download section -->
-    <string name="gguf_title">Gemma 4 GGUF (टेक्स्ट जनरेशन)</string>
-    <string name="gguf_description">टेक्स्ट जनरेशन के लिए ऑन-डिवाइस LLM, किसी क्लाउड पर निर्भरता नहीं। नेटिव llama.cpp लाइब्रेरी चाहिए।</string>
-    <string name="gguf_unsupported_arch">इस डिवाइस पर समर्थित नहीं (ARM64 चाहिए)।</string>
-    <string name="gguf_download_confirm_title">%1$s डाउनलोड करें?</string>
-    <string name="gguf_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। GGUF मॉडल बिना इंटरनेट के लोकल टेक्स्ट जनरेशन करते हैं।</string>
-    <string name="gguf_downloaded">%1$s सफलतापूर्वक डाउनलोड हुआ</string>
-    <string name="gguf_delete_message">%1$s मिटाएं? इससे ~%2$dMB स्टोरेज खाली होगा।</string>
-    <string name="gguf_deleted">%1$s मिटाया गया</string>
 
     <!-- Language filter (native language names, kept in native form per glossary) -->
     <string name="lang_filter_label">भाषा से फ़िल्टर करें</string>
@@ -880,6 +916,7 @@
     <string name="external_option_itn">इनवर्स टेक्स्ट नॉर्मलाइज़ेशन</string>
     <string name="external_ctc_subtype">CTC सबटाइप</string>
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
+    <string name="external_ctc_subtype_omnilingual">बहुभाषी CTC (1600+ भाषाएँ, प्रायोगिक)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
     <string name="external_notice_single_pass">बहुत लंबा ऑडियो बड़े मॉडल से एक बार में प्रोसेस नहीं हो सकता। ऑडियो छोटा करें या छोटा मॉडल चुनें।</string>
     <string name="external_notice_family">अगर ट्रांसक्रिप्शन बिना गड़बड़ी के क्रैश हो, तो आर्किटेक्चर गलत हो सकता है: मॉडल मिटाकर दूसरा आर्किटेक्चर चुनकर फिर इंपोर्ट करें।</string>
@@ -916,6 +953,9 @@
     <string name="action_transcribe_audio">ऑडियो ट्रांसक्राइब करें</string>
     <string name="subtitle_fallback_status">सबटाइटल निकाले नहीं जा सके, ऑडियो ट्रांसक्राइब हो रहा है</string>
     <string name="subtitle_choice_notification_text">आपके चुनाव का इंतज़ार…</string>
+    <!-- TASK-677 (GH #92 import half): subtitle-file ingest -->
+    <string name="subtitle_import_failed">सबटाइटल फ़ाइल पढ़ी नहीं जा सकी</string>
+    <string name="logs_subtitle_sourced">सबटाइटल से (ट्रांस्क्राइब नहीं)</string>
     <plurals name="logs_entries_deleted">
         <item quantity="one">%d प्रविष्टि मिटाई गई</item>
         <item quantity="other">%d प्रविष्टियां मिटाई गईं</item>
@@ -955,7 +995,9 @@
     <string name="summary_skipped_context">सारांश छोड़ा गया: ट्रांसक्रिप्ट सारांश पास की सीमा से लंबा है।</string>
     <string name="summary_skipped_no_model">सारांश छोड़ा गया: कोई Gemma मॉडल कॉन्फ़िगर नहीं है। सारांश चालू करने के लिए मॉडल्स टैब से डाउनलोड करें।</string>
     <string name="summary_skipped_failed">सारांश बनाते समय विफलता; ट्रांसक्रिप्ट सुरक्षित है।</string>
+    <string name="summary_skipped_timeout">सारांश समय सीमा पार कर गया; ट्रांसक्रिप्ट सुरक्षित है।</string>
     <string name="summary_skipped_guard">सारांश छोड़ा गया: बनाया गया सारांश लंबाई सीमाओं से बाहर था (सारांश के लिए बहुत छोटा या बहुत लंबा)।</string>
+    <string name="summary_partial_note">(ट्रांसक्रिप्ट के कुछ हिस्सों को सारांशित नहीं किया जा सका)</string>
     <string name="copy_summary">सारांश कॉपी करें</string>
     <string name="copy_original">मूल कॉपी करें</string>
     <string name="logs_model_label">मॉडल: %1$s</string>
@@ -984,7 +1026,8 @@
     <string name="a11y_back">पीछे</string>
     <string name="litertlm_importing">इंपोर्ट हो रहा है…</string>
     <string name="model_ram_warning">इस डिवाइस पर %1$s के लिए पर्याप्त मेमोरी नहीं हो सकती। लोड विफल हो सकता है; हल्के मॉडल सुरक्षित हैं।</string>
-    <string name="error_oom_transcription">इस ऑडियो को ट्रांसक्रिप्ट करने के लिए पर्याप्त मेमोरी नहीं है। छोटी फ़ाइल, हल्का मॉडल आज़माएं, या अन्य ऐप बंद करें। यदि फिर भी विफल हो, तो सेटिंग्स > उन्नत > मॉडल लोड बाध्य करें इस जाँच को छोड़ सकता है।</string>
+    <string name="error_oom_transcription">इस ऑडियो को ट्रांसक्रिप्ट करने के लिए पर्याप्त मेमोरी नहीं है। छोटी फ़ाइल, हल्का मॉडल आज़माएं, या अन्य ऐप बंद करें। यह कोशिश पूरी तरह टालने के लिए सेटिंग्स > उन्नत में मेमोरी सुरक्षा चालू करें।</string>
+    <string name="error_oom_transcription_protected">मेमोरी सुरक्षा चालू होने के बावजूद इस ऑडियो को ट्रांसक्राइब करने के लिए मेमोरी काफ़ी नहीं है। छोटी फ़ाइल या छोटा मॉडल आज़माएँ, या दूसरे ऐप बंद करें।</string>
     <string name="external_family_detected">पहचाना गया: %1$s</string>
     <string name="external_family_pick_title">यह मॉडल किस परिवार का है?</string>
     <string name="subtitle_timeout_title">स्वचालित चयन समय-सीमा</string>
@@ -1013,6 +1056,7 @@
     <string name="language_chip_detected_body">स्वतः पहचानी गई: %1$s। भाषा गलत है? ट्रांसक्रिप्शन भाषा बदलें और ऑडियो फिर से ट्रांसक्राइब करें।</string>
     <string name="language_chip_pinned_body">सेट की गई: %1$s। बदलने के लिए ट्रांसक्रिप्शन भाषा सेटिंग खोलें।</string>
     <string name="language_chip_open_setting">भाषा सेटिंग खोलें</string>
+    <string name="language_chip_re_run">किसी भाषा के साथ फिर से चलाएँ</string>
     <string name="curated_section_title">आपकी भाषा के लिए</string>
     <string name="curated_browse_all">सभी भाषाएँ देखें</string>
     <string name="curated_suggest_model">अपनी भाषा के लिए मॉडल सुझाएँ</string>
@@ -1022,4 +1066,31 @@
     <string name="text_scale_small">छोटा</string>
     <string name="text_scale_large">बड़ा</string>
     <string name="text_scale_xlarge">बहुत बड़ा</string>
+    <string name="logs_first_pass_label">पहला चरण (%1$s)</string>
+    <string name="copy_first_pass">पहला चरण कॉपी करें</string>
+    <string name="refining_status">%1$s के साथ परिशोधन…</string>
+    <string name="speaker_labels_status">वक्ताओं की पहचान हो रही है…</string>
+    <string name="speaker_labels_title">वक्ताओं की पहचान करें</string>
+    <string name="speaker_labels_description">प्रत्येक वाक्य में वक्ता का लेबल जोड़ता है। पहले उपयोग पर लगभग~47 MB मॉडल डाउनलोड होते हैं; प्रोसेसिंग समय बढ़ता है।</string>
+    <string name="transcription_not_refined">परिशोधित नहीं (तुरंत पूर्वावलोकन)</string>
+    <string name="transcription_refined_from">%1$s से परिशोधित</string>
+    <string name="refinement_title">दो-चरण ट्रांसक्रिप्शन</string>
+    <string name="refinement_description">तेज़ मॉडल से तुरंत पूर्वावलोकन दिखाएं, फिर चयनित मॉडल से बैकग्राउंड में परिशोधित करें</string>
+    <string name="curated_why_distil_it">इतालवी के लिए फ़ाइन-ट्यून: सबसे सटीक विकल्प</string>
+    <string name="curated_why_parakeet">बहुत तेज़ (लगभग 17 गुना) और फिर भी बहुत सटीक</string>
+    <string name="curated_why_german_whisper">जर्मन के लिए फ़ाइन-ट्यून: सबसे सटीक विकल्प</string>
+    <string name="curated_why_canary">कॉम्पैक्ट: छोटा डाउनलोड, तेज़ नतीजे</string>
+    <string name="curated_why_swiss_german">स्विस जर्मन बोलियों के लिए</string>
+    <string name="curated_why_kroko">स्ट्रीमिंग: बोलते समय टेक्स्ट दिखता है</string>
+    <string name="language_chip_setting_note">केवल Whisper और SenseVoice मॉडल भाषा पहचान सकते हैं।</string>
+    <string name="technical_details_title">तकनीकी विवरण दिखाएँ</string>
+    <string name="technical_details_description">प्रतिलेख प्रविष्टियों में तकनीकी प्रोसेसिंग पंक्ति (डिकोड पथ, चंक, VAD, मेमोरी) दिखाता है। डिफ़ॉल्ट रूप से बंद; विवरण रिपोर्ट में सदैव शामिल रहते हैं।</string>
+    <string name="external_family_moonshine">Moonshine</string>
+    <string name="external_family_moonshine_help">को preprocess + encode + uncached/cached decode + tokens (v1) या encoder_model.ort + decoder_model_merged.ort + tokens (v2) चाहिए; अंग्रेज़ी और कुछ 2026 निर्यात</string>
+    <string name="external_family_dolphin">Dolphin</string>
+    <string name="external_family_dolphin_help">model + tokens फ़ाइलें चाहिए; बहुभाषी (zh/en बेस)</string>
+  <plurals name="subtitle_import_skipped_cues">
+    <item quantity="one">पंक्ति छोड़ी गई</item>
+    <item quantity="other">पंक्तियाँ छोड़ी गईं</item>
+  </plurals>
 </resources>

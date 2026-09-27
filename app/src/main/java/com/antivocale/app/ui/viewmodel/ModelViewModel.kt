@@ -30,6 +30,7 @@ import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.ModelFamilyDetector
 import com.antivocale.app.transcription.SherpaModelDownloader
 import com.antivocale.app.transcription.SherpaModelManager
+import com.antivocale.app.transcription.SilentModelDemoter
 import com.antivocale.app.transcription.cleanOrphanedModelDirs
 import com.antivocale.app.R
 import com.antivocale.app.data.catalog.BundledCatalog
@@ -81,6 +82,9 @@ class ModelViewModel @Inject constructor(
     private val externalModelImporter: ExternalModelImportOperations,
     private val litertLmUrlImporter: LitertLmUrlImporter,
     private val externalCatalogRepository: ExternalCatalogRepository,
+    // TASK-675: the silent-model demotion seam (auto-selection skip, clear on
+    // manual selection, the demoted set for the Model tab's honest line).
+    private val silentModelDemoter: SilentModelDemoter,
     // Process-lifetime scope for share-alias sync work (code review 2026-09-03):
     // on viewModelScope, a ViewModel clear mid-sync (DataStore reads + PackageManager
     // IPCs) killed the enablement and the affected model stayed MISSING from
@@ -153,7 +157,7 @@ class ModelViewModel @Inject constructor(
     /** Restores the official index as the source. */
     fun resetExternalCatalogUrl() {
         viewModelScope.launch {
-            preferencesManager.saveExternalCatalogUrl(PreferencesManager.DEFAULT_EXTERNAL_CATALOG_URL)
+            preferencesManager.clearExternalCatalogUrl()  // TASK-643: reset removes the key; the default re-resolves per build
             loadExternalCatalog(force = true)
         }
     }
@@ -426,7 +430,10 @@ class ModelViewModel @Inject constructor(
                     viewModelScope.launch {
                         preferencesManager.saveSherpaModelPath(entryId, file.absolutePath)
                     }
-                    if (_uiState.value.modelName.isBlank()) useModel(entryId, variantName)
+                    // TASK-675: the first-run auto-selection skips demoted models.
+                    if (_uiState.value.modelName.isBlank()) {
+                        autoSelectIfNotDemoted(entryId) { useModel(entryId, variantName) }
+                    }
                     val displayName = ctx.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
                     viewModelScope.launch { _snackbarEvent.tryEmit(SnackbarEvent.Message(ctx.getString(R.string.catalog_model_downloaded, displayName))) }
                 }
@@ -708,24 +715,15 @@ class ModelViewModel @Inject constructor(
                     // check). This when-block stays here because it drives the statusMessage, not
                     // because it dispatches preferences (that is now the repository's job).
                     // TASK-324: key on the registry descriptor instead of the backend-id strings,
-                    // mirroring TranscriptionOrchestrator.ensureBackendLoaded. The disabled GGUF
-                    // backend is unregistered, so its literal id is matched before the lookup; the
-                    // registered LLM backend ("llm") and unknown ids (null descriptor) both fall to
-                    // validateModelPath, exactly as the former string-keyed else did.
-                    val isValid = when (active.backendId) {
-                        "gemma4_gguf" -> {
-                            val file = File(path)
-                            file.exists() && file.isFile
-                        }
-                        else -> when (val descriptor = backendRegistry.byBackendId(active.backendId)) {
-                            null -> validateModelPath(path)
-                            else -> when {
-                                BuiltInBackendIds.isLlm(descriptor.backendId) -> validateModelPath(path)
-                                else -> {
-                                    val dir = File(path)
-                                    dir.exists() && dir.isDirectory
-                                }
-                            }
+                    // mirroring TranscriptionOrchestrator.ensureBackendLoaded. The registered LLM
+                    // backend ("llm") and unknown ids (null descriptor) both fall to
+                    // validateModelPath; catalog backends need an existing directory.
+                    val descriptor = backendRegistry.byBackendId(active.backendId)
+                    val isValid = when {
+                        descriptor == null || BuiltInBackendIds.isLlm(active.backendId) -> validateModelPath(path)
+                        else -> {
+                            val dir = File(path)
+                            dir.exists() && dir.isDirectory
                         }
                     }
                     val displayName = name ?: path.substringAfterLast("/")
@@ -756,6 +754,31 @@ class ModelViewModel @Inject constructor(
 
     fun onModelSelected(context: Context, uri: Uri) {
         viewModelScope.launch {
+            // TASK-304: cheap import-time gate before the copy work: only the
+            // LiteRT-LM container formats load here, and anything under the
+            // 1 MB floor the engine also enforces at load time is a stub or a
+            // truncated download. Rejecting in milliseconds beats failing
+            // deep in the native stack (LlmManager.kt's "model is null").
+            // moveToFirst + isNull discipline (code review): without
+            // moveToFirst every pick crashes at position -1, and SIZE is
+            // null-when-unknown (getLong would coerce it to 0 and falsely
+            // reject a valid model from a size-unknown provider).
+            val size = context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (!c.moveToFirst()) return@use -1L
+                val sizeIdx = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                when {
+                    sizeIdx < 0 -> -1L
+                    c.isNull(sizeIdx) -> -1L
+                    else -> c.getLong(sizeIdx)
+                }
+            } ?: -1L
+            if (size in 0 until 1L * 1024 * 1024) {
+                _uiState.update { it.copy(
+                    status = ModelStatus.ERROR,
+                    statusMessage = ctx.getString(R.string.model_import_invalid_file, "under 1 MB")
+                )}
+                return@launch
+            }
             // Copy file to app-specific storage for reliable access
             val copiedPath = copyModelToAppStorage(context, uri)
 
@@ -1351,6 +1374,9 @@ class ModelViewModel @Inject constructor(
             if (modelPath != null) {
                 preferencesManager.saveSherpaModelPath(entryId, modelPath)
                 preferencesManager.saveTranscriptionBackend(entryId)
+                // TASK-675: the explicit pick is the give-it-another-chance
+                // path: any demotion for silent decodes clears here.
+                silentModelDemoter.onManualSelection(entryId)
 
                 val displayName = context.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
                 val message = context.getString(R.string.model_selected_message, displayName)
@@ -1482,9 +1508,14 @@ class ModelViewModel @Inject constructor(
     private val _externalImportState = MutableStateFlow<ExternalImportState>(ExternalImportState.Idle)
     val externalImportState: StateFlow<ExternalImportState> = _externalImportState.asStateFlow()
 
-    /** Valid external records for the section cards (dir exists on disk). */
+    /**
+     * Full external inventory for the section cards: TASK-640 quarantined
+     * records must stay listed and deletable (the notification points here),
+     * so this reads recordsFlow, not the loadability-filtered
+     * validRecordsFlow.
+     */
     val externalModels: StateFlow<List<ExternalModelRecord>> =
-        externalModelStore.validRecordsFlow
+        externalModelStore.recordsFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Persisted active backend id, for card active-state keyed on identity (not display name). */
@@ -1492,6 +1523,61 @@ class ModelViewModel @Inject constructor(
         preferencesManager.transcriptionBackend
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
                 PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
+
+    /**
+     * TASK-675: the demoted set (backend ids that decoded empty while speech
+     * was present). The Model tab renders the honest one-line reason on these
+     * cards and the curated recommendations skip them; it never gates manual
+     * selection.
+     */
+    val demotedBackendIds: StateFlow<Set<String>> =
+        silentModelDemoter.demotedBackends
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /**
+     * TASK-675: the first-run auto-selection arm (a download or import that
+     * lands while nothing is active) must skip demoted models; the user's
+     * explicit pick is the only thing that re-enables one. One internal seam
+     * so the skip rule is pinned by a unit test (the service progress flow
+     * itself is not emittable from tests).
+     */
+    internal fun autoSelectIfNotDemoted(backendId: String, select: suspend () -> Unit) {
+        viewModelScope.launch {
+            if (!silentModelDemoter.isDemoted(backendId)) select()
+        }
+    }
+
+    /**
+     * TASK-681: the LAN-offload service card's state, collected from the
+     * registry descriptor's path flow (the ONE owner of the
+     * enabled-and-configured rule; null while off, so no card, no selection
+     * surface). The endpoint doubles as the card's service line.
+     */
+    val remoteOmnivoiceEndpoint: StateFlow<String?> =
+        (backendRegistry.byBackendId(com.antivocale.app.transcription.RemoteOmnivoiceBackend.BACKEND_ID)
+            ?.modelPathFlow(preferencesManager)
+            ?: kotlinx.coroutines.flow.flowOf(null))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * TASK-681: selects the LAN-offload backend (the Use action on the
+     * service card). The card only renders while the service is enabled and
+     * configured, so no guard is duplicated here.
+     */
+    fun useRemoteOmnivoice() {
+        viewModelScope.launch {
+            preferencesManager.saveTranscriptionBackend(
+                com.antivocale.app.transcription.RemoteOmnivoiceBackend.BACKEND_ID)
+            _uiState.update {
+                it.copy(
+                    modelName = ctx.getString(R.string.remote_omnivoice_name),
+                    status = ModelStatus.UNLOADED,
+                    statusMessage = ctx.getString(
+                        R.string.model_selected_message, ctx.getString(R.string.remote_omnivoice_name)),
+                )
+            }
+        }
+    }
 
     /** TASK-513: lists a picked SAF folder and detects the family, so the
      *  import dialog can prefill it instead of failing a transducer-shaped
@@ -1587,8 +1673,9 @@ class ModelViewModel @Inject constructor(
         // Called from a non-suspend fold callback; the manager is suspend since TASK-264.
         applicationScope.launch { shareTargetManager.onModelDownloaded() }
         // First-run behavior: auto-select when nothing is active.
+        // TASK-675: a demoted external model is skipped by that auto-selection.
         if (_uiState.value.modelName.isBlank()) {
-            viewModelScope.launch { activateExternalModel(record) }
+            autoSelectIfNotDemoted(record.backendId) { activateExternalModel(record) }
         }
     }
 
@@ -1599,6 +1686,8 @@ class ModelViewModel @Inject constructor(
 
     private suspend fun activateExternalModel(record: ExternalModelRecord) {
         preferencesManager.saveTranscriptionBackend(record.backendId)
+        // TASK-675: the explicit pick clears any silent-decode demotion.
+        silentModelDemoter.onManualSelection(record.backendId)
         // TASK-408: canary decodes empty on chunks cut mid-speech, so VAD-aligned
         // segmentation is part of the deal: flip the preference on at selection
         // time (visible in Settings) rather than overriding it silently. The

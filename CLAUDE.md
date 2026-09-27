@@ -31,7 +31,7 @@ Android application written in Kotlin for transcribing voice messages locally on
     - `ExternalSherpaBackend` (user-imported external models, via OfflineRecognizer; dynamic BackendRegistry descriptors, `external:` prefix routing; ShareExternal family alias with chooser; families: Transducer/Whisper/CTC/SenseVoice/Canary)
     - `ModelFamilySupport` (per-family copy plans, metadata validation, sherpa config shared by external imports)
     - `LlmTranscriptionBackend` (Gemma via LiteRT-LM)
-    - `OrphanedModelDirCleaner` reclaims stranded old-version dirs at startup.
+    - `OrphanedModelDirCleaner` reclaims stranded old-version built-in dirs AND orphaned external-import dirs at startup (records-keyed live set, never the community-catalog index; 2h mtime grace for fresh dirs, TASK-657).
   - `ui/` — Compose UI screens and view models
   - `receiver/` — Broadcast receivers + share-target aliases (ShareReceiverActivity)
   - `data/` — Preferences, ShareTargetManager, download infrastructure
@@ -55,14 +55,14 @@ Android application written in Kotlin for transcribing voice messages locally on
 - Build commands: `./gradlew assemblePlayStoreDebug`, `./gradlew assembleFdroidRelease`, etc.
 - `./gradlew assembleDebug` is ambiguous (must specify a flavor).
 
-**Unit tests:** `./gradlew :app:testPlayStoreDebugUnitTest` (CI runs the fdroid flavor, `testFdroidDebugUnitTest`: same shared suite, because the playStore debug build carries the `.debug` applicationIdSuffix, which the Firebase google-services.json has no client for). That suffix is a standing trap: the debug package is `com.antivocale.app.debug`, NOT `com.antivocale.app` (the user's real installed app). Whatever touches package ids, shares, or notifications: verify which of the two you are driving.
+**Unit tests:** `./gradlew :app:testPlayStoreDebugUnitTest` (CI runs the fdroid flavor, `testFdroidDebugUnitTest`: same shared suite, because the playStore debug build carries the `.debug` applicationIdSuffix, which the Firebase google-services.json has no client for). That suffix is a standing trap: the debug package is `com.antivocale.app.debug`, NOT `com.antivocale.app` (the user's real installed app). Whatever touches package ids, shares, or notifications: verify which of the two you are driving. LOCAL suite runs on this workstation add `-PtestTmpDir=/home/pantinor/tmp-gradle` (opt-in hook; without it the test JVMs land on the quota-limited /tmp and whole runs fail on environmental IOExceptions alone, three times on 2026-09-25/26).
 
 **Adding a transcription backend → start from BackendRegistry (TASK-254..324 migrated the dispatch sites).** Add a `BackendDescriptor` in `transcription/BackendRegistry.kt` (backend id, ModelType, share alias, preference accessors, display-name derivation). The registry's KDoc carries the live checklist of what consumes it and what legitimately remains separate. **The registry is NO LONGER stateless**: it takes `ExternalModelStore` + `ExternalModelRecordsProvider` as constructor params; hand-built instances create duplicate collectors and racing read-modify-write domains. Since the migrations:
 - `ActiveModelRepository` (active model name/path), `TranscriptionOrchestrator` (backend loading + saved-path lookup), `ShareTargetManager`/`ShareReceiverActivity` (share targets and alias resolution) all dispatch through the registry.
-- `SettingsViewModel` collects `ActiveModelRepository` (the old dual-state root smell is gone); `ModelViewModel`'s file-validity check keys on the descriptor's ModelType (the benchmark-config when lives in `BenchmarkViewModel` since TASK-260; the remaining BACKEND_ID constant uses are documented in the registry KDoc).
+- `SettingsViewModel` collects `ActiveModelRepository` (the old dual-state root smell is gone); `ModelViewModel`'s file-validity check keys on the descriptor's ModelType (the benchmark config build is a straight catalog lookup in `BenchmarkViewModel` since TASK-639 removed its last dispatch arm; the remaining BACKEND_ID constant uses are documented in the registry KDoc).
 - Deliberately separate: `ExtractionService.ModelType` stays the persistence/bookkeeping enum (its download dispatch carries no registry data); the manifest `activity-alias` names stay literal strings (pinned by `BackendRegistryTest`); `PreferencesManager` is the data source the descriptors delegate to; `TranscriptionModule`'s `@IntoSet` DI registration is its own concern.
-- The disabled GGUF backend (`"gemma4_gguf"`) has NO descriptor: its literal id is matched explicitly at the fallback sites (orchestrator, repository, ModelViewModel). If it is ever re-enabled, give it a BACKEND_ID constant and a descriptor instead.
-- After adding a backend, still `grep -rE "BACKEND_ID|gemma4_gguf" app/src/main` to confirm the GGUF fallback sites and any constant uses are coherent.
+- The GGUF/llama-bro backend was REMOVED entirely (2026-09-23, TASK-639: fork deleted upstream, audio path dead on two fronts, LiteRT-LM is the shipped Gemma path). Re-adding is NOT a git-history restore alone: the fork is deleted (the JitPack coordinate is dead, an equivalent must be published first) and the 17 GGUF string resources removed from values/ plus 12 locales must come back too. Only if llama.cpp audio-Gemma ever lands.
+- After adding a backend, still `grep -rE "BACKEND_ID" app/src/main` to confirm the constant uses are coherent.
 
 ## External-Models Platform (v2a)
 
@@ -88,6 +88,8 @@ Gotchas:
 
 **Transcript rendering → the shared cap (`ui/components/CappedTranscript.kt` + `ui/TranscriptRenderCap.kt`).** A repetition-loop transcript rendered at full intrinsic height exceeds Compose's 262142px Constraints limit and kills the History list on every render, bricking the app for that data (Crashlytics 2026-09-11, TASK-506). Every surface rendering transcript text (result block, summary/original, PROCESSING interim, PiP live view) goes through `CappedTranscriptText`; a new surface copying the pattern inline re-opens the crash class.
 
+**Transcript text on diarized rows → the SubtitleFormatter entry pair (`annotatedOrStored`/`nullableAnnotated`, TASK-598).** Every surface that shows transcript text (History rows and preview, TXT export arms, result notification body/copy/share, auto-copy) derives the SPEAKER-annotated form through the pair; a new surface reading raw `result` re-opens the inconsistency class the task closed. The polish/cue reconciliation (`alignPolishedText`) is strictly per-cue validated; never loosen it to total word count alone (a compensating merge+split silently shifts words between speakers, review F1).
+
 **Process-lifetime coroutines use the injected `@ApplicationScope`** (`di/ApplicationScope.kt`, no dispatcher on the scope: launch sites pass their own). Never hand-build a scope for process-lifetime work; the four hand-built ones drifted (one lost the CrashReporter handler) and were consolidated in TASK-438.
 
 **Language wiring is catalog data with a named owner:** `TranscriptionLanguagePolicy` maps the preference to what the recognizer consumes, dispatched on the catalog flags (`languageOption` streams per-stream, `passLanguage` offline, everything else gets ""). Since TASK-457 there is NO app-locale pin: the untouched default ("system" or "auto", both mean the same) keeps model-side detection, and only an explicitly pinned language reaches the model (Whisper forced decoding; single-language variants stay forced via `SherpaBackend.forcedLanguage`). The Settings picker derives its offered set from the same flags via `offeredLanguages` (installed variant's catalog languages, or the entry's own for streaming), and the benchmark site resolves through the same policy: change the mapping there, never at a call site.
@@ -100,7 +102,7 @@ NNAPI is available on ALL devices including MediaTek. If a native crash occurs w
 
 ## Skills
 
-- **`/model-scout [scope]`** -- Scout HuggingFace, GitHub releases, and the ASR landscape for new models, framework updates, and techniques that could improve on-device transcription. Scopes: `full`, `asr`, `llm`, `frameworks`, `parakeet`, `whisper`, `qwen`. Reports saved to `docs/scout-reports/`.
+- **`/model-scout [scope]`** -- Scout HuggingFace, GitHub releases, and the ASR landscape for new models, framework updates, and techniques that could improve on-device transcription in any language (global scope; Italian is the reference bench), with community-catalog importability as a first-class axis. Scopes: `full`, `asr`, `llm`, `frameworks`, `parakeet`, `whisper`, `qwen`, `languages:a,b,c` (per-language sweep). Reports saved to `docs/scout-reports/`.
 
 ## Backlog label taxonomy
 
@@ -118,7 +120,8 @@ External issue reports get answered on GitHub; anything we commit to goes into a
 
 Whenever integrating a new model, native library, JNI bridge, or supporting a new CPU architecture, **always** verify ProGuard/R8 rules before shipping a release build:
 
-1. **Check `app/proguard-rules.pro`** — does the new code have JNI reflection, `@Keep` annotations, or dynamically-loaded classes that R8 could strip?
+0. **Pin the catalog files.** Every file in `models_catalog.json` carries a sha256 (34/34 pinned, TASK-661); compute it LOCALLY from the downloaded artifact, never trust a pasted hash. An unpinned file falls back to structural-only checks, and mid-file rot then reaches the native loader: the 1.13.1 Play-crash class (typed verdict + dir heal + re-download handle it once pinned; TASK-660).
+1. **Check `app/proguard-rules.pro`** (JNI reflection, `@Keep` annotations, dynamically-loaded classes R8 could strip)
 2. **Add keep rules** for any new native-facing classes:
    ```proguard
    -keep class com.antivocale.app.<new_package>.** { *; }
@@ -134,7 +137,7 @@ Before every release, run this audit to catch R8 stripping issues:
 
 1. **Find all JNI/native dependencies** — scan `app/build.gradle.kts` for native library dependencies (AARs with `.so` files, JNI bridges)
 2. **Cross-reference with proguard-rules.pro** — every native library package MUST have a `-keep class` entry
-3. **Check for stale rules** — if a library was replaced (e.g., `de.kherud.llama` → `com.suhel.llamabro`), update the keep rule to match the new package
+3. **Check for stale rules** (if a library was replaced or removed, the llama-bro row was dropped when its backend was, TASK-639): update or delete the keep rule to match
 4. **Verify dynamically-registered classes** — classes registered via Hilt multibinding, map lookups, or string-based instantiation need keep rules. The existing `com.antivocale.app.transcription.**` rule covers backend classes
 5. **Audit command**: `grep -E 'import (com\.|de\.|org\.)' app/src/main/java/ -rh | sed 's/.*import //' | sed 's/\..*//' | sort -u` — compare output against keep rule packages
 
@@ -143,7 +146,6 @@ Before every release, run this audit to catch R8 stripping issues:
 |---------|-------------|-------|
 | sherpa-onnx | `com.k2fsa.sherpa.onnx.**` | ONNX inference via JNI |
 | LiteRT-LM | `com.google.ai.edge.litertlm.**` | Gemma inference via JNI |
-| llama-bro | `com.suhel.llamabro.**` | GGUF inference via llama.cpp JNI |
 
 <CRITICAL_INSTRUCTION>
 

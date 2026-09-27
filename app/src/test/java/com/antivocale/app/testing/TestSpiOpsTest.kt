@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -32,6 +33,8 @@ class TestSpiOpsTest {
     /** Captures the url and answers with a fixture record; no network in unit tests. */
     private class FakeImporter(
         var lastUrl: String? = null,
+        var lastFamily: ModelFamily? = null,
+        var lastModelType: String? = null,
         val answer: (String) -> ExternalModelRecord,
     ) : ExternalModelImportOperations {
         override suspend fun importFromTreeUri(
@@ -54,6 +57,8 @@ class TestSpiOpsTest {
             onProgress: com.antivocale.app.data.ExternalImportProgress,
         ): ExternalModelRecord {
             lastUrl = url
+            lastFamily = family
+            lastModelType = modelType
             return answer("fromurl")
         }
     }
@@ -369,6 +374,15 @@ class TestSpiOpsTest {
             JSONObject(ops.handle(TestSpiOps.OP_GET)).isNull("outputFolderUri"))
     }
 
+    /** TASK-649: a null value (the shell drops empty --es extras) is the
+     *  documented blank-clear for these keys, not a malformed broadcast. */
+    @Test
+    fun `null value clears the blank-clearing keys instead of erroring`() = runTest {
+        val json = org.json.JSONObject(
+            ops.handle(TestSpiOps.OP_SET, key = "external_catalog_url", value = null))
+        assertFalse("must not error: ${json}", json.has("error"))
+    }
+
     @Test
     fun `every SET_KEYS entry dispatches a valid sample without error`() = runTest {
         // The completeness guard: SET_KEYS derives from the dispatch tables,
@@ -382,6 +396,7 @@ class TestSpiOpsTest {
             "output_folder" to "", "keep_alive" to "5", "subtitle_timeout" to "5", "threads" to "4",
             "backend" to "llm", "language" to "auto", "model_path" to "/m",
             "sherpa_path" to "/m", "transcript_export_format" to "SRT",
+            "signature_position" to "append", "signature_text" to "sig",
         )
         for (key in ops.SET_KEYS) {
             val sample = samples[key] ?: "true"
@@ -413,7 +428,7 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "import", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "import", "notify_memory_error", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
@@ -421,7 +436,10 @@ class TestSpiOpsTest {
 
     @Test
     fun `missing op returns help and unknown op returns help with an error`() = runTest {
-        assertFalse(ops.handle(null).contains("error"))
+        // Assert on the JSON field, not the raw string: the ops list now
+        // contains "notify_memory_error", whose name would false-positive a
+        // substring check.
+        assertFalse(JSONObject(ops.handle(null)).has("error"))
         assertTrue(ops.handle("bogus").contains("unknown op 'bogus'"))
     }
 
@@ -438,6 +456,54 @@ class TestSpiOpsTest {
         val json = JSONObject(ops.handle("import"))
         assertEquals("import", json.getString("op"))
         assertTrue(json.getString("error").contains("url"))
+    }
+
+    @Test
+    fun `import op forwards the family override and defaults without it`() = runTest {
+        // TASK-618: the headless equivalent of the dialog's family chooser.
+        ops.handle("import", url = "http://x/repo", family = "MOONSHINE")
+        assertEquals(ModelFamily.MOONSHINE, fakeImporter.lastFamily)
+        ops.handle("import", url = "http://x/repo")
+        assertEquals(ModelFamily.TRANSDUCER, fakeImporter.lastFamily)
+    }
+
+    @Test
+    fun `import op rejects an unknown family without importing`() = runTest {
+        val json = JSONObject(ops.handle("import", url = "http://x/repo", family = "bogus"))
+        assertTrue(json.getString("error").contains("bogus"))
+        assertTrue(json.getString("error").contains("MOONSHINE"))
+        assertNull(fakeImporter.lastUrl)
+    }
+
+    @Test
+    fun `import op rejects a model type incoherent with the family`() = runTest {
+        // TASK-618 review: the pair would persist and native-exit at load.
+        val json = JSONObject(ops.handle(
+            "import", url = "http://x/repo", family = "MOONSHINE", modelType = "nemo_ctc"))
+        assertTrue(json.getString("error").contains("nemo_ctc"))
+        assertTrue(json.getString("error").contains("MOONSHINE"))
+        assertNull(fakeImporter.lastUrl)
+    }
+
+    @Test
+    fun `import op accepts a coherent model type and rejects overrides on entry json`() = runTest {
+        ops.handle("import", url = "http://x/repo", family = "CTC", modelType = "nemo_ctc")
+        assertEquals("nemo_ctc", fakeImporter.lastModelType)
+        // Entry JSON carries its own family AND modelType; either override
+        // would be silently dropped, so the SPI says so instead.
+        val json = JSONObject(ops.handle("import", url = "http://x/entry.json", modelType = "nemo_ctc"))
+        assertTrue(json.getString("error").contains("entry JSON"))
+        // Rejected BEFORE the importer: the fake still holds the previous call.
+        assertEquals("http://x/repo", fakeImporter.lastUrl)
+    }
+
+    @Test
+    fun `import op rejects an explicit TRANSDUCER family on entry json too`() = runTest {
+        // Simplify round: the resolved default made an explicit family=
+        // TRANSDUCER override indistinguishable from absent; the override
+        // would still be silently dropped by the entry.
+        val json = JSONObject(ops.handle("import", url = "http://x/entry.json", family = "TRANSDUCER"))
+        assertTrue(json.getString("error").contains("entry JSON"))
     }
 }
 

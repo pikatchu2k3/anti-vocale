@@ -1,6 +1,7 @@
 package com.antivocale.app
 
 import android.app.Application
+import kotlinx.coroutines.flow.first
 import androidx.work.Configuration
 import com.antivocale.app.audio.MemoryReadings
 import com.antivocale.app.data.PreferencesManager
@@ -71,15 +72,58 @@ class BridgeApplication : Application(), Configuration.Provider {
                 preferencesManager.saveExternalMigrationDone(false)
             }
         }
+        // TASK-643: builds <=1.13.x persisted the unsuffixed catalog URL on
+        // "Restore"; that literal is now the FROZEN legacy index and would
+        // read as a phantom override (custom-source badge, no asset fallback,
+        // never sees new entries). Clear it once here; a genuine custom URL
+        // never equals the legacy default.
+        runCatching {
+            kotlinx.coroutines.runBlocking {
+                if (preferencesManager.externalCatalogUrl.first() ==
+                    com.antivocale.app.data.ExternalCatalogRepository.LEGACY_DEFAULT_CATALOG_URL
+                ) {
+                    preferencesManager.clearExternalCatalogUrl()
+                }
+            }
+        }
+
+        // TASK-640: a leaked pendingBackendLoad marker means the previous
+        // launch died inside a native model load. Quarantine the external
+        // record (it becomes unresolvable for the cleaner below) and tell the
+        // user, instead of reloading the same crashing model on every launch.
+        runCatching {
+            kotlinx.coroutines.runBlocking {
+                com.antivocale.app.data.CrashQuarantineCheck(preferencesManager, externalModelStore)
+                    .check(this@BridgeApplication)
+            }
+        }.onFailure { e ->
+            android.util.Log.e("BridgeApplication", "Crash-quarantine check failed (marker cleared, no quarantine applied)", e)
+        }
         // Also before syncAll: a persisted external backend id whose record is gone
-        // (deleted through another path, files vanished) must fall back to the default
-        // backend, or every transcription request fails on an unloadable id (TASK-342).
+        // (deleted through another path, files vanished, quarantined) must fall back
+        // to the default backend, or every transcription request fails on an
+        // unloadable id (TASK-342).
         runCatching {
             kotlinx.coroutines.runBlocking {
                 com.antivocale.app.data.DanglingBackendCleaner(preferencesManager, externalModelStore).cleanIfNeeded()
             }
         }.onFailure { e ->
             android.util.Log.e("BridgeApplication", "Dangling-backend cleanup failed (will retry on next launch)", e)
+        }
+        // TASK-657 (GH #117): external dirs whose record was deleted in an earlier
+        // run accumulate invisibly; reconcile the external root against the store's
+        // records. Launched, not runBlocking: the delete can span GBs and must not
+        // block cold start; contained so a sweep failure never crashes startup.
+        // No import can be in flight yet (every import entry is UI or debug-SPI
+        // driven, in-process), so no in-flight dir needs excluding.
+        applicationScope.launch(Dispatchers.IO) {
+            runCatching {
+                com.antivocale.app.data.OrphanedExternalModelDirCleaner(externalModelStore) {
+                    java.io.File(filesDir, com.antivocale.app.data.EXTERNAL_MODELS_DIR_NAME)
+                }.cleanIfNeeded()
+            }.onFailure { e ->
+                android.util.Log.e("BridgeApplication", "External-model dir sweep failed (will retry on next launch)", e)
+            }
         }
         // GH #51: rows left QUEUED/PROCESSING by a process death can never complete
         // (START_NOT_STICKY restores nothing); fail them so they don't render as a

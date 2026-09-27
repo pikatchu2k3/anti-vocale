@@ -2,6 +2,7 @@ package com.antivocale.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,6 +12,17 @@ import org.junit.Test
  * token-based: it must stay pure so the URL-dialog autocomplete is testable.
  */
 class ExternalCatalogTest {
+
+    companion object {
+        /**
+         * The app's bundled index path, derived from the same constant the
+         * repository uses (TASK-643): a pure version bump with no entry
+         * changes must not leave the tests validating the previous
+         * release's file.
+         */
+        private val BUNDLED_INDEX_PATH =
+            "src/main/assets/" + ExternalCatalogRepository.BUNDLED_INDEX
+    }
 
     @Test
     fun `query matches language code exactly and by prefix`() {
@@ -130,7 +142,7 @@ class ExternalCatalogTest {
         // pantinor/whisper-arabic-dialectal-sherpa (TASK-332: desktop-verified
         // transcripts on 6 dialectal samples, 2026-08-19). The entry must parse
         // and surface via both name and language-code search.
-        val text = java.io.File("src/main/assets/external-catalog/index.json").readText()
+        val text = java.io.File(BUNDLED_INDEX_PATH).readText()
         val entries = ExternalCatalog.parseIndex(text)
         // arabic + russian-small + spanish streaming + german streaming (TASK-366/368)
         // + swiss german whisper (TASK-397, Flurin17 re-export)
@@ -140,7 +152,31 @@ class ExternalCatalogTest {
         // + whisper tiny multilingual (TASK-475, low-RAM) + sense voice
         // small multilingual (TASK-476, zh/en/yue/ja/ko)
         // + shenava persian transducer (TASK-550, desktop-validated on FLEURS fa)
-        assertEquals(13, entries.size)
+        // + orukeet multilingual parakeet fine-tune (2026-09-20; the Italian
+        //   FLEURS gain is the PUBLISHER's self-report - our eval references
+        //   are Parakeet pseudo-refs, not ground truth)
+        // + omnilingual 300M CTC multilingual (TASK-635/643: version-scoped
+        //   index; the unsuffixed index.json stays frozen at 14 for <=1.13.x)
+        // + indicconformer per-language CTC hi/bn/mr/gu/ta/te (TASK-652:
+        //   the India gap, validated 5.8-13.7% CER on FLEURS)
+        assertEquals(21, entries.size)
+
+        // TASK-635/643: the omnilingual entry ships in the VERSIONED index
+        // (the bundled asset); the unsuffixed index.json is the frozen legacy
+        // set for installed apps <=1.13.x.
+        val omnilingual = ExternalCatalog.filter(entries, "omnilingual")
+        assertEquals(1, omnilingual.size)
+        assertEquals(ModelFamily.CTC, omnilingual[0].family)
+        // The entry FILE carries the modelType the index cannot: pin it so a
+        // drift fails here instead of at install time on a user device.
+        val omnilingualJson = java.io.File(
+            "src/main/assets/external-catalog/omnilingual-300m.json").readText()
+        val omnilingualEntry = org.json.JSONObject(omnilingualJson)
+        assertTrue(omnilingualEntry.getString("name").startsWith("Omnilingual ASR 300M"))
+        assertEquals("CTC", omnilingualEntry.getString("family"))
+        assertEquals("omnilingual_ctc", omnilingualEntry.getString("modelType"))
+        assertEquals(2, omnilingualEntry.getJSONArray("files").length())
+
         val sense = ExternalCatalog.filter(entries, "sense")
         assertEquals(1, sense.size)
         assertEquals(ModelFamily.SENSE_VOICE, sense[0].family)
@@ -162,17 +198,94 @@ class ExternalCatalogTest {
         assertTrue(ExternalCatalog.filter(entries, "ry").isEmpty())
         // a real name word still finds the four flash entries...
         assertEquals(4, ExternalCatalog.filter(entries, "canary").size)
-        // ...and the "de" code surfaces every German-capable entry via languages
-        assertEquals(4, ExternalCatalog.filter(entries, "de").size)
+        // ...and the "de" code surfaces every German-capable entry via
+        // languages (TASK-596: orukeet now declares its full 24-language
+        // set, so it joins the German results)
+        assertEquals(5, ExternalCatalog.filter(entries, "de").size)
+        // TASK-652: the six IndicConformer entries surface via their codes
+        listOf("bn", "gu", "hi", "mr", "ta", "te").forEach { code ->
+            assertEquals("filter($code) must surface exactly the IndicConformer entry",
+                1, ExternalCatalog.filter(entries, code).size)
+        }
+        assertEquals(6, ExternalCatalog.filter(entries, "indicconformer").size)
+    }
+
+    /** TASK-652 review: pin the six entry files like the omnilingual
+     *  precedent (a typo in modelType, sha, or size must fail HERE, not at
+     *  import time on a user device), and pair every index entryUrl
+     *  basename with a committed asset file (hebrew.json has been dead
+     *  weight since 2026-09-20 because nothing performs this check). */
+    @Test
+    fun `indicconformer entry files carry the expected shape and every index entry has its asset`() {
+        val indexNames = ExternalCatalog.parseIndex(
+            java.io.File(BUNDLED_INDEX_PATH).readText()).map { it.name }.toSet()
+        for (code in listOf("bn", "gu", "hi", "mr", "ta", "te")) {
+            val json = java.io.File("src/main/assets/external-catalog/indicconformer-$code.json").readText()
+            val obj = org.json.JSONObject(json)
+            assertEquals("CTC", obj.getString("family"))
+            assertEquals("nemo_ctc", obj.getString("modelType"))
+            assertEquals(code, obj.getJSONArray("languages").getString(0))
+            assertEquals(2, obj.getJSONArray("files").length())
+        }
+        // every index entryUrl basename must be a committed asset
+        val assetDir = java.io.File("src/main/assets/external-catalog")
+        val assets = assetDir.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+        indexNames.forEach { name ->
+            val basename = java.io.File(
+                ExternalCatalog.parseIndex(java.io.File(BUNDLED_INDEX_PATH).readText())
+                    .first { it.name == name }.entryUrl).name
+            assertTrue("index entry $name references $basename but no such asset exists",
+                basename in assets)
+        }
+    }
+
+    @Test
+    fun `every index entryUrl is an absolute URL`() {
+        // TASK-652: the dialog fetches entryUrl via OkHttp with no base
+        // resolution; a relative path throws at tap-to-import time. The
+        // simplify review caught exactly this bug in the IndicConformer
+        // batch; pin it so no future entry ships relative.
+        val text = java.io.File(BUNDLED_INDEX_PATH).readText()
+        ExternalCatalog.parseIndex(text).forEach {
+            assertTrue("relative entryUrl: ${it.name} -> ${it.entryUrl}",
+                it.entryUrl.startsWith("https://"))
+        }
     }
 
     @Test
     fun `bundled index is alphabetically sorted by display name`() {
         // Only OUR curated file is held to the rule: parseIndex deliberately
         // keeps input order so a custom/remote catalog may ship unsorted.
-        val text = java.io.File("src/main/assets/external-catalog/index.json").readText()
+        val text = java.io.File(BUNDLED_INDEX_PATH).readText()
         val names = ExternalCatalog.parseIndex(text).map { it.name }
         assertEquals(names.sortedBy { it.lowercase() }, names)
+    }
+
+    @Test
+    fun `frozen legacy index for installed base stays parseable at its frozen count`() {
+        // TASK-643: index.json is the live remote index for every installed
+        // app <=1.13.x. It must stay parseable, at 14 entries, and a strict
+        // subset of the versioned index (a compatible fix may edit an entry,
+        // nothing may be added or broken).
+        val legacy = ExternalCatalog.parseIndex(
+            java.io.File("src/main/assets/external-catalog/index.json").readText())
+        assertEquals(14, legacy.size)
+        val versioned = ExternalCatalog.parseIndex(java.io.File(BUNDLED_INDEX_PATH).readText())
+        val versionedByName = versioned.associateBy { it.name }
+        // Shared entries must stay in SYNC (the runbook's compatible fixes
+        // apply to every live file): pin entryUrl equality, the field a
+        // mirror fix touches, not just name presence.
+        legacy.forEach { entry ->
+            val match = versionedByName[entry.name]
+            assertNotNull("legacy entry missing from the versioned index: ${entry.name}", match)
+            assertEquals("entryUrl drifted between legacy and versioned: ${entry.name}",
+                entry.entryUrl, match!!.entryUrl)
+        }
+        // Exactly one versioned index ships: the running build reads only its
+        // own version's file; stale ones are dead APK weight.
+        val versionedFiles = java.io.File("src/main/assets/external-catalog")
+            .listFiles { f -> f.name.matches(Regex("index-.*\\.json")) }
+        assertEquals(1, versionedFiles?.size)
     }
 
     @Test
@@ -180,7 +293,7 @@ class ExternalCatalogTest {
         // Sync contract: adding an index entry requires its exact name to
         // appear in docs/model-catalog.md, so the user-facing model list
         // cannot drift from the catalog the app serves.
-        val text = java.io.File("src/main/assets/external-catalog/index.json").readText()
+        val text = java.io.File(BUNDLED_INDEX_PATH).readText()
         val doc = java.io.File("../docs/model-catalog.md").readText()
         ExternalCatalog.parseIndex(text).forEach {
             assertTrue("docs/model-catalog.md community table is missing ${it.name}", doc.contains(it.name))

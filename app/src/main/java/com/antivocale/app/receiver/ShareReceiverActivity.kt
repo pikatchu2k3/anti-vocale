@@ -367,6 +367,12 @@ class ShareReceiverActivity : Activity() {
     private fun processSharedAudio(uri: Uri, mimeType: String?) {
         dispatchStarted = true
         appScope.launch(Dispatchers.Main) {
+            // TASK-578: a content-URI grant dies with the activity; the
+            // copy must complete inside this activity's lifetime. It runs
+            // here (Main dispatcher, called from onCreate, no finish() path
+            // can fire while withContext(IO) holds the main thread
+            // suspended), so the grant is alive for the whole copy. Voice
+            // messages are small (1-10MB): the blocking IO is bounded.
             val result = withContext(Dispatchers.IO) {
                 SharedAudioHandler.copyToAppStorage(applicationContext, uri, mimeType)
             }
@@ -387,6 +393,16 @@ class ShareReceiverActivity : Activity() {
 
             // Start service with file path and detected package
             val taskId = "share_${System.currentTimeMillis()}"
+
+            // TASK-677 (GH #92 import half): a handed subtitle FILE is an
+            // import, not audio. Its cues become the transcript (ASR
+            // skipped), so it routes before the external-alias, video and
+            // decode-probe branches: a text file has no alias to resolve
+            // and would only fail the decode probe.
+            if (SharedAudioHandler.isSubtitleFile(localPath)) {
+                dispatchSubtitleImport(taskId, localPath)
+                return@launch
+            }
 
             // Resolve the backend override once (applies to both the ASR path and the subtitle
             // choice's "Transcribe audio" action). A share-target alias forces a specific backend.
@@ -509,10 +525,38 @@ class ShareReceiverActivity : Activity() {
         // restriction). The Failed branch is the no-signal case (e.g.
         // FGS restricted AND notifications unavailable): say so instead of
         // toasting "transcription started" over a lost request.
+        enqueueAndFinish(taskId, serviceIntent, "InferenceService")
+    }
+
+    /**
+     * TASK-677 (GH #92 import half): the .srt/.vtt import dispatch. The file
+     * is the source itself: no backend override (no model runs), no subtitle
+     * choice prompt (there is no second arm to choose), and no decode probe
+     * (there is no audio). The service parses it and reports through the
+     * standard success funnel with the cues preserved.
+     */
+    private fun dispatchSubtitleImport(taskId: String, localPath: String) {
+        val serviceIntent = buildServiceIntent(
+            taskId, localPath,
+            requestType = TaskerRequestReceiver.REQUEST_TYPE_SUBTITLE_IMPORT,
+            trackIndex = -1,
+            backendOverride = null)
+
+        enqueueAndFinish(taskId, serviceIntent, "subtitle import")
+    }
+
+
+    /**
+     * TASK-677 simplify F1: the enqueue outcome tail shared by every dispatch
+     * arm (queue-aware started toast, the no-signal Failed toast, cleanup,
+     * finish). One site: enqueue policy changes cannot drift between the ASR
+     * and subtitle-import paths.
+     */
+    private fun enqueueAndFinish(taskId: String, serviceIntent: Intent, subject: String) {
         when (InferenceEnqueue.start(this, serviceIntent)) {
             InferenceEnqueue.Outcome.Started,
             InferenceEnqueue.Outcome.FallbackNotificationPosted -> {
-                Log.i(TAG, "Enqueued InferenceService for taskId: $taskId, source: $sourcePackage")
+                Log.i(TAG, "Enqueued $subject for taskId: $taskId")
                 val toastRes = if (InferenceService.isTranscribing.value)
                     R.string.added_to_queue
                 else
@@ -520,7 +564,7 @@ class ShareReceiverActivity : Activity() {
                 com.antivocale.app.util.ToastCompat.show(this, toastRes)
             }
             is InferenceEnqueue.Outcome.Failed -> {
-                Log.e(TAG, "Could not enqueue transcription for taskId: $taskId")
+                Log.e(TAG, "Could not enqueue $subject for taskId: $taskId")
                 showErrorToast(getString(R.string.transcription_failed))
             }
         }

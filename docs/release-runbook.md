@@ -27,6 +27,36 @@ published at different times; there is no hard coupling. The one hard
 dependency: the F-Droid recipe `binary:` URLs must resolve (HTTP 200) **before**
 the recipe is pushed to the fork, otherwise the F-Droid pipeline fails.
 
+## Step 0. Version-scoped catalog index (TASK-643, at the version bump)
+
+The community-catalog index is version-scoped: the app reads
+index-<versionName>.json (derived by gradle from the release bump, SNAPSHOT
+stripped) and bundles that same file as its offline asset. At the version
+bump: copy the newest existing index file to the new version's name, add the
+entries the new app supports (the previous release's entry additions wait
+here), and update ExternalCatalogTest's count pin + the docs row + the
+model-inventory note. The unsuffixed index.json stays FROZEN: it is the
+remote index every installed app <=1.13.x reads, and it never receives new
+entries (only compatible fixes, e.g. a broken mirror URL). Dev builds point
+at the not-yet-published versioned file and fall back to the bundled asset,
+so an entry cannot reach installed apps before the release that supports it.
+
+**Three mechanical duties around the versioned files (all fail loudly if
+forgotten: the pre-push guard check-release-version.py now verifies the
+versioned asset exists and parses):**
+- RELEASE bump: copy the newest index to the new version's name (the guard
+  fails the push otherwise).
+- SNAPSHOT bump (the post-release same-day bump): copy the CURRENT released
+  version's index to the new snapshot name too, or every dev build of the
+  window hard-fails its catalog load (remote 404 + missing asset).
+- RELEASE cleanup: DELETE the previous release's versioned index (the running
+  build only ever reads its own versionName's file; keeping old ones ships
+  dead KB in every APK). The assets dir must hold exactly index.json + one
+  index-<version>.json, pinned by a test.
+- Compatible fixes (e.g. a broken mirror URL) must be applied to EVERY live
+  file carrying the entry: the frozen index.json AND every shipped versioned
+  index (1.14.0-installed apps read index-1.14.0.json forever).
+
 ## Step 1. Version bump (in the app repo)
 
 In `app/build.gradle.kts`:
@@ -201,12 +231,33 @@ This is the slowest step: sherpa-onnx is compiled from source for 3 ABIs (~3h:
 3h02m on v1.12.0, 3h20m on v1.12.1; the historical 25-40 min figures described
 a prebuilt-AAR era recipe).
 
+**Post-publish variant (v1.13.1, 2026-09-23):** when the release already exists
+(the Step-8 discovery path), the references dispatch MUST carry `-f tag=vX.Y.Z`:
+
+```
+gh workflow run android-release.yml --ref vX.Y.Z -f tag=vX.Y.Z
+```
+
+The signed-APK attach step is gated on the tag input; a publish-only dispatch
+(with `-f play-store-track` or with no inputs) builds and signs the references
+in the container and then DISCARDS them at cleanup: on v1.13.1 one such run
+produced all three signed APKs and attached none (70 minutes lost). With the
+tag input the Publish job stays skipped (no track) and the attach steps fire.
+In every case the dispatch goes through the script or this exact form; the
+project hook `block-raw-release-dispatch.py` now blocks hand-typed
+`gh workflow run android-release.yml` in agent sessions (escape marker
+`#release-script-escape` records a justified exception).
+
 Proof: `gh run view <id> --json jobs` shows `reproducible-fdroid` = success and
 the three artifacts present; NOTE the run id (`gh run list --event
 workflow_dispatch --limit 1`) for Step 5b. `gh release view vX.Y.Z` still 404s:
 nothing is public yet.
 
 ## Step 5b. Publish: tag + release + all binaries in one act
+
+The device model matrix must already be green (Preflight and verify gates);
+it runs before the Step 5 dispatch so a failure never wastes the reproducible
+run.
 
 `scripts/release-create.sh` downloads the three artifacts, verifies the 12-file
 set, and creates the tag, the release, and every asset with ONE `gh release
@@ -299,18 +350,76 @@ scripts/release-fdroid-references.sh finalize vX.Y.Z
 
 Proof: GitLab pipeline `success`; the build is marked "verified reproducible".
 
+## Step 7b. The update MR is the checkupdates bot's job (do NOT open one manually)
+
+Since mid-September 2026 the F-Droid side is autonomous: the recipe carries
+`AutoUpdateMode: Version` + the new `CurrentVersionCode`, so F-Droid's
+**checkupdates bot** detects the GitHub release and opens the update MR on
+fdroiddata by itself (evidence: 414, 434 and 444 all landed as "bot: Update
+Anti-Vocale to <code>" commits; 454 became MR !49871 the morning after the
+v1.13.1 release). Our acts end at Step 6/7: fork branch pushed (reference
+build) and pipeline green. Then VERIFY the bot did its part:
+
+```bash
+scripts/check-fdroid-bot-mr.sh <CurrentVersionCode>
+# e.g. scripts/check-fdroid-bot-mr.sh 454
+```
+
+A manual MR from the fork is the FALLBACK only (the bot has not opened one
+within a few days, or the change is not a plain version bump the bot can
+generate: new app, new srclib, category changes). The 2026-09-23 correction:
+the maintainer had to point out the bot flow after a stale manual-MR habit
+nearly opened a duplicate; the check script exists so no session repeats it.
+
 ## Step 8. Play Store (independent of F-Droid timing)
 
-Trigger the Play Store publish job (AAB), or upload manually. This can run in
-parallel with the F-Droid MR review; it does not block on it.
+**Do NOT dispatch anything after the release is published.** The
+`release: published` event already runs the Publish job (the workflow
+condition covers it): publishing the GitHub release produces ONE run that
+builds, builds the F-Droid reference APKs, and parks its Publish job at the
+`production` environment gate. Approve THAT run in the Actions UI
+(Environment "production" -> pending deployment, or the run page's
+"Review pending deployments"); the AAB is built and waiting by then.
 
-Two v1.12.1 lessons: (1) a publish-only dispatch MUST pin the release ref,
+Gate precondition (2026-09-26 lesson): the `production` environment's
+deployment-branch policy must admit the ref the run was dispatched from
+(policy today: `main`, `v*`, and `release/*`; the last was added 2026-09-26
+after run 36262228446 was rejected at the gate). A non-admitted ref fails
+ONLY at the gate, after build and tests already burned ~15 min of runner
+time. Before dispatching from any new ref shape, check the policy (Settings
+-> Environments -> production -> Deployment branches, or
+`gh api repos/RisorseArtificiali/anti-vocale/environments/production/deployment-branch-policies`)
+and add the pattern first. The pre-dispatch predicate that automates this is
+TASK-683.4.
+
+The 2026-09-21 near-miss this rule comes from: the old v1.12.1-era habit of
+ALSO dispatching `-f play-store-track=...` after publishing produced a second
+run with the SAME gated Publish job (and WITHOUT the reference-APK job), so
+two approvals were pending for the same versionCode; both approved, the
+second upload fails on the duplicate versionCode and the Actions history
+shows twin "Android CI/CD" runs every release.
+
+The dispatch form remains valid BEFORE the GitHub release exists (internal
+track testing pre-announcement; build-first mode, Step 5) and as RECOVERY if
+the release run was cancelled by mistake: pin the release ref,
 `gh workflow run android-release.yml --ref vX.Y.Z -f play-store-track=internal`
 (a bare SHA is rejected with 422, and a main-tip dispatch after the
-post-release snapshot bump fails the notes extractor on the version mismatch);
-(2) the publish job runs in the `production` environment, so it parks at an
-approval until a maintainer grants it in the Actions UI; the AAB itself is
-built and waiting by then.
+post-release snapshot bump fails the notes extractor on the version mismatch).
+
+Branch-ref recovery form (2026-09-26, v1.13.2): when the release-event build
+itself failed on a defect fixed only AFTER the tag (that day: the
+hi-IN/ru-RU/tr-TR notes headings), the tag-ref form above just rebuilds the
+same broken notes. The working form is a branch-ref dispatch:
+`gh workflow run android-release.yml --ref release/vX.Y.Z -f play-store-track=production`.
+GUARD: this is allowed only when `git diff --name-only vX.Y.Z..release/vX.Y.Z`
+shows release-notes/metadata files only (docs/play-store/** and similar); any
+code delta breaks the same-source-commit invariant and needs a re-cut
+instead. v1.13.2 was recovered this way (Play AAB built at bece9376 while
+tag, recipe and F-Droid binaries are d1769f0a; the delta is notes-only):
+whether that divergence becomes a sanctioned class or forces a re-cut is the
+maintainer decision tracked in TASK-683.7. When only the STORE listing notes
+were wrong and the GitHub release is fine, the console paste (checklist item
+1 below) remains the preferred, divergence-free alternative.
 
 Proof: Play Console shows the new release in review/published.
 
@@ -341,6 +450,28 @@ scripts/release-preflight.sh --tag vX.Y.Z --commit $SHA   # --commit: build-firs
 # recipe-commit check run against the bump SHA instead of a tag that does not
 # exist yet (without it, preflight fails spuriously in build-first order).
 scripts/release-verify.sh vX.Y.Z            # after the publish act completes
+```
+
+MANDATORY, not advisory (2026-09-26 lesson): both of that day's release
+failures were preflight-detectable, and preflight had not been run (the
+fallback-literal check was failing on the tree through two shipped releases).
+A FAIL blocks the dispatch or the publish, no exceptions; the script's exit
+code is the verdict. Until the entrypoints chain it themselves (TASK-683.1),
+running it is a manual hard step: no dispatch without a green preflight in
+the same sitting. Note the notes-extraction check legitimately fails on
+post-release main (the tree is at the next-version SNAPSHOT with no notes
+section yet); at bump time it must be green.
+
+Device model matrix (TASK-413, GH #68), BEFORE the Step 5 dispatch (a matrix
+failure must not waste the ~3h reproducible run): every bundled backend loads
+and transcribes once on the connected phone, and the script exits 0 only with
+a SUCCESS row for each; skipped models fail the gate explicitly. It exercises
+the debug build installed on the phone (one variant per entry, the one the
+app's own resolver picks), so install the release tree first
+(`./scripts/install.sh`):
+
+```bash
+scripts/device-model-matrix.sh --audio <short real speech clip>
 ```
 
 The preflight encodes every failure mode of the v1.10.0 release day:
@@ -388,9 +519,19 @@ download NDKs in that container, and the reference build died ~40 min in).
 - NEVER `gh release upload --clobber` on the canonical `app-fdroid-<abi>-release.apk`
   names: they are the F-Droid reproducibility references. Interim builds must
   be copied to a distinct filename before upload.
-- The release-event run stays red (release-sanity) while the signing job is
-  still building; the green record is the completed dispatch run. A red sanity
-  with all three signed URLs resolving is the expected intermediate state.
+- Release-sanity's scope, stated exactly (2026-09-26 correction): the
+  `needs`-wait on the reproducible job (TASK-641, commit 21870752) applies
+  only to workflows that CONTAIN that commit. A release cut from a side
+  branch runs the workflow frozen at the branch point, so v1.13.2's
+  release-event run executed sanity with needs [test, build] and went green
+  at 17:14 while the ~3h signing job was still running; until the cut
+  procedure cherry-picks workflow-gate commits onto the release branch
+  (TASK-683.5), assume a side-branch cut runs the OLD gates. KNOWN LIMITATION
+  until TASK-683.3 lands: sanity does NOT assert the Build or Publish job
+  results; on 2026-09-26 it showed green beside a failed Publish
+  (run 36262228446) and beside a failed Build with Publish skipped
+  (run 36257611232). Green sanity means "the checks sanity runs passed",
+  never "every job passed": read the run's job list before promoting.
 
 ## Play Console manual checklist (per release)
 

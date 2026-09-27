@@ -5,6 +5,7 @@ import com.antivocale.app.data.ExternalModelRecordsProvider
 import com.antivocale.app.manager.LlmManager
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.LlmTranscriptionBackend
+import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.transcription.SherpaBackend
 import com.antivocale.app.transcription.TranscriptionBackend
 import dagger.Module
@@ -24,6 +25,15 @@ class TranscriptionModule {
         @Singleton
         fun provideLlmBackend(llmManager: LlmManager): TranscriptionBackend =
             LlmTranscriptionBackend(llmManager)
+
+        // TASK-681: the opt-in LAN-offload backend (the user's own OmniVoice
+        // server); derives its own timeouts from the shared OkHttp client.
+        @Provides
+        @IntoSet
+        @Singleton
+        fun provideRemoteOmnivoiceBackend(
+            client: okhttp3.OkHttpClient
+        ): TranscriptionBackend = RemoteOmnivoiceBackend(client)
 
         // One SherpaBackend instance per bundled catalog entry: the model family and
         // tuning all come from the catalog, so the instances differ only in entry id.
@@ -51,10 +61,6 @@ class TranscriptionModule {
         @IntoSet
         @Singleton
         fun provideGigaAmBackend(): TranscriptionBackend = SherpaBackend(BuiltInBackendIds.GIGAAM)
-
-        // GGUF: re-enable by moving files from gguf-disabled/ and adding back:
-        // @Binds abstract fun bindGgufInferenceEngine(impl: LlamaBroEngine): GgufInferenceEngine
-        // @Provides @IntoSet @Singleton fun provideGemma4GgufBackend(engine: GgufInferenceEngine): TranscriptionBackend = Gemma4GgufBackend(engine)
 
         @Provides
         @Singleton

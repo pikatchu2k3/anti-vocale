@@ -10,13 +10,20 @@ import com.antivocale.app.R
 import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.receiver.NotificationActionReceiver
 import com.antivocale.app.util.AppInfoUtils
+import com.antivocale.app.util.TranscriptSignature
 import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.LanguageNames
+import com.antivocale.app.ui.SettingsFocusRow
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Everything needed to (re)build one result notification (TASK-327). */
 data class ResultNotificationSpec(
     val transcriptionText: String,
+    /** TASK-647: resolved signature for the EXIT surfaces (copy/share
+     *  actions). Blank = feature off (the raw text goes out unchanged);
+     *  the body and the nav intents always carry the raw transcript. */
+    val signatureText: String = "",
+    val signaturePosition: String = "append",
     val taskId: String?,
     val sourcePackage: String?,
     val confidence: Float?,
@@ -30,6 +37,11 @@ data class ResultNotificationSpec(
     /** TASK-450: the request was streamed without silence stripping after the
      *  VAD path would have refused it (device memory ceiling); said in subText. */
     val streamedWithoutVad: Boolean = false,
+    /** GH #43: the fast backend a two-pass run refined (display name), or
+     *  the sentinel NOT_REFINED when the first pass shipped unrefined. */
+    val refinedFrom: String? = null,
+    /** GH #43 sentinel for [refinedFrom]: delivered unrefined (F4/F5). */
+    val notRefined: Boolean = false,
     val firstPostedAt: Long = System.currentTimeMillis(),
     /** True when rebuilding after a prev/next tap: suppresses re-alerting. */
     val repost: Boolean = false
@@ -60,6 +72,73 @@ class ResultNotificationFactory(private val context: Context) {
         // service ever created the channel.
         AppNotificationChannel.TRANSCRIPTION_RESULT.create(context)
     }
+
+    /**
+     * TASK-625: the transcription-failure error notification, shared by both
+     * error surfaces (InferenceService and TranscriptionNotificationListener)
+     * and by the debug TEST_SPI simulate op. With [memoryAction] the content
+     * intent and an action button deep-link to the memory-protection settings
+     * row; the request codes mirror the services' launch band (same intent
+     * shapes must stay one PendingIntent).
+     */
+    fun errorNotification(errorMessage: String, memoryAction: Boolean): Notification {
+        val launch = if (memoryAction) {
+            settingsRowPendingIntent(SettingsFocusRow.MEMORY_PROTECTION)
+        } else {
+            plainLaunchPendingIntent()
+        }
+        val builder = NotificationCompat.Builder(context, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
+            .setContentTitle(context.getString(R.string.transcription_failed))
+            .setContentText(errorMessage)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(launch)
+            .setAutoCancel(true)
+        if (memoryAction) {
+            builder.addAction(
+                android.R.drawable.ic_menu_set_as,
+                context.getString(R.string.error_open_memory_protection_setting),
+                launch
+            )
+        }
+        return builder.build()
+    }
+
+    /**
+     * TASK-640: a plain high-importance alert on the result channel (title,
+     * text, app-launch content intent). The quarantine notice and any future
+     * one-shot alerts compose here instead of hand-rolling builders outside
+     * the service layer.
+     */
+    fun alertNotification(title: String, text: String): Notification =
+        NotificationCompat.Builder(context, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(plainLaunchPendingIntent())
+            .setAutoCancel(true)
+            .build()
+
+    /** The plain app launch both error surfaces default to. */
+    private fun plainLaunchPendingIntent(): PendingIntent = PendingIntent.getActivity(
+        context, RC_ERROR_LAUNCH_DEFAULT,
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    /**
+     * TASK-625: the settings-row deep link. In-app handoff (the live activity
+     * receives the extra via onNewIntent), not a task clear.
+     */
+    fun settingsRowPendingIntent(row: SettingsFocusRow): PendingIntent = PendingIntent.getActivity(
+        context, RC_ERROR_LAUNCH_SETTINGS_ROW,
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, row.name),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     fun build(spec: ResultNotificationSpec, prefs: AppNotificationPreferences): Notification {
         val text = spec.transcriptionText
@@ -94,7 +173,7 @@ class ResultNotificationFactory(private val context: Context) {
             .addAction(
                 android.R.drawable.ic_menu_save,
                 context.getString(R.string.copy),
-                copyPendingIntent(text)
+                copyPendingIntent(text, spec)
             )
 
         // On-device finding (TASK-327 Task 8, Realme RMX3853 / Android 16): the shade
@@ -149,6 +228,11 @@ class ResultNotificationFactory(private val context: Context) {
         if (spec.streamedWithoutVad) {
             subTextParts.add(context.getString(R.string.transcription_streamed_without_vad))
         }
+        when {
+            spec.notRefined -> subTextParts.add(context.getString(R.string.transcription_not_refined))
+            spec.refinedFrom != null -> subTextParts.add(
+                context.getString(R.string.transcription_refined_from, spec.refinedFrom))
+        }
         if (subTextParts.isNotEmpty()) {
             builder.setSubText(subTextParts.joinToString(" · "))
         }
@@ -165,7 +249,7 @@ class ResultNotificationFactory(private val context: Context) {
         if (useQuickShareBack) {
             val shareBackIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, spec.transcriptionText)
+                putExtra(Intent.EXTRA_TEXT, TranscriptSignature.apply(spec.transcriptionText, spec.signatureText, spec.signaturePosition))
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 // Family normalization (forks, flavor builds) lives in the one
                 // known-app table in AppInfoUtils (TASK-433).
@@ -185,7 +269,7 @@ class ResultNotificationFactory(private val context: Context) {
         } else {
             val shareChooserIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, spec.transcriptionText)
+                putExtra(Intent.EXTRA_TEXT, TranscriptSignature.apply(spec.transcriptionText, spec.signatureText, spec.signaturePosition))
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             val sharePickerIntent = Intent.createChooser(
@@ -206,10 +290,12 @@ class ResultNotificationFactory(private val context: Context) {
         }
     }
 
-    private fun copyPendingIntent(text: String): PendingIntent {
+    private fun copyPendingIntent(text: String, spec: ResultNotificationSpec): PendingIntent {
+        val signed = TranscriptSignature.apply(
+            text, spec.signatureText, spec.signaturePosition)
         val copyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_COPY_TRANSCRIPTION
-            putExtra(NotificationActionReceiver.EXTRA_TRANSCRIPTION_TEXT, text)
+            putExtra(NotificationActionReceiver.EXTRA_TRANSCRIPTION_TEXT, signed)
         }
         return PendingIntent.getBroadcast(
             context,
@@ -233,6 +319,10 @@ class ResultNotificationFactory(private val context: Context) {
                 NotificationActionReceiver.ACTION_PAGE_NEXT
             }
             putExtra(NotificationActionReceiver.EXTRA_TRANSCRIPTION_TEXT, spec.transcriptionText)
+            // TASK-647: the rebuilt notification's copy/share actions must
+            // keep signing; the body stays raw.
+            putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_TEXT, spec.signatureText)
+            putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_POSITION, spec.signaturePosition)
             putExtra(NotificationActionReceiver.EXTRA_PAGE_INDEX, pageIndex)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, spec.notificationId)
             putExtra(NotificationActionReceiver.EXTRA_FIRST_POSTED_AT, spec.firstPostedAt)
@@ -270,6 +360,11 @@ class ResultNotificationFactory(private val context: Context) {
     }
 
     companion object {
+        // Mirror the services' launch-band constants so the same intent shape
+        // stays a single PendingIntent whichever builder produced it.
+        private const val RC_ERROR_LAUNCH_DEFAULT = 0
+        private const val RC_ERROR_LAUNCH_SETTINGS_ROW = 2
+
         /** Preview truncation for the non-pageable oversized path, unchanged from the previous implementations. */
         const val CHAR_PREVIEW_LIMIT = 100
 
@@ -283,6 +378,9 @@ class ResultNotificationFactory(private val context: Context) {
          * today, all below 3000:
          * - 1001: InferenceService.NOTIFICATION_ID (service foreground/progress)
          * - 1003: SubtitleChoiceTimeoutWorker.NOTIFICATION_ID (worker foreground)
+         * - 1005: CrashQuarantineCheck.NOTIFICATION_ID (TASK-640 quarantine notice)
+         * - 1006: TranscriptionOrchestrator.MEMORY_MARGIN_WARNING_ID (TASK-631
+         *   part-2 dismissable tight-margin warning, default path)
          * - 2001..2100: ExtractionService download-progress band (per-jobKey hash)
          * - 2201..2300: TaskerRequestReceiver fallback band (sequential slots)
          * - 2401..2500: ShareReceiverActivity choice + share-error band

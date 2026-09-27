@@ -23,6 +23,7 @@ abstract class TranscriptionOrchestratorTestBase {
     protected lateinit var backendManager: TranscriptionBackendManager
     protected lateinit var audioPreprocessor: AudioPreprocessor
     protected lateinit var listener: TranscriptionListener
+    protected lateinit var llmManager: com.antivocale.app.manager.LlmManager
     protected lateinit var orchestrator: TranscriptionOrchestrator
 
     /** Fake store backed by FakePreferencesManager so add()/byId() work in tests. */
@@ -30,6 +31,14 @@ abstract class TranscriptionOrchestratorTestBase {
         FakePreferencesManager(),
         dirExists = { true },
     )
+
+    /**
+     * TASK-675: a REAL demoter over its own fake preferences, so tests drive
+     * the actual threshold/persist logic and assert through the same API the
+     * app uses (a relaxed-mock Flow would explode on first()).
+     */
+    protected val silentModelDemoter: SilentModelDemoter =
+        SilentModelDemoter(FakePreferencesManager())
 
     /** Builds a minimal TRANSDUCER record with a nemo_transducer modelType. */
     protected fun externalRecord(id: String, dir: String): ExternalModelRecord = ExternalModelRecord(
@@ -70,17 +79,25 @@ abstract class TranscriptionOrchestratorTestBase {
         backendManager = mockk(relaxed = true)
         audioPreprocessor = mockk(relaxed = true)
         listener = mockk(relaxed = true)
+        llmManager = mockk(relaxed = true)
 
         orchestrator = TranscriptionOrchestrator(
             preferencesManager, logDao, transcriptionCalibrator, backendManager, audioPreprocessor,
             staticRegistry(),
+            // TASK-660 review F2: the heal's share-surface retirement hooks.
+            mockk(relaxed = true),
+            mockk(relaxed = true),
             fakeStore,
+            silentModelDemoter,
+            // TASK-679: the real recorder over the same mocks, so the
+            // breadcrumb tests drive the shipped capture path.
+            OomBreadcrumbRecorder(preferencesManager, backendManager, llmManager, staticRegistry()),
         )
 
-        // Default the OOM pre-flight to off in tests so it does not interfere with orchestrator
-        // behaviour assertions. (The memory check itself is fail-open on a mock Context anyway,
-        // but stubbing the preference keeps the intent explicit.)
-        every { preferencesManager.forceModelLoad } returns flowOf(false)
+        // Default the opt-in memory protection to off in tests so it does not interfere with
+        // orchestrator behaviour assertions. (The check itself is fail-open on a mock Context
+        // anyway, but stubbing the preference keeps the intent explicit.)
+        every { preferencesManager.memoryProtection } returns flowOf(false)
         // GH #45: the model-name write reads the LLM model path before deriving the
         // display name; a relaxed mock Flow explodes on first().
         every { preferencesManager.modelPath } returns flowOf("/models/gemma")

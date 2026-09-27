@@ -4,9 +4,16 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class ModelFamily { TRANSDUCER, WHISPER, CTC, SENSE_VOICE, CANARY }
+enum class ModelFamily { TRANSDUCER, WHISPER, CTC, SENSE_VOICE, CANARY, MOONSHINE, DOLPHIN }
 
 enum class ExternalModelSource { LOCAL, URL, CATALOG }
+
+/**
+ * Directory name under filesDir that holds imported external models. Single
+ * definition shared by the importer's root (AppModule) and the startup dir
+ * sweep (TASK-657, GH #117): both must resolve the same directory.
+ */
+const val EXTERNAL_MODELS_DIR_NAME = "models/external"
 
 /**
  * Internal helper: parse a JSONObject from a JSON object, returning emptyMap if absent or null.
@@ -46,6 +53,13 @@ data class ExternalModelRecord(
     val options: Map<String, String> = emptyMap(),
     /** TASK-368: streaming zipformer transducer (decoded via OnlineRecognizer). */
     val streaming: Boolean = false,
+    /**
+     * TASK-640: set when loading this record killed the process (native death
+     * during recognizer construction). Quarantined records are excluded from
+     * backend selection and from loadable resolution; deleting and re-importing
+     * the model is the re-enable path.
+     */
+    val quarantined: Boolean = false,
 ) {
     val backendId: String get() = BACKEND_ID_PREFIX + id
 
@@ -67,6 +81,7 @@ data class ExternalModelRecord(
         options.forEach { (k, v) -> optsJson.put(k, v) }
         put("options", optsJson)
         put("streaming", streaming)
+        put("quarantined", quarantined)
     }
 
     companion object {
@@ -96,6 +111,7 @@ data class ExternalModelRecord(
                 files = files, sizeBytes = o.getLong("sizeBytes"), importedAt = o.getLong("importedAt"),
                 options = o.optStringMap("options"),
                 streaming = o.optBoolean("streaming", false),
+                quarantined = o.optBoolean("quarantined", false),
             )
         } catch (e: Exception) {
             Log.w(TAG, "Malformed ExternalModelRecord; whole list will be rejected", e)

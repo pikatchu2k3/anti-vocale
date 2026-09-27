@@ -46,6 +46,7 @@ import com.antivocale.app.R
 import com.antivocale.app.ui.AppNavigation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.antivocale.app.data.ExternalCatalogRepository
 import com.antivocale.app.data.ModelDownloader
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalModelRecord
@@ -56,6 +57,7 @@ import com.antivocale.app.data.catalog.CatalogEntry
 import com.antivocale.app.data.catalog.CatalogStringKeys
 import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.service.InferenceService
+import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.CatalogVariantUi
 import com.antivocale.app.transcription.Language
 import androidx.compose.ui.graphics.Color
@@ -603,6 +605,21 @@ fun ModelTab(
             )
         }
 
+        // TASK-681: the LAN-offload configured-service card. Not a catalog
+        // entry and not downloadable: it exists only while the service is
+        // enabled in Settings, and the endpoint line is its "model".
+        val remoteOmnivoiceEndpoint by viewModel.remoteOmnivoiceEndpoint.collectAsState()
+        remoteOmnivoiceEndpoint?.let { endpoint ->
+            if (!showCuratedSection) {
+                RemoteOmnivoiceServiceCard(
+                    endpoint = endpoint,
+                    isActive = BuiltInBackendIds.isRemoteOmnivoice(activeBackendId),
+                    isTranscribing = isTranscribing,
+                    onUse = { guardedSwitch { viewModel.useRemoteOmnivoice() } },
+                )
+            }
+        }
+
         // Select Model Button - secondary option for local files.
         // SAF (OpenDocument) grants its own URI access, so no storage permission
         // Advanced section: manual model imports, collapsed by default to hide
@@ -615,7 +632,9 @@ fun ModelTab(
         // request is nulled by the FIRST consumer): a tab re-entry sees null
         // and cannot replay. Both levels act on the same request on purpose.
         LaunchedEffect(navRequest) {
-            if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
+            // TASK-617 F3: the stale debug gate is gone. No production writer
+            // hands ModelTab a NavRequest today, and the gate made the
+            // AppNavigation KDoc's release-posture contract false.
             val request = navRequest ?: return@LaunchedEffect
             if (request.destination is AppNavigation.Destination.ModelTarget) {
                 advancedExpanded = true
@@ -824,7 +843,7 @@ fun ModelTab(
 // ==================== Curated language section (GH #70) ====================
 
 /** Bundled community-index snapshot the curated profiles resolve against. */
-private const val CURATED_COMMUNITY_INDEX = "external-catalog/index.json"
+private val CURATED_COMMUNITY_INDEX = ExternalCatalogRepository.BUNDLED_INDEX
 
 /**
  * The "For your language" elevation (GH #70): the profile's ranked
@@ -858,6 +877,10 @@ private fun CuratedLanguageSection(
             ?.let { ExternalCatalog.parseIndex(it).associateBy { entry -> entry.name } }
             ?: emptyMap()
     }
+    // TASK-675: a model demoted for silent decodes is not a recommendation.
+    // Its card (with the honest line) stays reachable through "Browse all
+    // languages", and re-selecting it there clears the demotion.
+    val demotedBackendIds by viewModel.demotedBackendIds.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -882,6 +905,8 @@ private fun CuratedLanguageSection(
         profile.recommendations.forEach { recommendation ->
             when (recommendation) {
                 is CuratedProfiles.Recommendation.Bundled -> {
+                    // TASK-675: skip demoted entries (see demotedBackendIds above).
+                    if (recommendation.entryId in demotedBackendIds) return@forEach
                     val entry = BundledCatalog.byId(recommendation.entryId)
                     val variants = entry?.let {
                         CatalogVariantUi.forEntry(it.id).filter { variant ->
@@ -1042,6 +1067,76 @@ private fun CuratedCommunityCard(
 // ==================== Model Download Section ====================
 
 /**
+ * TASK-681: the LAN-offload service card (the user's own OmniVoice box).
+ * A configured service, not a downloadable model: the endpoint is the
+ * identity line and Use just selects the backend (no download states).
+ */
+@Composable
+private fun RemoteOmnivoiceServiceCard(
+    endpoint: String,
+    isActive: Boolean,
+    isTranscribing: Boolean,
+    onUse: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lan,
+                    contentDescription = null,
+                    tint = if (isActive) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.remote_omnivoice_name),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = endpoint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.remote_offload_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (isActive) {
+                Text(
+                    text = stringResource(R.string.active_badge),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                OutlinedButton(onClick = onUse, enabled = !isTranscribing) {
+                    Text(stringResource(R.string.use_model))
+                }
+            }
+        }
+    }
+}
+
+/**
  * Gemma LiteRT-LM download section using the shared [ModelVariantCard].
  */
 @Composable
@@ -1192,6 +1287,10 @@ private fun CatalogModelSection(
     val context = LocalContext.current
     val savedPath by viewModel.savedModelPath(entry.id).collectAsState()
     val isEntryActive = activeBackendId == entry.id
+    // TASK-675: demoted entries keep their card (the Use button is the
+    // give-it-another-chance path) but say why auto-selection skips them.
+    val demotedBackendIds by viewModel.demotedBackendIds.collectAsState()
+    val isEntryDemoted = entry.id in demotedBackendIds
     var showSpeedComparison by remember(entry.id) { mutableStateOf(false) }
 
     val entryTitleResId = (entry.display as? CatalogDisplay.Resource)?.key
@@ -1252,6 +1351,14 @@ private fun CatalogModelSection(
                         // GH #49: declare the audio-length capability BEFORE download
                         val entryLimit = remember(entry) { audioLimitForCatalogEntry(entry) }
                         AudioLimitLabel(entryLimit)
+                        // TASK-675: the honest one-line reason on a demoted card.
+                        if (isEntryDemoted) {
+                            Text(
+                                text = stringResource(R.string.model_demoted_notice),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
                 when {
@@ -1420,6 +1527,8 @@ private val FAMILY_OPTIONS = listOf(
     Triple(ModelFamily.CTC, R.string.external_family_ctc, R.string.external_family_ctc_help),
     Triple(ModelFamily.SENSE_VOICE, R.string.external_family_sense_voice, R.string.external_family_sense_voice_help),
     Triple(ModelFamily.CANARY, R.string.external_family_canary, R.string.external_family_canary_help),
+    Triple(ModelFamily.MOONSHINE, R.string.external_family_moonshine, R.string.external_family_moonshine_help),
+    Triple(ModelFamily.DOLPHIN, R.string.external_family_dolphin, R.string.external_family_dolphin_help),
 )
 
 /** One label lookup, loud on a missing row (a family without a label must
@@ -1599,6 +1708,8 @@ private fun ExternalModelsSection(
     onDeleteRequest: (ExternalModelRecord) -> Unit,
 ) {
     val records by viewModel.externalModels.collectAsState()
+    // TASK-675: the honest one-line reason travels to external cards too.
+    val demotedBackendIds by viewModel.demotedBackendIds.collectAsState()
     val importState by viewModel.externalImportState.collectAsState()
     var urlDialogOpen by remember { mutableStateOf(false) }
     // TASK-486: op=nav models:import opens the catalog dialog directly.
@@ -1606,7 +1717,6 @@ private fun ExternalModelsSection(
     // the section and must stay re-fire-free); consuming here means a later
     // manual collapse/re-expand of Advanced cannot resurrect the request.
     LaunchedEffect(navRequest) {
-        if (!com.antivocale.app.BuildConfig.DEBUG) return@LaunchedEffect
         val request = navRequest ?: return@LaunchedEffect
         onNavConsumed()
         if (request.destination is AppNavigation.Destination.ModelTarget) {
@@ -1715,9 +1825,13 @@ private fun ExternalModelsSection(
                     modifier = Modifier.padding(bottom = 8.dp)
                 ) {
                     OutlinedTextField(
-                        value = if (selection.ctcModelType == ModelFamilySupport.CTC_TYPE_ZIPFORMER)
-                            stringResource(R.string.external_ctc_subtype_zipformer)
-                        else stringResource(R.string.external_ctc_subtype_nemo),
+                        value = when (selection.ctcModelType) {
+                            ModelFamilySupport.CTC_TYPE_ZIPFORMER ->
+                                stringResource(R.string.external_ctc_subtype_zipformer)
+                            ModelFamilySupport.CTC_TYPE_OMNILINGUAL ->
+                                stringResource(R.string.external_ctc_subtype_omnilingual)
+                            else -> stringResource(R.string.external_ctc_subtype_nemo)
+                        },
                         onValueChange = {},
                         readOnly = true,
                         label = { Text(stringResource(R.string.external_ctc_subtype)) },
@@ -1736,6 +1850,13 @@ private fun ExternalModelsSection(
                             text = { Text(stringResource(R.string.external_ctc_subtype_zipformer)) },
                             onClick = {
                                 onSelectionChange(selection.copy(ctcModelType = ModelFamilySupport.CTC_TYPE_ZIPFORMER))
+                                ctcExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.external_ctc_subtype_omnilingual)) },
+                            onClick = {
+                                onSelectionChange(selection.copy(ctcModelType = ModelFamilySupport.CTC_TYPE_OMNILINGUAL))
                                 ctcExpanded = false
                             }
                         )
@@ -1800,6 +1921,7 @@ private fun ExternalModelsSection(
             ExternalModelCard(
                 record = record,
                 isActive = activeBackendId == record.backendId,
+                demoted = record.backendId in demotedBackendIds,
                 onUse = { viewModel.useExternalModel(record) },
                 onDelete = { onDeleteRequest(record) },
             )
@@ -2058,6 +2180,8 @@ private fun CatalogPickRow(
 private fun ExternalModelCard(
     record: com.antivocale.app.data.ExternalModelRecord,
     isActive: Boolean,
+    /** TASK-675: renders the honest silent-decode reason; Use stays available. */
+    demoted: Boolean = false,
     onUse: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -2107,6 +2231,15 @@ private fun ExternalModelCard(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
+            }
+
+            // TASK-675: the honest one-line reason on a demoted card.
+            if (demoted) {
+                Text(
+                    text = stringResource(R.string.model_demoted_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             // Action buttons: same arrangement as ModelVariantCard

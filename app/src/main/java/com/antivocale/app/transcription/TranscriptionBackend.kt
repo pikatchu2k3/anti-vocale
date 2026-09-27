@@ -51,6 +51,31 @@ interface TranscriptionBackend {
         get() = false
 
     /**
+     * TASK-681: whole-file transcription from the ORIGINAL container, no
+     * phone-side decode. Backends that upload or hash the file as-is (the
+     * LAN-offload OmniVoice backend) override this; every decode-based
+     * backend keeps the samples contract of [transcribeAudio] and inherits
+     * the failing default (routing a file through a decode backend would
+     * silently skip the orchestrator's chunking seams).
+     *
+     * @param path Local audio file path in any container the app accepts
+     * @param language ISO-639-1 hint or blank for model-side detection
+     */
+    suspend fun transcribeFile(path: String, language: String): Result<TranscriptionResult> =
+        Result.failure(UnsupportedOperationException(
+            "$id does not transcribe whole files; use transcribeAudio"))
+
+    /**
+     * TASK-681: true for backends that consume the ORIGINAL audio container
+     * through [transcribeFile] and must never enter the decode/chunk
+     * pipeline. The orchestrator's whole-file arm gates on this capability,
+     * not on a backend id, so a second whole-file backend reuses that arm
+     * unchanged.
+     */
+    val transcribesWholeContainer: Boolean
+        get() = false
+
+    /**
      * Initializes the backend with the given configuration.
      */
     suspend fun initialize(context: Context, config: BackendConfig): Result<Unit>
@@ -113,9 +138,29 @@ interface TranscriptionBackend {
     fun setOnAutoUnloadCallback(callback: (() -> Unit)?) {}
 
     /**
+     * TASK-644: true while a native call is executing on this backend.
+     * Callers that would tear the engine down (the benchmark's warm-engine
+     * displacement, its post-run unload) must refuse or defer while busy:
+     * releasing a native recognizer mid-decode is a use-after-free crash.
+     * Default false for backends without a native in-flight bracket.
+     */
+    fun isBusy(): Boolean = false
+
+    /**
      * Returns the path to the model file.
      */
     fun getModelPath(): String?
+
+    /**
+     * TASK-546 AC3: the language this backend was last CONFIGURED with, in the
+     * backend's normalized vocabulary (blank preference resolved to "auto").
+     * Third component of the load-path residency identity (backend id + model
+     * path + language): a warm engine decodes under this value, so callers
+     * comparing a desired language against a resident backend compare against
+     * it. Null (the default) means no language identity claim: treat a null
+     * as warm-eligible, the [getModelPath] convention.
+     */
+    fun getConfiguredLanguage(): String? = null
 }
 
 /**
@@ -141,16 +186,21 @@ sealed class BackendConfig {
         val provider: String = "cpu"
     ) : BackendConfig()
 
-    data class GgufConfig(
-        val modelPath: String,
-        val contextSize: Int = 2048,
-        val threadCount: Int = 4
-    ) : BackendConfig()
-
     data class ExternalConfig(
         val record: ExternalModelRecord,
         val numThreads: Int,
         val provider: String,
+    ) : BackendConfig()
+
+    /**
+     * TASK-681: configuration for the LAN-offload backend (the user's own
+     * OmniVoice server). Not a model on disk: the "path identity" of this
+     * backend is the endpoint URL (see RemoteOmnivoiceBackend.getModelPath).
+     */
+    data class RemoteConfig(
+        val baseUrl: String,
+        val apiKey: String,
+        val model: String,
     ) : BackendConfig()
 }
 
@@ -165,8 +215,23 @@ sealed class BackendConfig {
 sealed class TranscriptionException(message: String, cause: Throwable? = null) :
     Exception(message, cause) {
     /** The model file is missing, corrupt, truncated, or the wrong format for this backend. */
-    class ModelLoadError(detail: String, cause: Throwable? = null) :
+    open class ModelLoadError(detail: String, cause: Throwable? = null) :
         TranscriptionException("Model load failed: $detail", cause)
+
+    /**
+     * TASK-660: the pre-load integrity gate rejected the model files before any
+     * recognizer construction (structural header/magic and size floors via the
+     * shared import-time validator, pinned SHA-256 where the catalog carries
+     * pins). A distinct TYPE, not message text: the orchestrator deletes the
+     * corrupt model directory and routes the History row to the re-download
+     * message ONLY on this verdict, while a generic [ModelLoadError] (OOM,
+     * NNAPI, metadata) must delete nothing. The rejected bytes would otherwise
+     * reach OfflineRecognizer.newFromFile, whose native Ort::Exception escapes
+     * the JNI boundary and aborts the process (uncatchable from Kotlin;
+     * upstream k2-fsa/sherpa-onnx#3987), so this validation is the only
+     * barrier.
+     */
+    class CorruptModelFiles(detail: String) : ModelLoadError(detail)
 
     /** The model loaded but a native/decoding error occurred during transcription. */
     class NativeError(detail: String, cause: Throwable? = null) :
@@ -176,18 +241,75 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
     class NotInitialized :
         TranscriptionException("Backend not initialized (no model loaded)")
 
-    /** Audio could be decoded but produced no transcription text. */
-    class NoTranscriptionProduced :
+    /**
+     * Audio could be decoded but produced no transcription text.
+     * TASK-622: [blankChunks] counts chunks that decoded successfully but
+     * blank (1 on the whole-file path); it rides the exception to the ERROR
+     * row's FailureContext without changing the user-facing message.
+     */
+    class NoTranscriptionProduced(val blankChunks: Int? = null) :
         TranscriptionException("No transcription produced")
 
     /** The device had too little free memory to load the model (pre-flight block). */
     class InsufficientMemory(detail: String) :
         TranscriptionException("Insufficient memory: $detail")
 
+    /**
+     * TASK-607 F5: a generation timed out under its ceiling WITHOUT the
+     * engine being wedged (the healthy-but-slow case). Lives in the project's
+     * sealed seam so the pairing with the summarize/chunk ladders is
+     * compiler-checked; nothing matches the raw JDK TimeoutException anymore
+     * (grep-verified at conversion time).
+     */
+    class GenerationTimeout(detail: String) : TranscriptionException(detail)
+
     /** The persisted external model record is gone or its files vanished (TASK-342). */
     class ExternalModelUnavailable(backendId: String) :
         TranscriptionException("External model no longer available: $backendId")
+
+    /**
+     * TASK-681: the LAN-offload wall-clock budget tripped before the
+     * OmniVoice server returned (a 2h file can legitimately queue for
+     * minutes; an honest timeout beats an indefinite notification). The
+     * HTTP call itself is cancelled when this is thrown.
+     */
+    class RemoteTimeoutException(detail: String) : TranscriptionException(detail)
+
+    /**
+     * TASK-681: the OmniVoice server could not be contacted at all (box
+     * off, wrong address, no route on the LAN). Distinct from a server-side
+     * rejection so the user-facing advice can say "check the address and
+     * that the server is running", not "the server said no".
+     */
+    class RemoteUnreachableException(detail: String, cause: Throwable? = null) :
+        TranscriptionException(detail, cause)
+
+    /**
+     * TASK-681: the OmniVoice server answered with an HTTP error. The
+     * FastAPI detail (including typed queue/deadline information) rides
+     * [serverDetail] for logcat; the user-facing message keeps the locale
+     * neutral status code.
+     */
+    class RemoteServerError(val statusCode: Int, val serverDetail: String) :
+        TranscriptionException("Remote server error HTTP $statusCode: $serverDetail")
 }
+
+/**
+ * TASK-625: whether this failure belongs to the memory class (the pre-flight
+ * refusals plus the OOM catch). The error notification offers the
+ * jump-to-Memory-protection action for exactly these; detection is typed, never the
+ * localized message text.
+ */
+fun isMemoryClassFailure(error: Throwable): Boolean =
+    error is TranscriptionException.InsufficientMemory || error is OutOfMemoryError
+
+/**
+ * TASK-631: the load pre-flight refusal. Protection is OPT-IN (off by default:
+ * the app never refuses a model on its own), and an unreadable memory value
+ * (0) fails open rather than blocking on an unknown figure.
+ */
+fun shouldRefuseForMemory(protectionOn: Boolean, availBytes: Long, requiredBytes: Long): Boolean =
+    protectionOn && availBytes > 0L && availBytes < requiredBytes
 
 /**
  * Result from audio transcription containing the text and optional metadata.
@@ -230,9 +352,24 @@ data class TranscriptionResult(
      *  chunk cap, RAM at request time); persisted as the row's processing
      *  context and surfaced in the entry details and report email. */
     val processing: ProcessingContext? = null,
+    /** GH #43: the fast streaming first pass this result refined (null on
+     *  single-model runs). Rides the result to logSuccess, which persists
+     *  the text as the row's first-pass block. */
+    val firstPass: FirstPassOutcome? = null,
 ) {
     companion object {
         private val WHITESPACE = Regex("\\s+")
+
+        /**
+         * TASK-615: the recognizer's raw `lang` normalized to a bare code.
+         * SenseVoice reports the decode token verbatim ("<|en|>"), Whisper a
+         * plain "en"; the chip, the pin flow and the persisted row must all
+         * see the bare code. Unrecognized shapes (blank, stray pipes) mean
+         * no usable detection: null.
+         */
+        fun normalizedDetectedLanguage(raw: String?): String? =
+            raw?.trim()?.removeSurrounding("<|", "|>")?.trim()
+                ?.takeIf { it.isNotEmpty() && '|' !in it }
 
         fun computeConfidence(text: String, sampleCount: Int, sampleRate: Int): Float? {
             val audioDurationSeconds = sampleCount.toFloat() / sampleRate
@@ -248,3 +385,26 @@ data class TranscriptionResult(
         }
     }
 }
+
+/** GH #43: what the fast first pass produced before refinement replaced it. */
+data class FirstPassOutcome(
+    /** The complete first-pass transcript (never blank when present). */
+    val text: String,
+    /** The fast backend's own processing context (nested on the row's). */
+    val processing: ProcessingContext,
+    /** The fast pass's own confidence/language/cues, so an F4/F5 delivery
+     *  (review F5) loses nothing a single-model run would keep. */
+    val confidence: Float? = null,
+    val detectedLanguage: String? = null,
+    val segments: List<TimedSegment> = emptyList(),
+    /** Chunk-completeness of the first pass, so an F4/F5 delivery reports
+     *  partial results as partial (guard-review finding). */
+    val isPartial: Boolean = false,
+    val failedChunkCount: Int = 0,
+    /** Stable token when refinement did NOT complete (F4/F5): the delivered
+     *  text IS the first pass and the row carries a not-refined caption. */
+    val refinementFailedToken: String? = null,
+    /** TASK-582: the detector's measured values when the token is a loop
+     *  skip ("compression=2.61 ngram=0.42"), for field threshold tuning. */
+    val refinementLoopMetrics: String? = null,
+)

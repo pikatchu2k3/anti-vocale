@@ -1,13 +1,20 @@
 package com.antivocale.app.transcription
 
+import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import com.antivocale.app.R
+import com.antivocale.app.manager.EngineWedgeTimeoutException
 import com.antivocale.app.util.DecodedOfTotalFormat
+import com.antivocale.app.util.SubtitleParser
 import com.antivocale.app.audio.AudioDurationPolicy
 import com.antivocale.app.audio.AudioPreprocessor
+import com.antivocale.app.service.ResultNotificationFactory
 import com.antivocale.app.audio.AudioPreprocessor.PreprocessingError
 import com.antivocale.app.audio.AudioPreprocessor.StreamEvent
+import com.antivocale.app.transcription.diarization.DiarizationModels
+import com.antivocale.app.transcription.diarization.SpeakerDiarizer
+import com.antivocale.app.transcription.diarization.SpeakerLabeler
 import com.antivocale.app.audio.MemoryReadings
 import com.antivocale.app.audio.PreprocessingErrorMessages
 import com.antivocale.app.data.ExternalModelRecord
@@ -16,6 +23,7 @@ import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.data.catalog.CatalogDisplay
+import com.antivocale.app.data.catalog.CatalogEntry
 import com.antivocale.app.data.catalog.CatalogStringKeys
 import com.antivocale.app.data.local.FailureContext
 import com.antivocale.app.data.local.FailureContextJson
@@ -52,10 +60,24 @@ class TranscriptionOrchestrator @Inject constructor(
     private val backendManager: TranscriptionBackendManager,
     private val audioPreprocessor: AudioPreprocessor,
     private val backendRegistry: BackendRegistry,
+    // TASK-660 review F2: the corruption heal must retire the entry's share
+    // surfaces exactly like the Models-tab delete does.
+    private val shareTargetManager: com.antivocale.app.data.ShareTargetManager,
+    private val shareShortcutManager: com.antivocale.app.data.ShareShortcutManager,
     private val externalModelStore: ExternalModelStore,
+    // TASK-675: the silent-model demotion hook (two-signal discipline).
+    private val silentModelDemoter: SilentModelDemoter,
+    // TASK-679: the post-OOM breadcrumb (residents + the tipping request).
+    private val oomBreadcrumbRecorder: OomBreadcrumbRecorder,
 ) {
     companion object {
         private const val TAG = "TranscriptionOrchestrator"
+        /**
+         * TASK-631 part 2: fixed id (reserved-range table, below the result
+         * allocator's 3000 base) for the default path's dismissable
+         * tight-margin warning.
+         */
+        internal const val MEMORY_MARGIN_WARNING_ID = 1006
         // TASK-406: each in-flight chunk carries its own attention activations, so peak
         // memory multiplies by the permit count. Measured (desktop, 6-min file, 60s
         // chunks): 2 permits cut wall-clock ~14% (28.6s vs 33.1s) for +23% peak
@@ -65,13 +87,16 @@ class TranscriptionOrchestrator @Inject constructor(
         private const val PARTIAL_SAVE_INTERVAL_MS = 5000L
         /** TASK-520: map -> reduce recursion budget; partials shrink hard per level. */
         private const val MAX_SUMMARY_LEVELS = 3
+
+        /** TASK-659: below this a re-split piece drops instead of halving
+         *  again (the bounded-halving floor; ~2k chars keeps every piece a
+         *  plausible summary input while capping depth at ~3 levels). */
+        private const val RE_SPLIT_FLOOR_CHARS = 2000
         private const val MB = 1024L * 1024L
         // Headroom over the on-disk model size: absorbs sherpa inference buffers and reclaimable-cache
         // noise in availMem. Tunable; see TASK-314 spec. ~300MB derived from the SmoothQuant incident.
         private const val MEMORY_HEADROOM_BYTES = 300L * MB
 
-        /** Backend id of the disabled GGUF backend; deliberately unregistered in [BackendRegistry]. */
-        private const val GGUF_BACKEND_ID = "gemma4_gguf"
 
         internal fun isNoModelConfiguredError(error: Throwable): Boolean {
             return error is TranscriptionException.NotInitialized ||
@@ -85,15 +110,20 @@ class TranscriptionOrchestrator @Inject constructor(
          */
         internal fun userFacingErrorMessage(context: Context, error: Throwable): String {
             return when (error) {
+                is WedgeAbortException ->
+                    // TASK-606 F8: the abort's own message is English diagnostics;
+                    // the notification and the Tasker reply carry the localized
+                    // generic failure (the technical detail stays in logcat).
+                    context.getString(R.string.transcription_failed)
+                is TranscriptionException.CorruptModelFiles ->
+                    // TASK-660: the typed corruption verdict carries the
+                    // actionable "removed, re-download" instruction; it
+                    // replaces a message-prefix match that could never fire
+                    // (ModelLoadError prepends "Model load failed: " to every
+                    // detail).
+                    context.getString(R.string.error_model_corrupt_healed)
                 is TranscriptionException.ModelLoadError ->
-                    // The heal path (TASK-479) carries the actionable
-                    // "corrupt files removed, re-download" instruction;
-                    // every other load error keeps the generic string.
-                    if (error.message?.startsWith("corrupt model files") == true) {
-                        context.getString(R.string.error_model_corrupt_healed)
-                    } else {
-                        context.getString(R.string.error_model_load)
-                    }
+                    context.getString(R.string.error_model_load)
                 is TranscriptionException.InsufficientMemory ->
                     // The exception already carries the localized low-memory message with the
                     // measured numbers; surface it directly instead of the generic model-load string.
@@ -108,6 +138,17 @@ class TranscriptionOrchestrator @Inject constructor(
                     context.getString(R.string.error_model_unavailable)
                 is TranscriptionException.NoTranscriptionProduced ->
                     context.getString(R.string.transcription_failed)
+                // TASK-681: the LAN-offload failure classes; each carries its
+                // own advice (budget tripped, box unreachable, server said no)
+                // instead of the generic failure string.
+                is TranscriptionException.RemoteTimeoutException ->
+                    context.getString(
+                        R.string.error_remote_timeout,
+                        (RemoteOmnivoiceBackend.WALL_CLOCK_BUDGET_MS / 60000L).toInt())
+                is TranscriptionException.RemoteUnreachableException ->
+                    context.getString(R.string.error_remote_unreachable)
+                is TranscriptionException.RemoteServerError ->
+                    context.getString(R.string.error_remote_server, error.statusCode)
                 // TASK-432: the pre-read duration refusal and every other
                 // preprocessing failure reach users through the notification and
                 // the Tasker reply; this branch routes them to localized advice.
@@ -159,6 +200,13 @@ class TranscriptionOrchestrator @Inject constructor(
         source: String?,
         sourcePackage: String?,
         backendOverride: String? = null,
+        /**
+         * TASK-546 AC3: request-scoped language override (the chip's re-run
+         * arm). Speaks the preference vocabulary ("auto" or a concrete code),
+         * replaces the persisted preference for THIS request only, and never
+         * writes it. Null (every other caller) keeps reading the preference.
+         */
+        languageOverride: String? = null,
         trackIndex: Int = -1,
         queuePosition: Int,
         queueTotal: Int,
@@ -175,6 +223,23 @@ class TranscriptionOrchestrator @Inject constructor(
         val startTime = System.currentTimeMillis()
 
         try {
+            // TASK-677 (GH #92 import half): a handed subtitle FILE imports as
+            // the transcript: the lenient parser turns cues into TimedSegments,
+            // no model loads, and the row is honestly labeled subtitle-sourced.
+            // A file that yields no cues is a hard error; the ASR fallback
+            // below cannot help a text file.
+            if (requestType == "subtitle_import") {
+                return processSubtitleImportRequest(
+                    taskId = taskId,
+                    filePath = filePath,
+                    sourcePackage = sourcePackage,
+                    isShareRequest = isShareRequest,
+                    startTime = startTime,
+                    context = context,
+                    listener = listener,
+                )
+            }
+
             // Subtitle mode: extract embedded text subtitles WITHOUT loading any model. On
             // extraction failure (null/blank), fall back to the normal audio/ASR path below
             // rather than reporting an error. This branch must run BEFORE ensureBackendLoaded
@@ -203,17 +268,80 @@ class TranscriptionOrchestrator @Inject constructor(
                 if (subtitleResult != null) return subtitleResult
             }
 
+            // GH #43 (design D6): the two-pass first pass. Runs the fast
+            // streaming backend as phase 1 for instant visible text; phase 2
+            // below (the unmodified single-model path) refines it. Phase 1
+            // never touches the result funnel: no logSuccess, no onSuccess,
+            // no Tasker reply. Its text rides the row as interim, exactly
+            // like today's streaming partials.
+            // F0 guard: any unexpected exception in the phase-1 machinery
+            // (eligibility, load, streaming pass) degrades to the normal
+            // single-model run; phase 1 may never break a request.
+            // F1/F3 tokens land here when phase 1 attempted but degraded.
+            var dualSkipToken: String? = null
+            var dualSkipLoopMetrics: String? = null
+            val fastFirstPass = runCatching {
+                runRefinementFirstPass(
+                    taskId = taskId, requestType = requestType, backendOverride = backendOverride,
+                    languageOverride = languageOverride,
+                    filePath = filePath, prompt = prompt, queuePosition = queuePosition,
+                    queueTotal = queueTotal, context = context, cacheDir = cacheDir,
+                    listener = listener, coroutineScope = coroutineScope,
+                    onSkipped = { token, loopMetrics ->
+                        dualSkipToken = token
+                        dualSkipLoopMetrics = loopMetrics
+                    },
+                )
+            }.onFailure {
+                // Cancellation must propagate (the house contract): a
+                // cancelled job may not keep loading models.
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                Log.w(TAG, "First pass machinery failed; single-model run", it)
+            }.getOrNull()
+            if (fastFirstPass != null) {
+                // Phase transition: the row keeps the first-pass text; the
+                // notification says what is happening now (the design's
+                // "Refining with <model>..." line).
+                runCatching {
+                    val accurateId = backendOverride ?: preferencesManager.transcriptionBackend.first()
+                    val name = displayNameForBackend(context, accurateId)
+                    listener.onStatusUpdate(context.getString(R.string.refining_status, name))
+                }
+            }
+
             // Ensure the correct backend is loaded
-            val loadResult = ensureBackendLoaded(context, backendOverride)
-            if (loadResult.isFailure) {
+            val loadResult = ensureBackendLoaded(context, backendOverride, languageOverride)
+            // TASK-546 AC3 review F2: snapshot the pin at LOAD time, when the
+            // engine's language is decided. Reading the preference at success
+            // time (a minute later on a long run) would pin the row with a
+            // Settings change made mid-run that the decode never used (the
+            // TASK-545 misattribution class).
+            val runLanguagePin = resolvedLanguagePin(context, languageOverride)
+            // Design F4: the accurate model failed to load but a complete
+            // first pass exists. recoverFirstPass below routes it through the
+            // SAME funnel as F5 (punctuation and summary included), so both
+            // degradation arms deliver identically.
+            val f4LoadFailure = if (loadResult.isFailure && fastFirstPass != null)
+                loadResult.exceptionOrNull() else null
+            if (loadResult.isFailure && f4LoadFailure == null) {
                 val error = loadResult.exceptionOrNull()!!
                 val userMsg = userFacingErrorMessage(context, error)
                 val logMsg = "Failed to load backend: ${error.message}"
                 val duration = System.currentTimeMillis() - startTime
                 val isNoModel = isNoModelConfiguredError(error)
                 persistFailureContext(taskId, error, context)
+                // TASK-679: a memory-class load refusal (the opt-in pre-flight)
+                // leaves the breadcrumb naming who was resident and which load
+                // was refused; harmless no-op for every other load error.
+                if (isMemoryClassFailure(error)) {
+                    recordMemoryBreadcrumb(
+                        context, error, filePath,
+                        requestBackendId = backendOverride
+                            ?: preferencesManager.transcriptionBackend.first())
+                }
                 logError(taskId, logMsg, duration)
-                listener.onError(taskId, "BACKEND_LOAD_FAILED", userMsg, isShareRequest, isNoModel, duration)
+                listener.onError(taskId, "BACKEND_LOAD_FAILED", userMsg, isShareRequest, isNoModel, duration,
+                    isMemoryFailure = isMemoryClassFailure(error))
                 return Result.failure(error)
             }
 
@@ -233,18 +361,56 @@ class TranscriptionOrchestrator @Inject constructor(
                 logDao.setModelName(taskId, name)
             }
 
+            // GH #83: collect the preprocessed chunks once for the optional
+            // speaker-labeling pass (references only; the concatenated copy
+            // is built lazily inside the pass, after ASR releases its own
+            // working set). The fast first pass passes no collector.
+            var diarizationChunks: List<FloatArray>? = null
+            var diarizationSampleRate = 16000
+            val collectSpeakers = runCatching {
+                preferencesManager.speakerLabelsEnabled.first()
+            }.getOrDefault(false)
+
             val result = when (requestType) {
-                "audio" -> processAudioRequest(
-                    taskId = taskId,
-                    filePath = filePath,
-                    prompt = prompt,
-                    queuePosition = queuePosition,
-                    queueTotal = queueTotal,
-                    context = context,
-                    cacheDir = cacheDir,
-                    listener = listener,
-                    coroutineScope = coroutineScope
-                )
+                "audio" -> if (f4LoadFailure != null) {
+                    recoverFirstPass(fastFirstPass!!, f4LoadFailure,
+                        DualRefinementPolicy.SKIP_REFINE_LOAD_FAILED)
+                } else {
+                    val phase2 = processAudioRequest(
+                        taskId = taskId,
+                        filePath = filePath,
+                        prompt = prompt,
+                        queuePosition = queuePosition,
+                        queueTotal = queueTotal,
+                        context = context,
+                        cacheDir = cacheDir,
+                        listener = listener,
+                        coroutineScope = coroutineScope,
+                        // The first-pass text stays on the row; phase 2's
+                        // growing partials must not overwrite it (design D6).
+                        emitInterim = fastFirstPass == null,
+                        // TASK-681: the override must reach the LAN-offload
+                        // arm too (its language is a request field).
+                        languageOverride = languageOverride,
+                        collectSamples = if (collectSpeakers) {
+                            { chunks, rate ->
+                                diarizationChunks = chunks
+                                diarizationSampleRate = rate
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                    if (fastFirstPass == null) phase2
+                    else phase2.fold(
+                        onSuccess = { refined -> refinementFoldSuccess(fastFirstPass, refined) },
+                        onFailure = { failure ->
+                            // Design F5: deliver through the same funnel.
+                            recoverFirstPass(fastFirstPass, failure,
+                                DualRefinementPolicy.SKIP_REFINE_INFERENCE_FAILED)
+                        }
+                    )
+                }
                 else -> processTextRequest(prompt)
             }
 
@@ -258,20 +424,75 @@ class TranscriptionOrchestrator @Inject constructor(
             // TASK-121.4: the summary pass chains AFTER it and only attaches
             // metadata; the delivered text is whatever the punctuation pass
             // left (or the raw transcript when it skipped).
+            // TASK-672: the repetition-loop collapse sits between the two, so
+            // the summary judges the collapsed text, not the loop.
             val delivered: Result<TranscriptionResult> =
                 if (requestType == "audio" && result.isSuccess) {
                     // Captured once here (not re-read inside the pass): the
                     // backend that produced this result. The queue is serial,
                     // so nothing else has swapped it since the ASR finished.
-                    val asrBackendId = backendManager.getActiveBackend()?.id
+                    // Guard-review finding (pre-existing on the F5 arm): when
+                    // the delivered text came from the FAST first pass, the
+                    // producer is the fast model, not the still-active
+                    // accurate one; with the LLM selected the polish would
+                    // otherwise be skipped on non-LLM text.
+                    val deliveredFromFirstPass =
+                        result.getOrNull()?.firstPass?.refinementFailedToken != null
+                    val asrBackendId = when {
+                        deliveredFromFirstPass ->
+                            result.getOrNull()?.firstPass?.processing?.backendId
+                                ?: backendManager.getActiveBackend()?.id
+                        else -> backendManager.getActiveBackend()?.id
+                    }
                     if (asrBackendId == null) result
                     else result
+                        .map { applyRepetitionCollapse(it) }
                         .map { applyPunctuationPass(context, asrBackendId, it, listener) }
                         .map { applySummaryPass(context, it, listener) }
                 } else result
 
-            delivered.fold(
+            // GH #83: the optional speaker-labeling pass. Runs on the same
+            // timeline the cues were assembled on (the concatenated
+            // preprocessed chunks), labels each cue by speech-time voting,
+            // and can only ADD metadata: any failure logs and delivers the
+            // unlabeled result, never breaking the run.
+            // TASK-600 F13: an honest skip reason. The log names the decode
+            // path ONLY when a decode actually delivered and the pass had
+            // something to skip; a failed run (memory refusal, decode error,
+            // pipeline exception) never decoded, so nothing was skipped and
+            // the old blanket line misattributed those failures to the path.
+            if (collectSpeakers && diarizationChunks == null && requestType == "audio" &&
+                delivered.isSuccess && delivered.getOrNull()?.text?.isNotBlank() == true
+            ) {
+                Log.i(TAG, "Speaker labels skipped: the decode path delivered no sample timeline (streaming, VAD-segmented or TASK-681 remote-offloaded)")
+            }
+            val speakerLabeled: Result<TranscriptionResult> =
+                if (delivered.isSuccess && diarizationChunks != null) {
+                    applySpeakerLabels(
+                        context, delivered, diarizationChunks!!, diarizationSampleRate, listener)
+                    // The concatenated copy must not outlive the pass.
+                        .also { diarizationChunks = null }
+                } else {
+                    delivered
+                }
+
+            speakerLabeled.fold(
                 onSuccess = { transcriptionResult ->
+                    // F8 (review): the delivered text is the FAST model's when
+                    // refinement failed; credit it, not the accurate one.
+                    if (transcriptionResult.firstPass?.refinementFailedToken != null) {
+                        // F8 credit by DISPLAY name: the Logs model column
+                        // renders verbatim, so a raw backend id must never
+                        // reach it (loop arm newly routes completed phase-2
+                        // runs through here too).
+                        fastFirstPass?.processing?.backendId?.let { fastId ->
+                            // The suspend derivation stays OUTSIDE the catch so
+                            // a cancellation unwinds here, not at the next
+                            // suspension point (review F8).
+                            val name = displayNameForBackend(context, fastId)
+                            runCatching { logDao.setModelName(taskId, name) }
+                        }
+                    }
                     logSuccess(
                         taskId,
                         transcriptionResult.text,
@@ -282,9 +503,23 @@ class TranscriptionOrchestrator @Inject constructor(
                         summary = transcriptionResult.summary,
                         summarySkipReason = transcriptionResult.summarySkipReason,
                         segments = transcriptionResult.segments,
-                        processing = transcriptionResult.processing,
+                        processing = transcriptionResult.processing?.withRefinement(
+                            refinedFrom = fastFirstPass?.processing?.takeIf {
+                                transcriptionResult.firstPass?.refinementFailedToken == null
+                            },
+                            skipReason = transcriptionResult.firstPass?.refinementFailedToken
+                                ?: dualSkipToken,
+                            loopMetrics = transcriptionResult.firstPass?.refinementLoopMetrics
+                                ?: dualSkipLoopMetrics,
+                        ),
                         detectedLanguage = transcriptionResult.detectedLanguage,
-                        languagePin = resolvedLanguagePin(context)
+                        languagePin = runLanguagePin,
+                        firstPassTranscript = when {
+                            // F4/F5 delivered the first pass AS the final text:
+                            // no duplicate block; the caption carries the story.
+                            transcriptionResult.firstPass?.refinementFailedToken != null -> null
+                            else -> transcriptionResult.firstPass?.text
+                        }
                     )
                     listener.onSuccess(taskId, transcriptionResult.text, isShareRequest, sourcePackage, duration,
                         confidence = transcriptionResult.confidence,
@@ -292,7 +527,19 @@ class TranscriptionOrchestrator @Inject constructor(
                         isPartial = transcriptionResult.isPartial,
                         failedChunkCount = transcriptionResult.failedChunkCount,
                         streamedWithoutVad = transcriptionResult.streamedWithoutVad,
-                        segments = transcriptionResult.segments
+                        segments = transcriptionResult.segments,
+                        // GH #43: which fast model the text refined from, or
+                        // the not-refined sentinel (F4/F5 delivery).
+                        refinementOutcome = when {
+                            transcriptionResult.firstPass?.refinementFailedToken != null ->
+                                DualRefinementPolicy.NOT_REFINED
+                            // TASK-601: the contract is the fast model's DISPLAY
+                            // name (formatted into the localized "Refined from
+                            // %1$s"); the raw catalog id was reaching every
+                            // locale's notification.
+                            else -> fastFirstPass?.processing?.backendId
+                                ?.let { displayNameForBackend(context, it) }
+                        }
                     )
                 },
                 onFailure = { error ->
@@ -308,6 +555,14 @@ class TranscriptionOrchestrator @Inject constructor(
                     if (error !is PipelineFailure) {
                         persistFailureContext(taskId, error, context)
                     }
+                    // TASK-679: the decode-side memory refusal rides the result
+                    // (not a throw); it reaches this fold as InsufficientMemory.
+                    if (isMemoryClassFailure(error)) {
+                        recordMemoryBreadcrumb(
+                            context, error, filePath,
+                            requestBackendId = backendOverride
+                                ?: backendManager.activeBackendId.value)
+                    }
                     logError(taskId, logMsg)
                     var userMsg = userFacingErrorMessage(context, error)
                     if (error is PipelineFailure) {
@@ -315,7 +570,8 @@ class TranscriptionOrchestrator @Inject constructor(
                             ?.let { userMsg += " $it" }
                     }
                     val isNoModel = isNoModelConfiguredError(error)
-                    listener.onError(taskId, "INFERENCE_ERROR", userMsg, isShareRequest, isNoModel, duration)
+                    listener.onError(taskId, "INFERENCE_ERROR", userMsg, isShareRequest, isNoModel, duration,
+                        isMemoryFailure = isMemoryClassFailure(error))
                 }
             )
 
@@ -332,19 +588,43 @@ class TranscriptionOrchestrator @Inject constructor(
             // reuse the existing logError/listener paths, map to the dedicated
             // string, and bail.
             Log.e(TAG, "Out of memory during transcription", e)
+            // TASK-679: the breadcrumb FIRST (a synchronous write; every later
+            // line in this handler could itself die on the exhausted heap and
+            // the process may not survive the request at all).
+            recordMemoryBreadcrumb(
+                context, e, filePath,
+                requestBackendId = backendOverride ?: backendManager.activeBackendId.value)
             val duration = System.currentTimeMillis() - startTime
             persistFailureContext(taskId, e, context)
             logError(taskId, "OutOfMemoryError")
-            listener.onError(taskId, "OUT_OF_MEMORY", "OutOfMemoryError", isShareRequest, false, duration)
-            return Result.failure(TranscriptionException.InsufficientMemory(
-                context.getString(R.string.error_oom_transcription)))
+            // TASK-631: the advice differs by protection state. With protection
+            // OFF (default) the notification's action offers to enable it; with
+            // protection ON it already tried the guard and the advice must be
+            // close apps / smaller model, not "enable what is enabled". The
+            // localized text travels as errorMessage (the service no longer
+            // swaps the string for this code).
+            val protectionOn = preferencesManager.memoryProtection.first()
+            val oomMessage = context.getString(
+                if (protectionOn) R.string.error_oom_transcription_protected
+                else R.string.error_oom_transcription)
+            listener.onError(taskId, "OUT_OF_MEMORY", oomMessage, isShareRequest, false, duration,
+                isMemoryFailure = !protectionOn)
+            return Result.failure(TranscriptionException.InsufficientMemory(oomMessage))
         } catch (e: Exception) {
             Log.e(TAG, "Error processing request", e)
             val duration = System.currentTimeMillis() - startTime
             val errorMsg = e.message ?: "Unknown error"
             persistFailureContext(taskId, e, context)
             logError(taskId, errorMsg)
-            listener.onError(taskId, "PROCESSING_ERROR", errorMsg, isShareRequest, false, duration)
+            // TASK-606 R5 (round 15): route through the shared funnel (its
+            // WedgeAbortException arm carries the localized string; every
+            // other error keeps the raw message this catch always sent).
+            val userMsg = if (e is WedgeAbortException) {
+                userFacingErrorMessage(context, e)
+            } else {
+                errorMsg
+            }
+            listener.onError(taskId, "PROCESSING_ERROR", userMsg, isShareRequest, false, duration)
             return Result.failure(e)
         } finally {
             if (backendOverride != null) {
@@ -407,7 +687,13 @@ class TranscriptionOrchestrator @Inject constructor(
 
         // Extraction succeeded: report exactly as the audio success path does, then return.
         val duration = System.currentTimeMillis() - startTime
-        logSuccess(taskId, text, duration, isPartial = false, failedChunkCount = 0)
+        // TASK-677 AC#5: the row must read as subtitle-sourced, not as ASR
+        // output with a missing model (the History model line derives from
+        // this marker; no modelName is ever written on this path).
+        logSuccess(
+            taskId, text, duration, isPartial = false, failedChunkCount = 0,
+            processing = ProcessingContext(decodePath = ProcessingContext.DECODE_PATH_SUBTITLE_TRACK),
+        )
         listener.onSuccess(
             taskId,
             text,
@@ -420,6 +706,62 @@ class TranscriptionOrchestrator @Inject constructor(
             failedChunkCount = 0
         )
         return Result.success(text)
+    }
+
+    /**
+     * TASK-677 (GH #92 import half): requestType "subtitle_import". The
+     * handed .srt/.vtt file becomes the transcript: cues preserved as
+     * [TimedSegment] with the file's own segmentation (no re-segmentation,
+     * AC#3), routed through the standard success funnel so History, the
+     * result notification, auto-save and the timed exports all see the
+     * cues. The row carries the subtitle_import processing context and no
+     * model name (AC#5: not ASR output). A parse that yields no cues fails
+     * the request; there is no fallback that could help a text file.
+     */
+    private suspend fun processSubtitleImportRequest(
+        taskId: String,
+        filePath: String?,
+        sourcePackage: String?,
+        isShareRequest: Boolean,
+        startTime: Long,
+        context: Context,
+        listener: TranscriptionListener,
+    ): Result<String> {
+        val parsed = SubtitleParser.parseFile(filePath)
+        if (parsed.segments.isEmpty()) {
+            Log.w(TAG, "Subtitle import yielded no cues (taskId=$taskId): ${parsed.errorNote}")
+            val message = context.getString(R.string.subtitle_import_failed)
+            val duration = System.currentTimeMillis() - startTime
+            logError(taskId, message, duration)
+            listener.onError(taskId, "SUBTITLE_IMPORT_FAILED", message, isShareRequest, false, duration)
+            return Result.failure(IllegalStateException("subtitle import yielded no cues: ${parsed.errorNote}"))
+        }
+
+        // Review F2: a partially damaged file must not import as silently
+        // complete; the disclosure rides the transcript tail like the
+        // failed-chunks note on exports (the TASK-538 lineage).
+        val disclosure = if (parsed.skippedCues > 0) {
+            "\n[" + context.resources.getQuantityString(
+                R.plurals.subtitle_import_skipped_cues, parsed.skippedCues, parsed.skippedCues) + "]"
+        } else ""
+        val transcript = parsed.segments.joinToString(" ") { it.text } + disclosure
+        val duration = System.currentTimeMillis() - startTime
+        logSuccess(
+            taskId = taskId,
+            result = transcript,
+            durationMs = duration,
+            segments = parsed.segments,
+            processing = ProcessingContext(decodePath = ProcessingContext.DECODE_PATH_SUBTITLE_IMPORT),
+        )
+        listener.onSuccess(
+            taskId = taskId,
+            resultText = transcript,
+            isShareRequest = isShareRequest,
+            sourcePackage = sourcePackage,
+            durationMs = duration,
+            segments = parsed.segments,
+        )
+        return Result.success(transcript)
     }
 
     // ---- Backend Loading ----
@@ -480,7 +822,12 @@ class TranscriptionOrchestrator @Inject constructor(
                     preferencesManager.punctuationPrompt.first(),
                     context.getString(R.string.punctuation_default_prompt)),
                 result.text)
-            val polished = llm.generateText(prompt).getOrThrow().trim()
+            // TASK-674: the cleanup pass runs under the shared wall clock; a
+            // timeout degrades to the raw transcript exactly like any other
+            // generation failure (typed + breadcrumb inside the owner).
+            val polished = LlmBudget.generateWithBudget(
+                llm, prompt, LlmBudget.CLEANUP_BUDGET_MS, pass = "Punctuation",
+            ).getOrThrow().trim()
             if (!PunctuationPolicy.acceptablePolish(polished, result.text)) {
                 error("punctuation pass collapsed the transcript " +
                     "(${polished.length} vs ${result.text.length} chars); keeping the original")
@@ -488,7 +835,13 @@ class TranscriptionOrchestrator @Inject constructor(
             val effectiveText = polished.ifBlank { result.text }
             result.copy(
                 text = effectiveText,
-                rawTranscript = if (effectiveText != result.text) result.text else null
+                // TASK-672 review F3: with the collapse now UPSTREAM, the
+                // polish receives an already-altered text; an existing
+                // rawTranscript is the deeper original and must survive
+                // (the first altering pass records it; later passes never
+                // clobber it).
+                rawTranscript = result.rawTranscript
+                    ?: result.text.takeIf { it != effectiveText }
             )
         }.fold(
             onSuccess = { polished ->
@@ -500,6 +853,57 @@ class TranscriptionOrchestrator @Inject constructor(
             onFailure = { e ->
                 degradeTo(result, "Punctuation", e)
             },
+        )
+    }
+
+    /**
+     * TASK-672 (GH #72): the deterministic repetition-loop collapse
+     * (RepetitionCollapse, ported from Omnivoice's refinement tier; the
+     * algorithm and its guards live there). Runs immediately after the
+     * punctuation pass on the delivered text only: the pre-collapse
+     * transcript rides the same rawTranscript seam the punctuation pass
+     * uses, so the TASK-583 warning and the annotated-lineage surfaces
+     * keep the raw recoverable. The dual-model loop detection (the
+     * first-pass and fold arms above) reads the phase texts UPSTREAM of
+     * this funnel and must keep seeing them uncollapsed. No preference
+     * gate: this is crash-class artifact cleanup, the pass constants
+     * are the guard.
+     */
+    /**
+     * TASK-672: the deterministic loop collapse, FIRST in the polish chain
+     * (review F3: after the punctuation pass, the polish's ", " separators
+     * broke the 6-copy backref on multi-word loops). Review F6: an optional
+     * polish may never fail a completed transcription, so it degrades to
+     * the uncollapsed result on any failure (the sibling passes' contract).
+     */
+    private fun applyRepetitionCollapse(result: TranscriptionResult): TranscriptionResult =
+        runCatching { collapseRepetition(result) }.fold(
+            onSuccess = { it },
+            onFailure = { degradeTo(result, "RepetitionCollapse", it) },
+        )
+
+    private fun collapseRepetition(result: TranscriptionResult): TranscriptionResult {
+        val collapsed = RepetitionCollapse.collapse(result.text)
+        // Review F7: the early return first; per-cue collapse is paid only
+        // when the text itself actually carried a loop.
+        if (collapsed == result.text) return result
+        Log.i(TAG, "Repetition collapse applied (${result.text.length} -> ${collapsed.length} chars)")
+        // Simplify F1 + review F4: cue-derived surfaces (SRT/VTT, annotated
+        // share, auto-saved TXT) render segment.text verbatim; each cue
+        // collapses too, and a cue whose text collapses to blank is DROPPED
+        // (an empty VTT cue is invalid; with speaker labels it would render
+        // a dangling prefix). Residual, documented: a loop split across a
+        // cue boundary survives in the per-cue exports; fixing that needs
+        // chunk-boundary stitching, out of this tier's scope.
+        val collapsedSegments = result.segments
+            .map { it.copy(text = RepetitionCollapse.collapse(it.text)) }
+            .filter { it.text.isNotBlank() }
+        return result.copy(
+            text = collapsed,
+            segments = collapsedSegments,
+            // Upstream of every polish: the backend or a refinement may
+            // already hold a raw; the first altering pass records it.
+            rawTranscript = result.rawTranscript ?: result.text,
         )
     }
 
@@ -519,26 +923,49 @@ class TranscriptionOrchestrator @Inject constructor(
      * Runs AFTER the common gates and swap in [applySummaryPass], on the
      * already-loaded LLM. The TASK-498 retry ladder applies here too: each
      * instruction gets a full map-reduce attempt before the next runs.
-     * Per-chunk failures degrade by dropping that partial; only a total
+     * Per-chunk failures degrade by dropping that partial (TASK-659
+     * exception: the engine's prefill-overflow signal re-splits the chunk
+     * once instead of dropping it); only a total
      * map failure (or the last attempt's reduce failure) fails the pass,
-     * because an optional extra may never break the delivery.
+     * because an optional extra may never break the delivery. A summary
+     * delivered despite dropped chunks carries the TASK-538 partial note
+     * ([partialNote]) so the user sees it covers less than the whole call.
      */
     private suspend fun summarizeLongTranscript(
         llm: TranscriptionBackend,
         instructions: List<String>,
         result: TranscriptionResult,
+        clock: LlmBudget.PassClock,
+        partialNote: String,
     ): TranscriptionResult {
         var lastFailure: Throwable? = null
         for ((attempt, instruction) in instructions.withIndex()) {
             if (attempt > 0) {
+                // Review R2: a pass-budget timeout spent the SHARED clock;
+                // retrying would enter the engine on a spent clock for a
+                // generation that can never finish in zero time.
+                if (lastFailure is LlmBudget.PassTimeoutException) {
+                    Log.i(TAG, "Summary pass clock spent by the previous attempt; not retrying")
+                    break
+                }
                 Log.i(TAG, "Custom summary prompt did not produce an acceptable map-reduce summary; retrying with the built-in prompt")
             }
-            val generation = summarizeWithMapReduce(llm, instruction, result.text, MAX_SUMMARY_LEVELS)
-            lastFailure = generation.failure ?: lastFailure
+            val generation = summarizeWithMapReduce(llm, instruction, result.text, MAX_SUMMARY_LEVELS, clock)
+            // TASK-607 F7: the LATEST attempt's outcome wins, matching the
+            // single-shot ladder (which overwrites): timeout-then-guards
+            // must record GUARDS, not stick to the stale timeout failure.
+            lastFailure = generation.failure
             val summary = generation.summary
             if (summary != null && SummaryPolicy.acceptableSummary(summary, result.text)) {
-                Log.i(TAG, "Summary map-reduce applied (${result.text.length} chars -> ${summary.length}-char summary)")
-                return result.copy(summary = summary)
+                // TASK-538: the guards above judged the MODEL output; the note
+                // is app-added disclosure and never a guard input. It rides the
+                // summary text itself so every surface that renders the
+                // summary (the History block and its copy button) discloses
+                // the coverage gap; share and export carry only the
+                // transcript, which has its own partial banner.
+                val delivered = if (generation.droppedChunks > 0) "$summary\n\n$partialNote" else summary
+                Log.i(TAG, "Summary map-reduce applied (${result.text.length} chars -> ${delivered.length}-char summary)")
+                return result.copy(summary = delivered)
             }
         }
         // Match the single-shot tail: a THROWN generation (map or reduce)
@@ -556,56 +983,147 @@ class TranscriptionOrchestrator @Inject constructor(
      * null failure = completed but rejected (guards); null summary with a
      * failure = a generation crashed (failed). Cancellation always
      * propagates (the house contract): the map loop rethrows it instead
-     * of recording it as a chunk failure.
+     * of recording it as a chunk failure. TASK-659: a chunk that overflows
+     * a fresh session's token-bounded state entries (the JNI prefill
+     * signal) is re-split once at half budget instead of dropped; see the
+     * map loop.
      */
     private suspend fun summarizeWithMapReduce(
         llm: TranscriptionBackend,
         instruction: String,
         text: String,
         levelsLeft: Int,
+        clock: LlmBudget.PassClock,
     ): SummaryGeneration {
         // Single generation whenever the text fits the guard (the common
         // reduce case: joined partials are a fraction of the original).
+        // TASK-659 review F2: the CHAR guard can still exceed the engine's
+        // token state entries (the motivating heavy-script case); on that
+        // signal fall through to the map stage instead of failing the whole
+        // attempt with every map partial already in hand.
         if (SummaryPolicy.withinContextLimit(text)) {
-            val generated = llm.generateText(ChunkPromptPolicy.finalPrompt(instruction, text))
+            val generated = clock.generate(llm, ChunkPromptPolicy.finalPrompt(instruction, text))
                 .map { it.trim() }
             val candidate = generated.getOrNull()
             if (candidate != null && SummaryPolicy.acceptableSummary(candidate, text)) {
                 return SummaryGeneration(candidate)
             }
-            return SummaryGeneration(null, failure = generated.exceptionOrNull())
+            val singleFailure = generated.exceptionOrNull()
+            if (singleFailure == null || !SummaryPolicy.isPrefillOverflow(singleFailure)) {
+                return SummaryGeneration(null, failure = singleFailure)
+            }
+            Log.i(TAG, "Summary stage: single-shot overflowed a fresh session's state entries; chunking")
         }
         if (levelsLeft <= 0) return SummaryGeneration(null)
         val chunks = ContextChunker.split(text)
         Log.i(TAG, "Summary map stage: ${chunks.size} chunks (${text.length} chars)")
         val partials = mutableListOf<String>()
         var lastFailure: Throwable? = null
+        var droppedChunks = 0
         for ((index, chunk) in chunks.withIndex()) {
-            val generated = runCatching {
-                llm.generateText(ChunkPromptPolicy.finalPrompt(instruction, chunk)).map { it.trim() }
-            }.getOrElse { e ->
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                Result.failure(e)
-            }
-            val candidate = generated.getOrNull()
-            if (candidate != null && SummaryPolicy.acceptableSummary(candidate, chunk)) {
-                partials += candidate
-            } else {
-                generated.exceptionOrNull()?.let { lastFailure = it }
-                Log.w(TAG, "Summary map stage: chunk ${index + 1}/${chunks.size} produced no usable partial; continuing")
+            // TASK-659: mechanics of the adaptive re-split (the WHY lives in
+            // SummaryPolicy.isPrefillOverflow's KDoc): an overflowing chunk
+            // re-splits ONCE at half budget, pieces generate in place (the
+            // worklist keeps the single wedge-abort and drop sites below),
+            // and a piece never re-splits again.
+            val pending = ArrayDeque<MapUnit>()
+            pending.addLast(MapUnit(chunk, canResplit = chunk.length > RE_SPLIT_FLOOR_CHARS))
+            while (pending.isNotEmpty()) {
+                val unit = pending.removeFirst()
+                val generated = runCatching {
+                    clock.generate(llm, ChunkPromptPolicy.finalPrompt(instruction, unit.text)).map { it.trim() }
+                }.getOrElse { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Result.failure(e)
+                }
+                val candidate = generated.getOrNull()
+                if (candidate != null && SummaryPolicy.acceptableSummary(candidate, unit.text)) {
+                    partials += candidate
+                    continue
+                }
+                val failure = generated.exceptionOrNull()
+                if (failure is EngineWedgeTimeoutException ||
+                    failure is LlmBudget.PassTimeoutException
+                ) {
+                    // TASK-594 circuit breaker: a timeout means the engine is
+                    // wedged, not that this chunk is hard; grinding the
+                    // remaining chunks at one ceiling each turns a hang into
+                    // a 40-70 minute crawl. Abort with what we have.
+                    // TASK-674: the pass-budget timeout aborts too (it is
+                    // deliberately NOT a wedge marker; the shared PassClock
+                    // has already spent the pass's wall on this chunk).
+                    Log.w(TAG, "Summary map stage: generation timeout on chunk " +
+                        "${index + 1}/${chunks.size}; aborting the attempt")
+                    // No partial salvage: a first-chunk summary would pass the
+                    // whole-transcript length guard and ship as if it covered
+                    // the call (review F1). Null routes the timeout through
+                    // the ladder's failure path (SKIP_REASON_TIMEOUT for a
+                    // pass-budget fire, SKIP_REASON_FAILED otherwise).
+                    return SummaryGeneration(null, failure = failure)
+                }
+                // TASK-659: bounded halving on the overflow signal. The
+                // first overflow of a chunk pays one doomed prefill; every
+                // later unit of this stage halves preemptively is NOT done
+                // (the signal is per-session and content-dependent), so a
+                // same-script sibling chunk pays its own one prefill before
+                // halving: accepted cost, bounded by the chunk count.
+                if (unit.canResplit && failure != null &&
+                    SummaryPolicy.isPrefillOverflow(failure)
+                ) {
+                    val budget = (unit.text.length / 2).coerceAtLeast(RE_SPLIT_FLOOR_CHARS / 2)
+                    val pieces = SummaryPolicy.reSplitPieces(unit.text, budget)
+                    Log.i(TAG, "Summary map stage: unit of chunk ${index + 1}/${chunks.size} overflowed a fresh " +
+                        "session's state entries; halving into ${pieces.size} pieces")
+                    pieces.forEach {
+                        pending.addLast(MapUnit(it, canResplit = it.length > RE_SPLIT_FLOOR_CHARS))
+                    }
+                    continue
+                }
+                failure?.let { lastFailure = it }
+                // TASK-538: a chunk that contributes no partial narrows what
+                // the delivered summary can cover; the count feeds the
+                // partial-coverage note in summarizeLongTranscript. TASK-659:
+                // a dropped re-split piece counts as a dropped
+                // chunk-equivalent so the disclosure stays honest.
+                droppedChunks++
+                val unitLabel = if (unit.text.length <= RE_SPLIT_FLOOR_CHARS) "a floor-size piece of chunk ${index + 1}/${chunks.size}"
+                    else "chunk ${index + 1}/${chunks.size}"
+                Log.w(TAG, "Summary map stage: $unitLabel produced no usable partial; continuing")
             }
         }
         if (partials.isEmpty()) return SummaryGeneration(null, failure = lastFailure)
         // A lone surviving partial cannot gain coverage from a reduce over
-        // itself: return it and let the whole-transcript guard judge it.
-        if (partials.size == 1) return SummaryGeneration(partials.first(), failure = lastFailure)
-        return summarizeWithMapReduce(llm, instruction, partials.joinToString("\n\n"), levelsLeft - 1)
+        // itself. TASK-607 F6: a one-chunk recap of a multi-chunk transcript
+        // has no coverage floor (length 20..1.2x passes a chunk-echo), the
+        // exact hazard the timeout branch refuses: deliver it only when it
+        // covers a floor of the transcript, else treat as a failed map stage.
+        if (partials.size == 1) {
+            val lone = partials.first()
+            return if (SummaryPolicy.hasCoverageFloor(lone, text.length)) {
+                SummaryGeneration(lone, failure = lastFailure, droppedChunks = droppedChunks)
+            } else {
+                Log.w(TAG, "Summary map stage: the lone partial fails the coverage floor; refusing the one-chunk recap")
+                SummaryGeneration(null, failure = lastFailure)
+            }
+        }
+        val reduced = summarizeWithMapReduce(llm, instruction, partials.joinToString("\n\n"), levelsLeft - 1, clock)
+        return reduced.copy(droppedChunks = droppedChunks + reduced.droppedChunks)
     }
 
-    /** TASK-520: the map-reduce core's verdict (a summary, or why not). */
+    /** TASK-659: one unit of the map stage's worklist: an original chunk or
+     *  a re-split piece. [canResplit] is the bounded-halving guard: a unit
+     *  above [RE_SPLIT_FLOOR_CHARS] may halve again on overflow; below it,
+     *  the drop path takes over (the depth is logarithmic by construction:
+     *  at most log2(12k/floor) halvings per chunk). */
+    private data class MapUnit(val text: String, val canResplit: Boolean)
+
+    /** TASK-520: the map-reduce core's verdict (a summary, or why not).
+     *  TASK-538: [droppedChunks] counts map chunks that contributed no partial
+     *  (timeouts excepted; they abort the attempt instead). */
     private data class SummaryGeneration(
         val summary: String?,
         val failure: Throwable? = null,
+        val droppedChunks: Int = 0,
     )
 
     /**
@@ -641,6 +1159,11 @@ class TranscriptionOrchestrator @Inject constructor(
             // model unloads first and the two are never resident together.
             ensureBackendLoaded(context, LlmTranscriptionBackend.BACKEND_ID).getOrThrow()
             val llm = backendManager.getActiveBackend() ?: error("LLM backend not active after load")
+            // TASK-674: ONE wall clock for the whole summary pass, shared by
+            // the ladder's attempts and the map-reduce chunks so neither can
+            // multiply the budget; on exhaustion the pass degrades with the
+            // honest timeout skip reason (see the fold below).
+            val clock = LlmBudget.PassClock("Summary", LlmBudget.SUMMARY_BUDGET_MS)
             // Language-aware by instruction: the curated default tells the
             // model to answer in the transcript's language (the app locale
             // is deliberately not resolved into the prompt). TASK-483: a
@@ -670,17 +1193,24 @@ class TranscriptionOrchestrator @Inject constructor(
                 // map stage dies entirely (see summarizeLongTranscript).
                 Log.i(TAG, "Summary pass: ${result.text.length} chars exceeds the context guard; map-reduce over chunks")
                 return@runCatching summarizeLongTranscript(
-                    llm = llm, instructions = instructions, result = result)
+                    llm = llm, instructions = instructions, result = result,
+                    clock = clock,
+                    partialNote = context.getString(R.string.summary_partial_note))
             }
             var summary: String? = null
             var generationFailure: Throwable? = null
             var lastCandidateChars = -1
             for ((attempt, instruction) in instructions.withIndex()) {
                 if (attempt > 0) {
+                    // Review R2: same spent-clock break as the map ladder.
+                    if (generationFailure is LlmBudget.PassTimeoutException) {
+                        Log.i(TAG, "Summary pass clock spent by the previous attempt; not retrying")
+                        break
+                    }
                     Log.i(TAG, "Custom summary prompt did not produce an acceptable summary; retrying with the built-in prompt")
                 }
-                val generated = llm.generateText(
-                    ChunkPromptPolicy.finalPrompt(instruction, result.text)
+                val generated = clock.generate(
+                    llm, ChunkPromptPolicy.finalPrompt(instruction, result.text)
                 ).map { it.trim() }
                 // Log every thrown attempt when it happens: the loop below
                 // overwrites generationFailure, and a first crash the retry
@@ -717,24 +1247,52 @@ class TranscriptionOrchestrator @Inject constructor(
             onFailure = { e ->
                 // TASK-494: an attended attempt that died mid-generation is
                 // as invisible as a guard rejection; record it too, then
-                // degrade as before.
-                degradeTo(result.copy(summarySkipReason = SummaryPolicy.SKIP_REASON_FAILED), "Summary", e)
+                // degrade as before. TASK-674: a wall-clock timeout gets its
+                // own honest token (the UI captions it distinctly).
+                val reason = if (e is LlmBudget.PassTimeoutException) {
+                    SummaryPolicy.SKIP_REASON_TIMEOUT
+                } else {
+                    SummaryPolicy.SKIP_REASON_FAILED
+                }
+                degradeTo(result.copy(summarySkipReason = reason), "Summary", e)
             },
         )
     }
 
     private suspend fun ensureBackendLoaded(
         context: Context,
-        backendOverride: String? = null
+        backendOverride: String? = null,
+        /** TASK-546 AC3: replaces the persisted language preference for this request's config. */
+        languageOverride: String? = null
     ): Result<Unit> {
         val hasBackend = backendManager.hasActiveBackend()
-        val backendReady = backendManager.getActiveBackend()?.isReady() ?: false
+        val activeBackend = backendManager.getActiveBackend()
+        val backendReady = activeBackend?.isReady() ?: false
         val preferredBackendId = backendOverride ?: preferencesManager.transcriptionBackend.first()
-        val activeBackendId = backendManager.getActiveBackend()?.id
+        val activeBackendId = activeBackend?.id
         val backendMismatch = hasBackend && activeBackendId != preferredBackendId
+        // TASK-626: the backend id alone is not a residency identity. Switching
+        // variant within one entry (useModel) or writing the saved path directly
+        // (TEST_SPI) keeps the id and swaps the model: a warm backend would keep
+        // decoding with the OLD recognizer while the UI names the new variant.
+        val variantMismatch = !backendMismatch && variantChanged(activeBackend, preferredBackendId)
+        // TASK-546 AC3: the configured language is the third identity
+        // component, compared by VALUE: a re-run override must reach the
+        // recognizer, and the next ordinary request must recover the
+        // preference after an override run left a different language warm
+        // (without this, that stale language would silently serve while the
+        // row pins the preference).
+        val languageMismatch = !backendMismatch &&
+            languageResidencyMismatch(context, activeBackend, preferredBackendId, languageOverride)
+        // TASK-681: the LAN-offload backend is stateless (no native engine
+        // to keep warm), so while it is the preferred backend its config is
+        // re-resolved EVERY request: the path identity above cannot see a
+        // Settings key or model edit, and the reload costs nothing.
+        val remoteResync = preferredBackendId == RemoteOmnivoiceBackend.BACKEND_ID &&
+            activeBackendId == RemoteOmnivoiceBackend.BACKEND_ID
 
-        if (!hasBackend || !backendReady || backendMismatch) {
-            Log.i(TAG, "Backend needs (re)load (hasBackend=$hasBackend, ready=$backendReady, active=$activeBackendId, preferred=$preferredBackendId)")
+        if (!hasBackend || !backendReady || backendMismatch || variantMismatch || languageMismatch || remoteResync) {
+            Log.i(TAG, "Backend needs (re)load (hasBackend=$hasBackend, ready=$backendReady, active=$activeBackendId, preferred=$preferredBackendId, variantMismatch=$variantMismatch, languageMismatch=$languageMismatch, remoteResync=$remoteResync)")
 
             if (hasBackend) {
                 Log.i(TAG, "Unloading previous backend: $activeBackendId")
@@ -743,10 +1301,9 @@ class TranscriptionOrchestrator @Inject constructor(
 
             // Sherpa-onnx consolidation: the load dispatch keys on the registry
             // descriptor (the catalog entry id); every built-in model goes through
-            // the one generic [loadCatalogBackend]. The disabled GGUF backend is
-            // unregistered, so its literal id is matched before the lookup; unknown
-            // ids yield a null descriptor and fall through to the LLM loader, exactly
-            // as the former ModelType-keyed when did.
+            // the one generic [loadCatalogBackend]. Unknown ids yield a null
+            // descriptor and fall through to the LLM loader, exactly as the
+            // former ModelType-keyed when did.
             // External ids are intercepted BEFORE the registry lookup for a behavioral
             // reason, not a registry gap: a prefix-matched id whose record is gone must
             // fail fast with ExternalModelUnavailable instead of falling through to the
@@ -754,11 +1311,14 @@ class TranscriptionOrchestrator @Inject constructor(
             val loadResult = if (preferredBackendId.startsWith(ExternalModelRecord.BACKEND_ID_PREFIX)) {
                 loadExternalBackend(context, preferredBackendId)
             } else when (preferredBackendId) {
-                GGUF_BACKEND_ID -> loadGgufBackend(context)
                 // The LLM backend ("llm") stores its model in the generic preference.
                 LlmTranscriptionBackend.BACKEND_ID -> loadLlmBackend(context)
+                // TASK-681: the LAN-offload backend; its loader owns the
+                // not-enabled verdict so a disabled service can never fall
+                // through to the LLM loader below.
+                RemoteOmnivoiceBackend.BACKEND_ID -> loadRemoteBackend(context)
                 else -> backendRegistry.byBackendId(preferredBackendId)?.let { descriptor ->
-                    loadCatalogBackend(context, descriptor)
+                    loadCatalogBackend(context, descriptor, languageOverride)
                 } ?: loadLlmBackend(context)
             }
 
@@ -775,6 +1335,71 @@ class TranscriptionOrchestrator @Inject constructor(
         return Result.success(Unit)
     }
 
+    /**
+     * TASK-626: true when the warm [activeBackend] holds a different model
+     * than the saved path names for [preferredBackendId] (same id, different
+     * variant). The saved path is the single source every writer converges on
+     * (useModel persists the variant choice; [loadCatalogBackend] persists
+     * its resolution), so this one comparison covers them all. A blank side
+     * is no identity claim, not a mismatch: every shipped backend reports a
+     * concrete path while ready (unload nulls path and readiness together),
+     * and a blank saved path means auto-resolution, which the loader
+     * persists so the mismatch cannot flap. One corner keeps serving warm
+     * by design: a variant DELETED while its backend stays warm leaves the
+     * saved path blank (deleteModel clears it) and the resident engine
+     * answers until idle-unload, exactly as before this fix.
+     *
+     * The expected side deliberately does NOT reuse [modelPathForBackend]:
+     * its unknown-id fallback answers the GENERIC Gemma path, which would
+     * compare an unrelated preference against e.g. an external engine whose
+     * record is mid-deletion (registry descriptor already gone) and
+     * manufacture a reload whose only outcome is failing a request the old
+     * code served warm. Unknown-to-the-registry ids carry no path identity.
+     */
+    private suspend fun variantChanged(
+        activeBackend: TranscriptionBackend?,
+        preferredBackendId: String
+    ): Boolean {
+        val loaded = activeBackend?.getModelPath()?.takeIf { it.isNotBlank() } ?: return false
+        val expected = when {
+            preferredBackendId == LlmTranscriptionBackend.BACKEND_ID ->
+                preferencesManager.modelPath.first()
+            else -> backendRegistry.byBackendId(preferredBackendId)
+                ?.modelPathFlow?.invoke(preferencesManager)?.first()
+        } ?: return false
+        return expected.isNotBlank() && expected != loaded
+    }
+
+    /**
+     * TASK-546 AC3: whether the warm backend's CONFIGURED language differs
+     * from what this request would configure (the override when present, the
+     * preference otherwise), resolved through the same policy the load path
+     * uses. Null resident (the interface default) or an unknown-to-the-catalog
+     * id carries no language identity: warm, the [variantChanged] convention.
+     * The backend stores blank-resolved config values as "auto", so the
+     * expected side normalizes identically before comparing.
+     */
+    private suspend fun languageResidencyMismatch(
+        context: Context,
+        activeBackend: TranscriptionBackend?,
+        preferredBackendId: String,
+        languageOverride: String?,
+    ): Boolean {
+        // Blank = no claim, the null convention: the real backend never stores
+        // a blank (the store normalizes the blank resolution to "auto"), so a
+        // blank answer means "this backend does not track its language"
+        // (test doubles, non-sherpa engines) and stays warm.
+        val resident = activeBackend?.getConfiguredLanguage()?.takeIf { it.isNotEmpty() } ?: return false
+        val entry = BundledCatalog.byId(preferredBackendId) ?: return false
+        val preference = languageOverride ?: preferencesManager.transcriptionLanguage.first()
+        val expected = TranscriptionLanguagePolicy.resolveForEntry(
+            phoneLanguage = com.antivocale.app.util.LocaleManager.phoneLanguage(context),
+            entry = entry,
+            preference = preference,
+        )
+        return expected.ifBlank { "auto" } != resident
+    }
+
     private suspend fun loadLlmBackend(context: Context): Result<Unit> {
         val modelPath = preferencesManager.modelPath.first()
         if (modelPath.isNullOrBlank()) {
@@ -787,7 +1412,39 @@ class TranscriptionOrchestrator @Inject constructor(
         )
     }
 
-    private suspend fun loadCatalogBackend(context: Context, descriptor: BackendDescriptor): Result<Unit> {
+    /**
+     * TASK-681: the LAN-offload loader. No model lives on disk: the
+     * configuration is the Settings triple (enabled, endpoint, key) and the
+     * endpoint doubles as the path identity. A disabled toggle or a blank
+     * endpoint is the [TranscriptionException.NotInitialized] no-model UX
+     * (the error notification's model-selection action), never a silent
+     * fallthrough to the LLM loader.
+     */
+    private suspend fun loadRemoteBackend(context: Context): Result<Unit> {
+        if (!preferencesManager.remoteOmnivoiceEnabled.first()) {
+            return Result.failure(TranscriptionException.NotInitialized())
+        }
+        val endpoint = preferencesManager.remoteOmnivoiceEndpoint.first().trim()
+        if (endpoint.isBlank()) {
+            return Result.failure(TranscriptionException.NotInitialized())
+        }
+        return backendManager.setActiveBackend(
+            backendId = RemoteOmnivoiceBackend.BACKEND_ID,
+            context = context,
+            config = BackendConfig.RemoteConfig(
+                baseUrl = endpoint,
+                apiKey = preferencesManager.remoteOmnivoiceApiKey.first().trim(),
+                model = preferencesManager.remoteOmnivoiceModel.first().trim(),
+            )
+        )
+    }
+
+    private suspend fun loadCatalogBackend(
+        context: Context,
+        descriptor: BackendDescriptor,
+        /** TASK-546 AC3: request-scoped language override; null reads the preference. */
+        languageOverride: String?
+    ): Result<Unit> {
         val entry = BundledCatalog.byId(descriptor.backendId)
             ?: return Result.failure(TranscriptionException.NotInitialized())
         // The saved path is the user's explicit variant choice (useModel(variant)): honor
@@ -806,8 +1463,9 @@ class TranscriptionOrchestrator @Inject constructor(
         // or a code per stream; passLanguage (offline Whisper) maps "auto" to "" so the
         // model auto-detects and passes a concrete code through; everything else gets "".
         // Single-language variants (Distil-IT) are forced later in SherpaBackend, which
-        // keeps winning over this resolution.
-        val languagePref = preferencesManager.transcriptionLanguage.first()
+        // keeps winning over this resolution. TASK-546 AC3: a per-request override
+        // speaks the same vocabulary and replaces the read, never the stored value.
+        val languagePref = languageOverride ?: preferencesManager.transcriptionLanguage.first()
         val language = TranscriptionLanguagePolicy.resolveForEntry(
             // TASK-547: the phone-locale pin needs the DEVICE locale (the
             // system one, not the app locale); LocaleManager owns that read.
@@ -819,13 +1477,321 @@ class TranscriptionOrchestrator @Inject constructor(
             is CatalogDisplay.Resource -> context.getString(CatalogStringKeys.resolve(d.key))
             is CatalogDisplay.Literal -> d.text
         }
-        return configureSherpaBackend(
+        val load = configureSherpaBackend(
             backendId = descriptor.backendId,
             modelPath = resolvedPath,
             label = label,
             language = language,
             context = context,
             modelType = entry.modelType,
+        )
+        // TASK-660 layer 2: the self-heal. Only the typed corruption verdict
+        // deletes anything; a generic load failure (OOM, NNAPI, wedge, missing
+        // metadata) must leave the model dir on disk. When the heal itself
+        // fails (the dir could not be deleted) the row must NOT claim the
+        // files were removed, so the failure is downgraded to the generic
+        // message (review F3).
+        val loadFailure = load.exceptionOrNull()
+        if (loadFailure is TranscriptionException.CorruptModelFiles) {
+            if (!healCorruptModelDir(context, descriptor, resolvedPath)) {
+                return Result.failure(TranscriptionException.ModelLoadError(
+                    "corrupt model dir could not be removed: $resolvedPath"))
+            }
+        }
+        return load
+    }
+
+    /**
+     * TASK-660 layer 2: deletes the corrupt model DIRECTORY and re-resolves
+     * the saved path the same WAY as the Models-tab delete (delete dir; a
+     * remaining healthy sibling variant stays active, none leaves the entry
+     * not-installed for a clean re-download), INCLUDING the tab's
+     * share-surface retirement on the cleared branch (review F2: the alias
+     * must not stay selectable for a not-installed model). The one tab side
+     * effect deliberately NOT mirrored is the in-memory CatalogState update:
+     * that cache belongs to the Models tab's ViewModel.
+     *
+     * Layer split, deliberate (reviews F1+F3): the backend's gate leaves the
+     * corrupt files ON DISK so its typed verdict stays repeatable for every
+     * caller (a direct initialize like the benchmark cannot heal and must not
+     * wedge the entry behind a stripped dir); THIS heal then removes the whole
+     * directory and rewrites the saved-path preference, which only the
+     * orchestrator owns. Returns false when the deletion fails, so the caller
+     * downgrades to the generic error instead of claiming removal.
+     */
+    private suspend fun healCorruptModelDir(
+        context: Context,
+        descriptor: BackendDescriptor,
+        resolvedPath: String,
+    ): Boolean {
+        val manager = SherpaModelManager.of(descriptor.backendId)
+        val deleted = manager.deleteModel(resolvedPath)
+        if (!deleted) {
+            // Review F3: with the dir still on disk (and the corrupt files
+            // still in it; the backend no longer strips them), every later
+            // load re-runs this heal; claiming removal now would be a lie on
+            // every History row until one deletion succeeds.
+            Log.e(TAG, "Corrupt model dir deletion FAILED at $resolvedPath; " +
+                "delivering the generic error and retrying the heal on the next load")
+            return false
+        }
+        Log.w(TAG, "Corrupt model dir deleted at $resolvedPath; " +
+            "the Models tab offers the re-download")
+        val next = manager.resolveActiveModelPath(context)
+        if (next != null) {
+            descriptor.saveModelPath(preferencesManager, next)
+        } else {
+            descriptor.clearModelPath(preferencesManager)
+            // Review F2: mirror the Models-tab delete's share-surface
+            // retirement (the alias must not stay selectable for a
+            // not-installed model).
+            shareTargetManager.onModelDeleted(descriptor.backendId)
+            shareShortcutManager.refresh()
+        }
+        return true
+    }
+
+    /**
+     * GH #43 (design D3/D6): phase 1 of a two-pass run. Resolves the fast
+     * streaming backend through [DualRefinementPolicy], loads it, and runs
+     * the normal audio path with a listener that only forwards progress.
+     * The first-pass text is force-written to the row (unthrottled, the
+     * persistPipelineFailureContext salvage precedent) so it stays visible
+     * while phase 2 refines. Returns null whenever the pass does not apply
+     * or failed: the request then proceeds single-model exactly as today.
+     */
+    private suspend fun runRefinementFirstPass(
+        taskId: String,
+        requestType: String,
+        backendOverride: String?,
+        /** TASK-546 AC3: the streaming pass loads through the same catalog
+         *  config path, so the override applies here too (a re-run must not
+         *  stream one language and refine under another). */
+        languageOverride: String?,
+        filePath: String?,
+        prompt: String,
+        queuePosition: Int,
+        queueTotal: Int,
+        context: Context,
+        cacheDir: File,
+        listener: TranscriptionListener,
+        coroutineScope: CoroutineScope,
+        onSkipped: (token: String, loopMetrics: String?) -> Unit = { _, _ -> },
+    ): FirstPassOutcome? {
+        val fastId = DualRefinementPolicy.fastBackendFor(
+            requestType = requestType,
+            backendOverride = backendOverride,
+            refinementEnabled = preferencesManager.refinementEnabled.first(),
+            selectedBackendId = preferencesManager.transcriptionBackend.first(),
+            streamingBackendId = installedStreamingBackendId(context),
+        ) ?: return null
+
+        // F1: a fast-model load failure skips phase 1 silently; the run
+        // degrades to single-model (the skip token rides the context).
+        val load = ensureBackendLoaded(context, fastId, languageOverride)
+        if (load.isFailure) {
+            Log.i(TAG, "Fast first pass skipped (load failed): ${load.exceptionOrNull()?.message}")
+            onSkipped(DualRefinementPolicy.SKIP_FAST_LOAD_FAILED, null)
+            return null
+        }
+        // The base listener is passed as-is: processAudioRequest reports
+        // failures as return values and never calls the funnel callbacks, so
+        // plain delegation (which an empty wrapper reduced to) is identity.
+        val result = processAudioRequest(
+            taskId = taskId, filePath = filePath, prompt = prompt,
+            queuePosition = queuePosition, queueTotal = queueTotal,
+            context = context, cacheDir = cacheDir,
+            listener = listener, coroutineScope = coroutineScope,
+        )
+        val outcome = result.getOrNull()?.takeIf { it.text.isNotBlank() }
+        if (outcome == null) {
+            // F2/F3: mid-stream death or a blank pass. The TASK-568 machinery
+            // salvaged any partial onto the row; phase 2 supersedes it.
+            Log.i(TAG, "Fast first pass produced no usable text; single-model run")
+            onSkipped(DualRefinementPolicy.SKIP_FAST_BLANK, null)
+            return null
+        }
+        // TASK-579 (AC2, the other direction): a budget-filling loop from the
+        // fast pass must not ride the row as the first pass nor survive as
+        // the F4/F5 fallback text; the run degrades to single-model instead.
+        val fastLoop = RepetitionLoopDetector.detect(outcome.text)
+        if (fastLoop != null) {
+            val loopMetrics = fastLoop.metrics()
+            Log.i(TAG, "Fast first pass repetition loop (${fastLoop.reason} $loopMetrics); single-model run")
+            onSkipped(DualRefinementPolicy.SKIP_FAST_LOOP, loopMetrics)
+            return null
+        }
+        // Force-write the complete first-pass text so the row shows it while
+        // PROCESSING (the interim throttle would otherwise sit on it), and
+        // seed the crash-recovery state with it (review F3): phase 2 runs
+        // with interim writes suppressed, so without a fresh seed the state
+        // goes stale and the interruption dialog misfires mid-run.
+        runCatching {
+            logDao.updateInterimResult(taskId, outcome.text, isPartial = true)
+            preferencesManager.savePartialTranscriptionState(outcome.text)
+        }
+        return FirstPassOutcome(
+            text = outcome.text,
+            // Belt-and-braces stamp: today all four audio assembly paths
+            // stamp backendId themselves and no backend ever supplies its
+            // own ProcessingContext, so this is normally a same-value copy;
+            // a future arm that forgets the stamp still credits the fast
+            // model here. No test pins the four stamps yet (TASK-601
+            // residue, with TASK-595's harness).
+            processing = (outcome.processing ?: ProcessingContext(decodePath = "whole_file"))
+                .copy(backendId = fastId),
+            confidence = outcome.confidence,
+            detectedLanguage = outcome.detectedLanguage,
+            segments = outcome.segments,
+            isPartial = outcome.isPartial,
+            failedChunkCount = outcome.failedChunkCount,
+        )
+    }
+
+    /**
+     * GH #83: the optional speaker-labeling pass over a completed audio
+     * result. Downloads the two models on first use, runs the diarization
+     * engine on the concatenated preprocessed chunks (the cues' own
+     * timeline), and labels each cue by speech-time voting with the
+     * 2-speaker "phone call" preset. Additive only: any failure logs and
+     * returns the input unchanged.
+     */
+    private suspend fun applySpeakerLabels(
+        context: Context,
+        result: Result<TranscriptionResult>,
+        chunks: List<FloatArray>,
+        sampleRate: Int,
+        listener: TranscriptionListener,
+    ): Result<TranscriptionResult> {
+        val transcription = result.getOrNull() ?: return result
+        if (transcription.segments.isEmpty()) return result
+        // The failure arm recovers OUT HERE (fold, the punctuation pass's
+        // shape): a .map recovery inside runCatching would never run, and
+        // the failure would surface as INFERENCE_ERROR on a transcript
+        // that already succeeded. Cancellation rethrows through degradeTo;
+        // everything else degrades to the unlabeled result. The status
+        // precedes the first-use download so the row never sits silent
+        // behind ~47 MB.
+        return runCatching {
+            listener.onStatusUpdate(context.getString(R.string.speaker_labels_status))
+            DiarizationModels.ensureDownloaded(context).getOrThrow()
+            val threads = preferencesManager.threadCount.first()
+            // The preprocessor's own merge keeps this copy's memory-peak
+            // contract pinned with its tests (code review F8); the list is
+            // dead after the merge, so its destructive clear is fine.
+            val samples = audioPreprocessor.mergeAndResample(
+                chunks.toMutableList(), sampleRate).first
+            val diarizer = SpeakerDiarizer.create(
+                segmentationModel = DiarizationModels.segmentationFile(context),
+                embeddingModel = DiarizationModels.embeddingFile(context),
+                numThreads = threads,
+            ).getOrThrow()
+            try {
+                val segments = diarizer.diarize(samples, sampleRate)
+                val labels = SpeakerLabeler.label(transcription.segments, segments)
+                result.map { unlabeled ->
+                    unlabeled.copy(
+                        segments = unlabeled.segments.mapIndexed { index, cue ->
+                            cue.copy(speaker = labels[index])
+                        })
+                }
+            } finally {
+                diarizer.release()
+            }
+        }.fold(
+            onSuccess = { it },
+            onFailure = { failure ->
+                Result.success(degradeTo(transcription, "Speaker labels", failure))
+            },
+        )
+    }
+
+    /**
+     * TASK-579: the phase-2 success arm of the dual fold. A refinement
+     * that completed in a repetition loop (RepetitionLoopDetector) must
+     * not replace the good first pass; it delivers through the same
+     * F4/F5 funnel with the loop skip token. A clean refinement carries
+     * the first pass alongside, as before. Extracted for the fold-arm
+     * tests: the full success path needs a real phase-2 load.
+     */
+    internal fun refinementFoldSuccess(
+        fastFirstPass: FirstPassOutcome,
+        refined: TranscriptionResult,
+    ): Result<TranscriptionResult> {
+        val loop = RepetitionLoopDetector.detect(refined.text)
+        val refineLoopMetrics = loop?.metrics()
+        return if (loop == null) {
+            Result.success(refined.copy(firstPass = fastFirstPass))
+        } else {
+            recoverFirstPass(
+                fastFirstPass,
+                IllegalStateException("refinement repetition loop: ${loop.reason} $refineLoopMetrics"),
+                DualRefinementPolicy.SKIP_REFINE_LOOP,
+                loopMetrics = refineLoopMetrics,
+            )
+        }
+    }
+
+    /**
+     * F4/F5 and the TASK-579 loop arm: phase 2 is dead, or completed with
+     * unusable (looping) output, while the first pass completed. Build the
+     * first-pass result that flows the normal funnel (punctuation, summary,
+     * one notification); Cancellation keeps its contract.
+     */
+    private fun recoverFirstPass(
+        firstPass: FirstPassOutcome,
+        failure: Throwable,
+        skipToken: String,
+        loopMetrics: String? = null,
+    ): Result<TranscriptionResult> {
+        if (failure is kotlinx.coroutines.CancellationException) {
+            throw failure
+        }
+        Log.w(TAG, "Refinement failed; delivering first pass (${failure.message})")
+        return Result.success(
+            TranscriptionResult(
+                text = firstPass.text,
+                processing = firstPass.processing,
+                confidence = firstPass.confidence,
+                detectedLanguage = firstPass.detectedLanguage,
+                segments = firstPass.segments,
+                // A partially-decoded first pass is delivered as partial:
+                // the notification title and logSuccess must not claim a
+                // complete transcript (guard-review finding).
+                isPartial = firstPass.isPartial,
+                failedChunkCount = firstPass.failedChunkCount,
+                firstPass = firstPass.copy(
+                    refinementFailedToken = skipToken,
+                    refinementLoopMetrics = loopMetrics,
+                ),
+            )
+        )
+    }
+
+    /** The installed streaming catalog entry id, when one resolves locally.
+     *  TASK-603 F3: delegates to the shared owner (Settings derives the
+     *  toggle's availability from the same probe). */
+    private suspend fun installedStreamingBackendId(context: Context): String? =
+        SherpaModelManager.installedStreamingEntryId(context)
+
+    /** GH #43: nests the first pass's context and the skip token on the
+     *  delivered row's (phase 2) context; a no-op for single-model runs. */
+    private fun ProcessingContext?.withRefinement(
+        refinedFrom: ProcessingContext?,
+        skipReason: String?,
+        loopMetrics: String? = null,
+    ): ProcessingContext? {
+        if (this == null && refinedFrom == null && skipReason == null) return this
+        return (this ?: ProcessingContext(decodePath = "unknown")).copy(
+            refinementPhase = refinedFrom,
+            refinementSkipReason = skipReason,
+            // Future-proofing only: today both metrics sources are already
+            // loop-token-exclusive by construction; if a future skip token
+            // ever carries metrics, this guard must grow with it.
+            refinementLoopMetrics = loopMetrics?.takeIf {
+                skipReason == DualRefinementPolicy.SKIP_FAST_LOOP ||
+                    skipReason == DualRefinementPolicy.SKIP_REFINE_LOOP
+            },
         )
     }
 
@@ -843,7 +1809,8 @@ class TranscriptionOrchestrator @Inject constructor(
      * Shared pre-flight + preference resolution + backend activation body.
      *
      * Validates the model directory, runs the OOM memory pre-flight gated by
-     * [forceModelLoad], resolves thread count and inference provider, then calls
+     * the opt-in [memoryProtection] preference, resolves thread count and
+     * inference provider, then calls
      * [backendManager.setActiveBackend] with the [configBlock] lambda.
      *
      * Shared by [configureSherpaBackend] (static sherpa-onnx backends) and
@@ -859,18 +1826,22 @@ class TranscriptionOrchestrator @Inject constructor(
         if (!modelDir.exists() || !modelDir.isDirectory) {
             return Result.failure(IllegalStateException("$label model directory not found: ${modelDir.absolutePath}"))
         }
+
         // Pre-flight memory check: refuse to load if free memory is below the model size + headroom.
-        // Gated by the forceModelLoad preference so a determined user can bypass it. availMem is a
-        // coarse predictor (lmkd uses PSI + oom_score_adj, not a literal MemAvailable comparison);
-        // the headroom absorbs inference overhead and reclaimable-cache noise.
+        // TASK-631: runs ONLY when the opt-in memoryProtection preference is on; off (the default)
+        // the app always attempts the load and never refuses on its own (two healthy-device
+        // misfires). availMem is a coarse predictor (lmkd uses PSI + oom_score_adj, not a literal
+        // MemAvailable comparison); the headroom absorbs inference overhead and reclaimable-cache
+        // noise.
         // TASK-575: A0 sampled unconditionally (the measurement is wanted even
-        // when the check is bypassed by forceModelLoad); provider/threads are
+        // when protection is off); provider/threads are
         // part of the measurement key (same model under NNAPI vs CPU is a
         // different footprint).
         val resolvedProviderPref = InferenceProvider.resolve(preferencesManager.inferenceProvider.first())
         val threadCountPref = preferencesManager.threadCount.first()
         val availBeforeLoad = availableMemoryBytes(context)
-        if (!preferencesManager.forceModelLoad.first()) {
+        val memoryProtectionOn = preferencesManager.memoryProtection.first()
+        if (memoryProtectionOn) {
             val availBytes = availBeforeLoad
             // Fail open if we could not read available memory (e.g. no ActivityManager service in
             // a test/local context): blocking on an unknown value would regress those contexts and
@@ -890,23 +1861,44 @@ class TranscriptionOrchestrator @Inject constructor(
                     Log.i(TAG, "Pre-flight uses the measured footprint for $label: required=${r / MB}MB (loadDelta=${measured.maxLoadDeltaBytes / MB}MB over ${measured.runs} run(s))")
                     r
                 } else {
-                    modelDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } + MEMORY_HEADROOM_BYTES
+                    modelSizeBytes(modelDir) + MEMORY_HEADROOM_BYTES
                 }
-                if (availBytes < requiredBytes) {
+                if (shouldRefuseForMemory(memoryProtectionOn, availBytes, requiredBytes)) {
                     Log.w(TAG, "Blocking $label load: avail=${availBytes / MB}MB < required=${requiredBytes / MB}MB (basis=${if (measured != null) "measured" else "size+headroom"}, headroom=${MEMORY_HEADROOM_BYTES / MB}MB)")
                     return Result.failure(TranscriptionException.InsufficientMemory(
                         context.getString(R.string.model_load_low_memory, formatMb(availBytes), formatMb(requiredBytes))
                     ))
                 }
             }
+        } else {
+            // TASK-631 part 2: the default path never blocks, but a tight
+            // margin warns once per model identity.
+            maybeWarnTightMargin(context, label, backendId, modelDir, resolvedProviderPref, threadCountPref, availBeforeLoad)
         }
         Log.i(TAG, "Auto-loading $label model from: ${modelDir.absolutePath}")
         Log.i(TAG, "Inference provider: resolved=$resolvedProviderPref")
-        val loadResult = backendManager.setActiveBackend(
-            backendId = backendId,
-            context = context,
-            config = configBlock(threadCountPref, resolvedProviderPref),
-        )
+        // TASK-640: arm the crash marker around backendManager.setActiveBackend,
+        // whose window includes both the PREVIOUS backend's native unload and the
+        // new model's native init (an unload crash would over-quarantine the new
+        // id: accepted, splitting unload from init is a manager-level change).
+        // External ids only: that is the class CrashQuarantineCheck acts on.
+        // The clear is NonCancellable: a task-swipe cancellation must still clear
+        // the marker, or the next cold start would falsely quarantine a healthy
+        // model. Scope: sherpa loads only; the LLM and benchmark loads are
+        // unarmed by design (their quarantine is not specified).
+        val armed = backendId.startsWith(ExternalModelRecord.BACKEND_ID_PREFIX)
+        if (armed) preferencesManager.savePendingBackendLoad(backendId)
+        val loadResult = try {
+            backendManager.setActiveBackend(
+                backendId = backendId,
+                context = context,
+                config = configBlock(threadCountPref, resolvedProviderPref),
+            )
+        } finally {
+            if (armed) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                preferencesManager.savePendingBackendLoad(null)
+            }
+        }
         // TASK-575: record the measured footprint of a successful load so the
         // next pre-flight uses it instead of the disk-size estimate. Failures
         // here never fail the load itself. The merge runs inside the storage
@@ -950,8 +1942,61 @@ class TranscriptionOrchestrator @Inject constructor(
      * under a different provider (NNAPI driver buffers vs CPU arena, issue
      * #26) has a different footprint (review F2).
      */
+
+    /**
+     * TASK-575: the per-model key for the measured-footprint records. The
+     * provider and thread count are part of the identity: the same model
+     * under a different provider (NNAPI driver buffers vs CPU arena, issue
+     * #26) has a different footprint (review F2).
+     */
     private fun memoryKey(backendId: String, modelDir: File, provider: String, threadCount: Int): String =
         backendId + '@' + provider + '@' + threadCount + '@' + modelDir.absolutePath
+
+    /**
+     * TASK-631 part 2: the default path's dismissable tight-margin warning.
+     * Never blocks; posts ONCE per model identity per process (swiping the
+     * notification away does not re-arm: the dedup key is the identity, not
+     * the notification's lifetime). The measured footprint is preferred,
+     * mirroring the opt-in branch; the size walk is a few stat() calls.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun maybeWarnTightMargin(
+        context: Context,
+        label: String,
+        backendId: String,
+        modelDir: File,
+        provider: String,
+        threads: Int,
+        availBytes: Long,
+    ) {
+        if (availBytes <= 0) return
+        val key = memoryKey(backendId, modelDir, provider, threads)
+        // Dedup first: a repeat load of the same identity skips both the
+        // preference read and the size work entirely.
+        if (key in warnedMarginKeys) return
+        // Measured-basis ONLY (review finding): the disk-size estimate is the
+        // figure this file documents as overshooting ~1GB (GH #63/#106); the
+        // first load of an identity has no record yet and must not cry wolf
+        // on healthy devices. After one successful load the record exists and
+        // the warning speaks from measured data.
+        val measured = preferencesManager.measuredModelMemory.first()[key] ?: return
+        val requiredBytes = MeasuredModelMemory.requiredBytes(measured, MEMORY_HEADROOM_BYTES)
+        if (availBytes < requiredBytes && warnedMarginKeys.add(key)) {
+            Log.w(TAG, "Tight memory margin for $label (avail=${availBytes / MB}MB < required=${requiredBytes / MB}MB); posting the dismissable warning")
+            runCatching {
+                val nm = context.getSystemService(NotificationManager::class.java)
+                nm.notify(
+                    MEMORY_MARGIN_WARNING_ID,
+                    ResultNotificationFactory(context).alertNotification(
+                        title = context.getString(R.string.memory_margin_warning_title),
+                        text = context.getString(R.string.memory_margin_warning_body, label),
+                    ))
+            }.onFailure { Log.w(TAG, "Could not post the memory-margin warning", it) }
+        }
+    }
+
+    /** TASK-631 part 2: one warning per model identity per process. */
+    private val warnedMarginKeys: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Sherpa-onnx backend loader: validates the model dir, delegates to the shared
@@ -1004,24 +2049,6 @@ class TranscriptionOrchestrator @Inject constructor(
                 provider = provider,
             )
         }
-    }
-
-    // GGUF: disabled — move files from gguf-disabled/ to re-enable the body below
-    private suspend fun loadGgufBackend(context: Context): Result<Unit> {
-        return Result.failure(IllegalStateException("GGUF backend not available"))
-        // val modelPath = preferencesManager.ggufModelPath.first()
-        // if (modelPath.isNullOrBlank()) {
-        //     return Result.failure(IllegalStateException("No GGUF model configured. Download or select a model in Settings."))
-        // }
-        // Log.i(TAG, "Auto-loading GGUF model from: $modelPath")
-        // return backendManager.setActiveBackend(
-        //     backendId = "gemma4_gguf",
-        //     context = context,
-        //     config = BackendConfig.GgufConfig(
-        //         modelPath = modelPath,
-        //         threadCount = preferencesManager.threadCount.first()
-        //     )
-        // )
     }
 
     // ---- Text Processing ----
@@ -1077,7 +2104,20 @@ class TranscriptionOrchestrator @Inject constructor(
         context: Context,
         cacheDir: File,
         listener: TranscriptionListener,
-        coroutineScope: CoroutineScope
+        coroutineScope: CoroutineScope,
+        /** GH #43: phase 2 of a two-pass run passes false so the accurate
+         *  pass's growing partials never overwrite the complete first-pass
+         *  text already on the row (design D6: the text never regresses). */
+        emitInterim: Boolean = true,
+        /** GH #83: when non-null, invoked once with the preprocessed chunks
+         *  and their sample rate (contiguous-timeline runs only) for the
+         *  speaker-labeling pass. Streaming and VAD-segmented runs never
+         *  invoke it and the pass is skipped for them. */
+        collectSamples: ((List<FloatArray>, Int) -> Unit)? = null,
+        /** TASK-681: request-scoped language override, forwarded to the
+         *  LAN-offload arm (its language is a request field, not engine
+         *  config; local backends keep resolving it at load time). */
+        languageOverride: String? = null,
     ): Result<TranscriptionResult> {
         if (filePath.isNullOrEmpty()) {
             return Result.failure(IllegalArgumentException("No file path provided"))
@@ -1095,6 +2135,25 @@ class TranscriptionOrchestrator @Inject constructor(
             return Result.failure(IllegalStateException(
                 "${backend.displayName} does not support audio transcription"
             ))
+        }
+
+        // TASK-681: the whole-file offload arm. Everything below this point
+        // exists to feed a phone-side decoder (decode, VAD, chunk seams); a
+        // whole-container backend uploads the ORIGINAL file and the server
+        // chunks internally, so no PCM is ever materialized on the phone.
+        // That is also what lets this arm serve the multi-hour files the
+        // whole-file path must refuse for RAM. The capability flag (not a
+        // backend id) gates it, so a second whole-file backend reuses the
+        // arm unchanged.
+        if (backend.transcribesWholeContainer) {
+            return processRemoteAudioRequest(
+                taskId = taskId,
+                filePath = filePath,
+                backend = backend,
+                languageOverride = languageOverride,
+                context = context,
+                listener = listener,
+            )
         }
 
         // Read settings. TASK-370 forced VAD-aligned segmentation for the llm
@@ -1138,8 +2197,18 @@ class TranscriptionOrchestrator @Inject constructor(
             // through the ExternalSherpaBackend's configured family.
             val memoryFamily = when {
                 backend.id == "whisper" -> TranscriptionMemoryPolicy.Family.WHISPER
-                backend is ExternalSherpaBackend &&
-                    backend.memoryFamily == com.antivocale.app.data.ModelFamily.WHISPER ->
+                // MOONSHINE rides the whisper curve too (GH #89): an
+                // encoder/decoder attention model with whisper-shaped memory
+                // behavior, and the flat transducer baseline under-refused
+                // exactly the light models the family exists for (a 953MB
+                // moonshine passed a bar the whisper curve refuses). The
+                // curve still PRICES the 30s whisper window though moonshine
+                // chunks at 8s (TASK-619): deliberate conservatism, no
+                // moonshine RAM measurement exists, and the 600MB overhead
+                // floor dominates the term anyway.
+                backend is ExternalSherpaBackend && (
+                    backend.memoryFamily == com.antivocale.app.data.ModelFamily.WHISPER ||
+                        backend.memoryFamily == com.antivocale.app.data.ModelFamily.MOONSHINE) ->
                     TranscriptionMemoryPolicy.Family.WHISPER
                 else -> TranscriptionMemoryPolicy.Family.TRANSDUCER
             }
@@ -1148,13 +2217,15 @@ class TranscriptionOrchestrator @Inject constructor(
             // hold even the minimum-chunk baseline, the old path proceeded at
             // the floor and the process walked into an LMK/OEM kill with no
             // trace anywhere (the 4GB crash report, TASK-468). A clear error
-            // beats a silent death; forceModelLoad keeps the bypass, mirroring
-            // the load pre-flight. Returned (not thrown) so the refusal rides
-            // the same failure path as every other transcription refusal.
+            // beats a silent death; TASK-631 makes the refusal opt-in
+            // (memoryProtection, mirroring the load pre-flight) so by default
+            // the app attempts the transcription anyway. Returned (not thrown)
+            // so the refusal rides the same failure path as every other
+            // transcription refusal.
             // avail is read POST-load (the model is resident), so the
             // required figure is the decode-side bar only; the displayed
             // number is exactly the compared number.
-            if (!preferencesManager.forceModelLoad.first() &&
+            if (preferencesManager.memoryProtection.first() &&
                 TranscriptionMemoryPolicy.canServeMinimumChunk(availBytes, modelSize, memoryFamily) == false
             ) {
                 // minimumDecodeBaselineBytes already carries the headroom:
@@ -1251,6 +2322,17 @@ class TranscriptionOrchestrator @Inject constructor(
             return Result.failure(IllegalStateException("Audio preprocessing failed: ${e.message}"))
         }
 
+        // GH #83: hand the caller the preprocessed chunks while they are all
+        // in hand, only when NO VAD preprocessing ran: VAD-segmented runs
+        // carry gap-stripped cues on the original timeline, and even the
+        // single-speech-span arm offsets cues by originMs while the
+        // concatenation starts at the speech onset (code review F3); the
+        // offset mapping is a tracked follow-up, not a v1 guess.
+        if (!vadEnabled) {
+            sampleTimeline = preprocessingResult.chunks
+            sampleTimelineRate = preprocessingResult.sampleRate
+        }
+
         val chunkCount = preprocessingResult.chunkCount
         val audioDurationSeconds = preprocessingResult.totalDurationSeconds.toInt()
         val preprocessMs = System.currentTimeMillis() - preprocessStartMs
@@ -1266,13 +2348,30 @@ class TranscriptionOrchestrator @Inject constructor(
         // the callback via the default implementation in TranscriptionBackend.
         if (chunkCount == 1) {
             val t0 = System.currentTimeMillis()
-            val result = backend.transcribeAudioStreaming(
-                prompt = resolvedPrompt,
-                samples = preprocessingResult.chunks.first(),
-                sampleRate = preprocessingResult.sampleRate
-            ) { partial ->
-                updateInterimResult(taskId, partial)
-                listener.onInterimResult(
+            // TASK-602 F1: a single non-streaming decode (the common
+            // voice-message shape) has no callbacks; without a heartbeat the
+            // phase-2 boundary seed ages past the 15s staleness gate while
+            // the accurate model loads and decodes, and reopening mid-run
+            // offers recovery for a LIVE run. Re-saving the same text only
+            // refreshes the timestamp.
+            val seedHeartbeat = if (!emitInterim) coroutineScope.launch {
+                while (isActive) {
+                    delay(PARTIAL_SAVE_INTERVAL_MS)
+                    val seed = preferencesManager.partialTranscriptionText.first()
+                    if (!seed.isNullOrBlank()) {
+                        preferencesManager.savePartialTranscriptionState(seed)
+                    }
+                }
+            } else null
+            val result = try {
+                backend.transcribeAudioStreaming(
+                    prompt = resolvedPrompt,
+                    samples = preprocessingResult.chunks.first(),
+                    sampleRate = preprocessingResult.sampleRate
+                ) { partial ->
+                if (emitInterim) {
+                    updateInterimResult(taskId, partial)
+                    listener.onInterimResult(
                     contentText = partial,
                     bigText = partial,
                     subText = "",
@@ -1280,9 +2379,14 @@ class TranscriptionOrchestrator @Inject constructor(
                     chunkText = partial,
                     totalChunks = 1
                 )
+                    }
+                }
+            } finally {
+                seedHeartbeat?.cancel()
             }
             val inferMs = System.currentTimeMillis() - t0
             Log.i(TAG, "Inference timing: ${inferMs}ms for ${audioDurationSeconds}s audio (backend=${backend.id}, provider=$resolvedProvider, threads=${threadCount}, chunks=$chunkCount)")
+            fireCollector()
             return when {
                 result.isSuccess -> {
                     val tr = result.getOrNull()!!
@@ -1299,11 +2403,15 @@ class TranscriptionOrchestrator @Inject constructor(
                         } else emptyList()
                         // Tokens are chunk-relative intermediates; the assembled result
                         // carries cues only, same convention as the other three paths.
+                        // Review F3/F5: delivered text rehabilitates (statement
+                        // before the block's result expression).
+                        silentModelDemoter.onSuccessfulDecode(backend.id)
                         Result.success(tr.copy(
                             text = trimmed, segments = segments, tokens = emptyList(),
                             // TASK-512: the single-decode fast path (the most
                             // common run: the short voice message).
                             processing = ProcessingContext(
+                                backendId = backend.id,
                                 decodePath = "whole_file",
                                 vadRequested = vadRequested,
                                 transcribedSeconds = audioDurationSeconds.toDouble().takeIf { it > 0.0 },
@@ -1311,15 +2419,42 @@ class TranscriptionOrchestrator @Inject constructor(
                                 availableRamBytes = availableRamBytes,
                             )))
                     } else {
-                        Result.failure(TranscriptionException.NoTranscriptionProduced())
+                        // TASK-675 signal 2 at this site: the post-preprocessing
+                        // duration. On VAD runs it is the VAD-KEPT speech length,
+                        // so > 0 means the VAD itself confirmed speech; on VAD-off
+                        // runs it is the raw clip length, the weaker
+                        // "audio content was present" signal (N=2 is the guard).
+                        // TASK-622: whole-file blank (1 chunk); on the most
+                        // common path silence and broken decode were
+                        // indistinguishable on the ERROR row until this.
+                        // Review F1: on VAD runs the kept duration IS the VAD's
+                        // speech confirmation; VAD-off duration proves samples
+                        // existed, not speech, so the weak signal never demotes.
+                        silentDecodeFailure(
+                            backend, 1,
+                            vadEnabled && preprocessingResult.totalDurationSeconds > 0.0)
                     }
                 }
-                else -> Result.failure(result.exceptionOrNull()!!)
+                else -> {
+                    // Review F2: a streaming-family external reports blank as a
+                    // NoTranscriptionProduced FAILURE, not a blank success; the
+                    // demotion aggregate must see that class too (same strong
+                    // VAD rule as the success-shaped blank).
+                    val failure = result.exceptionOrNull()!!
+                    if (failure is TranscriptionException.NoTranscriptionProduced) {
+                        silentDecodeFailure<TranscriptionResult>(
+                            backend, failure.blankChunks ?: 1,
+                            vadEnabled && preprocessingResult.totalDurationSeconds > 0.0)
+                    } else {
+                        Result.failure(failure)
+                    }
+                }
             }
         }
 
         // Progressive path: VAD-segmented audio + progressive toggle enabled
         if (preprocessingResult.isVadSegmented && progressiveEnabled) {
+            fireCollector()
             return applyFinalGenerativePass(
                 backend, promptPlan.finalPass,
                 processProgressiveSegments(
@@ -1335,11 +2470,15 @@ class TranscriptionOrchestrator @Inject constructor(
                     audioDurationSeconds = audioDurationSeconds,
                     chunkProcessingStartTime = chunkProcessingStartTime,
                     listener = listener,
-                    transcriptionStartTime = transcriptionStartTime
+                    transcriptionStartTime = transcriptionStartTime,
+                    emitInterim = emitInterim
                 ))
         }
 
-        // Multi-chunk path: parallel processing with progress tracking
+        // Multi-chunk path: parallel processing with progress tracking.
+        // TASK-600 F11: fire the collector at the single seam before the
+        // result leaves this function (no-op when nothing was recorded).
+        fireCollector()
         return applyFinalGenerativePass(
             backend, promptPlan.finalPass,
             processParallelChunks(
@@ -1360,8 +2499,60 @@ class TranscriptionOrchestrator @Inject constructor(
                 listener = listener,
                 coroutineScope = coroutineScope,
                 transcriptionStartTime = transcriptionStartTime,
-                progressiveEnabled = progressiveEnabled
+                progressiveEnabled = progressiveEnabled,
+                emitInterim = emitInterim
             ))
+    }
+
+    /**
+     * TASK-681: the LAN-offload arm of [processAudioRequest]. No phone-side
+     * decode: the original container is uploaded whole (the OmniVoice server
+     * chunks internally). The metadata duration still feeds the row and the
+     * calibration profile; cue timing is honestly absent (the json response
+     * carries text only), and the wall-clock budget inside the backend is
+     * the honest ceiling for a wedged or offline box.
+     */
+    private suspend fun processRemoteAudioRequest(
+        taskId: String,
+        filePath: String,
+        backend: TranscriptionBackend,
+        languageOverride: String?,
+        context: Context,
+        listener: TranscriptionListener,
+    ): Result<TranscriptionResult> {
+        val chunkProcessingStartTime = System.currentTimeMillis()
+        // Metadata-only probe (the same read the long-audio gate uses); a
+        // container without duration tags reports 0 and the row simply
+        // carries no duration, which the Logs already tolerate.
+        val durationSeconds = runCatching { audioPreprocessor.getAudioDuration(filePath) }.getOrNull() ?: 0.0
+        if (durationSeconds > 0.0) {
+            updateAudioDuration(taskId, durationSeconds)
+        }
+        listener.onStatusUpdate(context.getString(R.string.remote_offload_status))
+        // The language pin is a REQUEST field here (the endpoint's optional
+        // ISO-639-1): the untouched default stays model-side detection, an
+        // explicit pin (or the phone-locale pin) passes through, the same
+        // mapping the offline catalog entries use.
+        val languagePref = languageOverride ?: preferencesManager.transcriptionLanguage.first()
+        val language = TranscriptionLanguagePolicy.resolveOffline(
+            languagePref, com.antivocale.app.util.LocaleManager.phoneLanguage(context))
+        val result = backend.transcribeFile(filePath, language = language)
+        if (durationSeconds > 0.0) {
+            recordCalibration(backend, durationSeconds.toInt(), chunkProcessingStartTime)
+        }
+        return result.map { tr ->
+            tr.copy(
+                text = tr.text.trim(),
+                processing = ProcessingContext(
+                    backendId = backend.id,
+                    decodePath = "remote_offload",
+                    transcribedSeconds = durationSeconds.takeIf { it > 0.0 },
+                    // No VAD decision and no RAM constraint applies: this run
+                    // decoded nothing on the phone, so neither field claims one.
+                    vadRequested = null,
+                    availableRamBytes = null,
+                ))
+        }
     }
 
     /**
@@ -1377,8 +2568,13 @@ class TranscriptionOrchestrator @Inject constructor(
     ): Result<TranscriptionResult> {
         if (generativePrompt == null || result.isFailure) return result
         val transcript = result.getOrNull()?.text?.takeIf { it.isNotBlank() } ?: return result
-        return backend
-            .generateText(ChunkPromptPolicy.finalPrompt(generativePrompt, transcript))
+        // Review R4: this is the third on-device LLM post-pass; it runs
+        // under the SAME wall-clock owner (the custom-prompt final pass is
+        // a single generation over the transcript, so the cleanup budget
+        // shape fits).
+        return LlmBudget.generateWithBudget(
+            backend, ChunkPromptPolicy.finalPrompt(generativePrompt, transcript),
+            LlmBudget.CLEANUP_BUDGET_MS, "final-generative")
             .fold(
                 onSuccess = { processed ->
                     if (processed.isNotBlank()) result.map { it.copy(text = processed.trim()) }
@@ -1397,6 +2593,49 @@ class TranscriptionOrchestrator @Inject constructor(
      * whose cues all normalize blank yields no cue (the honest gap for a noise
      * decode). One owner keeps all four assembly paths in step.
      */
+    /**
+     * TASK-622: the one cause phrase for every blank-chunk diagnostic (log
+     * lines and the all-blank error text share it so the wording cannot
+     * drift). [silenceExpected] keys it on the path's relationship with
+     * silence: the pipeline stream never strips silence (blanks are normal
+     * there), VAD paths selected their chunks AS speech (a blank there is
+     * the suspect signal).
+     */
+    private fun blankCause(silenceExpected: Boolean): String =
+        "silence ${if (silenceExpected) "(expected on this path) " else ""}or swallowed decode failure"
+
+    /**
+     * TASK-675: the silent-model demotion hook. Signal 1 (the model decoded
+     * empty) is the caller's situation: the caller sits on the
+     * NoTranscriptionProduced / all-blank raise with blank chunks counted.
+     * [speechPresent] is signal 2, honestly derived per path by the caller
+     * (VAD-confirmed speech where the VAD ran, decoded-duration-only
+     * otherwise). The demoter owns the N=2-within-a-session threshold, the
+     * persisted set, and the remote/LLM exclusion; it never raises.
+     */
+    /**
+     * Simplify F2: the three whole-clip-empty failure sites share this one
+     * helper, making the invariant structural: a decode path cannot raise
+     * NoTranscriptionProduced without the demotion having been considered.
+     * The progressive site stays separate (its failure family is
+     * BlankSegmentsException behind a three-way when).
+     */
+    private suspend fun <T> silentDecodeFailure(
+        backend: TranscriptionBackend,
+        blankChunks: Int,
+        speechPresent: Boolean,
+    ): Result<T> {
+        if (blankChunks > 0) recordSilentDecodeForDemotion(backend, speechPresent)
+        return Result.failure(TranscriptionException.NoTranscriptionProduced(blankChunks = blankChunks))
+    }
+
+    private suspend fun recordSilentDecodeForDemotion(
+        backend: TranscriptionBackend,
+        speechPresent: Boolean,
+    ) {
+        silentModelDemoter.recordSilentDecode(backend.id, speechPresent)
+    }
+
     private fun cuesForChunk(
         tokens: List<TimedToken>,
         trimmedChunkText: String,
@@ -1406,6 +2645,17 @@ class TranscriptionOrchestrator @Inject constructor(
         if (tokens.isNotEmpty()) SentenceCueBuilder.build(tokens, startMs, endMs, trimmedChunkText)
         else listOf(TimedSegment(startMs, endMs, trimmedChunkText))
 
+    /**
+     * TASK-673: the offline partials contract, VAD-segmented arm. Each
+     * delivered interim costs EXACTLY the chunk decode that produced it: the
+     * chunk text is appended to the accumulation and handed to the
+     * row/notification surfaces as it completes, and nothing is ever
+     * re-decoded to produce a partial. The per-partial cost is therefore
+     * bounded by one chunk (at most [chunkCapSeconds] of audio), never the
+     * whole file. The rejected alternative (re-decoding the still-open audio
+     * on a timer) and the undecided tier-2 candidates for the open tail are
+     * recorded in docs/research/2026-09-26_live-partials-and-demotion-design.md.
+     */
     private suspend fun processProgressiveSegments(
         taskId: String,
         chunkCapSeconds: Int?,
@@ -1419,12 +2669,14 @@ class TranscriptionOrchestrator @Inject constructor(
         audioDurationSeconds: Int,
         chunkProcessingStartTime: Long,
         listener: TranscriptionListener,
-        transcriptionStartTime: Long
+        transcriptionStartTime: Long,
+        emitInterim: Boolean = true
     ): Result<TranscriptionResult> {
         val chunkCount = chunks.size
         Log.i(TAG, "VAD-segmented progressive path: $chunkCount segments")
         val accumulatedText = StringBuilder()
         var failedSegments = 0
+        var blankSegments = 0
         var minConfidence: Float? = null
         var detectedLang: String? = null
         val segments = mutableListOf<TimedSegment>()
@@ -1432,7 +2684,7 @@ class TranscriptionOrchestrator @Inject constructor(
         for (i in chunks.indices) {
             val segNumber = i + 1
             if (accumulatedText.isEmpty()) {
-                listener.onStatusUpdate("Transcribing segment 1…")
+                if (emitInterim) listener.onStatusUpdate("Transcribing segment 1…")
             }
 
             val segResult = backend.transcribeAudio(samples = chunks[i], sampleRate = sampleRate, prompt = prompt)
@@ -1446,21 +2698,36 @@ class TranscriptionOrchestrator @Inject constructor(
                         segmentRangesMs.getOrNull(i)?.let { (startMs, endMs) ->
                             segments.addAll(cuesForChunk(tr.tokens, trimmed, startMs, endMs))
                         }
-                        updateInterimResult(taskId, accumulatedText.toString())
-                        Log.i(TAG, "Progressive preview: segment ${trimmed.length} chars, total ${accumulatedText.length} chars")
-                        listener.onInterimResult(
-                            contentText = trimmed,
-                            bigText = trimmed,
-                            subText = "Segment $segNumber/$chunkCount",
-                            chunkIndex = i,
-                            chunkText = trimmed,
-                            totalChunks = chunkCount
-                        )
+                        // TASK-602: the crash-recovery partial must refresh even
+                        // when interim writes are suppressed (dual phase 2),
+                        // or the seed ages past RECOVERY_STALE_THRESHOLD_MS and
+                        // reopening mid-run offers recovery for a LIVE run;
+                        // same writeRow idiom as the pipeline/windowed paths.
+                        updateInterimResult(taskId, accumulatedText.toString(), writeRow = emitInterim)
+                        if (emitInterim) {
+                            Log.i(TAG, "Progressive preview: segment ${trimmed.length} chars, total ${accumulatedText.length} chars")
+                            listener.onInterimResult(
+                                contentText = trimmed,
+                                bigText = trimmed,
+                                subText = "Segment $segNumber/$chunkCount",
+                                chunkIndex = i,
+                                chunkText = trimmed,
+                                totalChunks = chunkCount
+                            )
+                        }
+                    } else {
+                        blankSegments++
                     }
                     minConfidence = aggregateConfidence(minConfidence, tr.confidence)
                     if (detectedLang == null) detectedLang = tr.detectedLanguage
                 },
                 onFailure = { error ->
+                    if (error is EngineWedgeTimeoutException) {
+                        // TASK-606 F2: wedged engine; each remaining segment
+                        // would burn a full generation ceiling for nothing.
+                        Log.e(TAG, "Segment $segNumber/$chunkCount timed out; engine wedged, aborting the run")
+                        return Result.failure(WedgeAbortException(error))
+                    }
                     failedSegments++
                     Log.e(TAG, "Segment $segNumber/$chunkCount failed", error)
                 }
@@ -1471,12 +2738,45 @@ class TranscriptionOrchestrator @Inject constructor(
         Log.i(TAG, "PERF: progressive total ${totalMs}ms for ${audioDurationSeconds}s audio, $chunkCount segments, backend=${backend.id}")
         recordCalibration(backend, audioDurationSeconds, chunkProcessingStartTime)
 
+        if (blankSegments > 0) {
+            // TASK-622: a blank is silence by design (GH #96) but also the
+            // signature of a swallowed decode failure; all-blank here is the
+            // over-ceiling tell.
+            Log.i(TAG, "Progressive: $blankSegments/$chunkCount segments decoded blank (${blankCause(false)})")
+        }
         return if (accumulatedText.isEmpty()) {
-            Result.failure(IllegalStateException("All $chunkCount segments failed to transcribe"))
+            // TASK-675: zero text across the whole clip while the VAD heard
+            // speech is the model-level aggregate (the TASK-664 chunk ladder
+            // exhausted). Signal 2 here is the post-VAD speech total: these
+            // chunks ARE the VAD-selected speech segments, so > 0 is the
+            // VAD's own confirmation. The all-FAILED shape below is a decode
+            // error, not a silent decode, and never counts.
+            if (failedSegments < chunkCount) {
+                // Review F1: the strong signal only; a VAD-off run's
+                // duration proves samples, not speech.
+                recordSilentDecodeForDemotion(backend, vadRequested && audioDurationSeconds > 0)
+            }
+            // TASK-622: the old message said "failed" even when every segment
+            // SUCCEEDED empty, misdirecting the first debugging pass.
+            Result.failure(when {
+                // All genuinely failed: the historical message (tests pin it).
+                failedSegments == chunkCount -> IllegalStateException("All $chunkCount segments failed to transcribe")
+                // All succeeded empty: a swallowed decode failure looks exactly
+                // like this (GH #96 semantics made it success); name it.
+                failedSegments == 0 -> BlankSegmentsException(
+                    blankSegments,
+                    "All $chunkCount segments decoded blank (${blankCause(false)})")
+                else -> BlankSegmentsException(
+                    blankSegments,
+                    "All $chunkCount segments produced no text ($failedSegments failed, $blankSegments blank)")
+            })
         } else {
             if (failedSegments > 0) {
                 Log.w(TAG, "Completed with $failedSegments/$chunkCount failed segments")
             }
+            // Review F3/F5: a successful decode is the rehabilitation
+            // signal (counter reset + persisted demotion cleared).
+            silentModelDemoter.onSuccessfulDecode(backend.id)
             Result.success(TranscriptionResult(
                 text = accumulatedText.toString(),
                 confidence = minConfidence,
@@ -1485,10 +2785,12 @@ class TranscriptionOrchestrator @Inject constructor(
                 failedChunkCount = failedSegments,
                 segments = segments,
                 processing = ProcessingContext(
+                    backendId = backend.id,
                     decodePath = "vad_chunked",
                     vadRequested = vadRequested,
                     totalChunks = chunkCount,
                     failedChunks = failedSegments,
+                    blankChunks = blankSegments.takeIf { it > 0 },
                     transcribedSeconds = audioDurationSeconds.toDouble().takeIf { it > 0.0 },
                     chunkCapSeconds = chunkCapSeconds,
                     availableRamBytes = availableRamBytes,
@@ -1516,7 +2818,8 @@ class TranscriptionOrchestrator @Inject constructor(
         listener: TranscriptionListener,
         coroutineScope: CoroutineScope,
         transcriptionStartTime: Long,
-        progressiveEnabled: Boolean = false
+        progressiveEnabled: Boolean = false,
+        emitInterim: Boolean = true
     ): Result<TranscriptionResult> {
         val chunkCount = chunks.size
         val completedChunks = AtomicInteger(0)
@@ -1561,7 +2864,17 @@ class TranscriptionOrchestrator @Inject constructor(
         }
 
         var failedChunks = 0
+        var blankChunks = 0
 
+        // TASK-606 F1: the timer is cancelled in a FINALLY: a WedgeAbort (or
+        // any throw) out of the scope below used to orphan the infinite
+        // progress timer, and a live child kept the per-task job from
+        // completing, deadlocking the service queue on taskJob.join().
+        // TASK-606 (round 16): hoisted so the post-scope return can read them.
+        var wedge: Throwable? = null
+        var wedgeResult: Result<TranscriptionResult>? = null
+
+        try {
         coroutineScope {
             val deferredResults = chunks.mapIndexed { index, chunk ->
                 async {
@@ -1576,9 +2889,22 @@ class TranscriptionOrchestrator @Inject constructor(
                 }
             }
 
+            // TASK-602 F2: the seed must refresh on EVERY phase-2 chunk
+            // completion, not only when the progressive builder exists:
+            // with the toggle off the old site never ran and the boundary
+            // seed went stale mid-run. Single-model runs with the toggle
+            // off keep the old no-interim-writes behavior.
             val progressiveText = if (progressiveEnabled) StringBuilder() else null
+            var seedText = ""
 
+            // TASK-606 (round 16): a wedge is recorded and the run RETURNs a
+            // failure like the VAD twin (the old throw escaped
+            // processAudioRequest, bypassed the dual-model recoverFirstPass
+            // fold, and discarded every completed chunk). Remaining
+            // iterations skip; the pending sibling chunks are cancelled
+            // after the loop so none burns another ceiling.
             deferredResults.forEachIndexed { index, deferred ->
+                if (wedge != null) return@forEachIndexed
                 val chunkResult = deferred.await()
                 chunkResult.fold(
                     onSuccess = { tr ->
@@ -1591,7 +2917,12 @@ class TranscriptionOrchestrator @Inject constructor(
                             if (progressiveText != null) {
                                 if (progressiveText.isNotEmpty()) progressiveText.append(' ')
                                 progressiveText.append(trimmed)
-                                updateInterimResult(taskId, progressiveText.toString())
+                            }
+                            seedText = if (progressiveText != null) progressiveText.toString() else trimmed
+                            if (progressiveText != null || !emitInterim) {
+                                updateInterimResult(taskId, seedText, writeRow = emitInterim)
+                            }
+                            if (progressiveText != null && emitInterim) {
                                 listener.onInterimResult(
                                     contentText = trimmed,
                                     bigText = trimmed,
@@ -1601,9 +2932,18 @@ class TranscriptionOrchestrator @Inject constructor(
                                     totalChunks = chunkCount
                                 )
                             }
+                        } else {
+                            blankChunks++
                         }
                     },
                     onFailure = { error ->
+                        if (error is EngineWedgeTimeoutException) {
+                            // TASK-606 F2: wedged engine; retrying burns a
+                            // second ceiling, continuing burns one per chunk.
+                            Log.e(TAG, "Parallel chunk ${index + 1} timed out; engine wedged, aborting the run")
+                            wedge = error
+                            return@fold
+                        }
                         Log.w(TAG, "Parallel chunk ${index + 1} failed, retrying with memory cleanup", error)
                         val retried = retryChunkWithGc(backend, chunks[index], sampleRate, prompt)
                         retried.fold(
@@ -1615,6 +2955,8 @@ class TranscriptionOrchestrator @Inject constructor(
                                     chunkTokens[index] = tr.tokens
                                     chunkConfidences[index] = tr.confidence
                                     chunkLanguages[index] = tr.detectedLanguage
+                                } else {
+                                    blankChunks++
                                 }
                             },
                             onFailure = { retryError ->
@@ -1625,12 +2967,32 @@ class TranscriptionOrchestrator @Inject constructor(
                     }
                 )
             }
+
+            wedge?.let { w ->
+                // Cancel the still-pending siblings so the scope can
+                // complete (coroutineScope waits for every child) and none
+                // burns another ceiling; the failure is RETURNED after the
+                // scope (a non-local return is not allowed in this lambda).
+                deferredResults.forEach { it.cancel() }
+                wedgeResult = Result.failure(WedgeAbortException(w))
+            }
+            }
+        } finally {
+            progressTimerJob.cancel()
         }
 
-        progressTimerJob.cancel()
+        val abort: Result<TranscriptionResult>? = wedgeResult
+        if (abort != null) {
+            return abort
+        }
 
         val combinedResult = results.filterNotNull().joinToString(" ")
         Log.i(TAG, "Audio transcription complete: ${combinedResult.length} chars from ${results.filterNotNull().size}/$chunkCount chunks")
+        if (blankChunks > 0) {
+            // TASK-622: silence by design (GH #96), but also the swallowed
+            // decode-failure signature; the count is the tell.
+            Log.i(TAG, "Parallel: $blankChunks/$chunkCount chunks decoded blank (${blankCause(false)})")
+        }
 
         // GH #92: one positional rule for every origin of these chunks (VAD merged
         // segments, fixed windows, the stripped single span): the preprocessor's
@@ -1653,8 +3015,19 @@ class TranscriptionOrchestrator @Inject constructor(
 
         recordCalibration(backend, audioDurationSeconds, chunkProcessingStartTime)
 
+        // TASK-675: the aggregate is "the WHOLE clip decoded empty": a run
+        // that delivered text anywhere is a working model and never counts,
+        // and blankChunks > 0 keeps the all-FAILED aggregate out too (a
+        // decode error is not a silent decode). Signal 2 at this site is
+        // audioDurationSeconds: the post-VAD speech total when the chunks
+        // were VAD-selected (the VAD confirmed speech), else the raw clip
+        // length (the weaker duration-only signal).
+        // TASK-622: all-blank IS the swallowed-decode signature; the count
+        // rides to the ERROR row's FailureContext (and demotion is
+        // considered before the raise, per the shared helper).
         return if (combinedResult.isBlank()) {
-            Result.failure(TranscriptionException.NoTranscriptionProduced())
+            silentDecodeFailure(backend, blankChunks,
+                vadSegmented && audioDurationSeconds > 0)
         } else {
             if (failedChunks > 0) {
                 Log.w(TAG, "Parallel completed with $failedChunks/$chunkCount failed chunks")
@@ -1669,6 +3042,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 failedChunkCount = failedChunks,
                 segments = segments,
                 processing = ProcessingContext(
+                    backendId = backend.id,
                     // The label separates the two ways this shape arises:
                     // VAD-merged segments vs fixed-window splits of one long
                     // speech span (and the VAD-threw fallback): the chunk
@@ -1677,6 +3051,7 @@ class TranscriptionOrchestrator @Inject constructor(
                     vadRequested = vadRequested,
                     totalChunks = chunkCount,
                     failedChunks = failedChunks,
+                    blankChunks = blankChunks.takeIf { it > 0 },
                     transcribedSeconds = audioDurationSeconds.toDouble().takeIf { it > 0.0 },
                     chunkCapSeconds = chunkCapSeconds,
                     availableRamBytes = availableRamBytes,
@@ -1701,9 +3076,43 @@ class TranscriptionOrchestrator @Inject constructor(
         coroutineScope: CoroutineScope,
         listener: TranscriptionListener,
         prompt: String = "",
-        progressiveEnabled: Boolean = false
+        progressiveEnabled: Boolean = false,
+        emitInterim: Boolean = true,
+        /** GH #83: when non-null, invoked after the stream completes with the
+         *  decoded chunk list. The pipeline's stream never strips silence
+         *  (enableVad is false by construction here) and cue times derive
+         *  from the same accumulated decoded seconds, so the timelines
+         *  match by construction. */
+        collectSamples: ((List<FloatArray>, Int) -> Unit)? = null,
     ): Result<TranscriptionResult> {
         val resolvedPrompt = resolvePrompt(prompt)
+        // TASK-597: the streaming path's sample retention has no memory
+        // budget (the valve is a flat 7200s while the whole-file arm gates
+        // on min(ram/4, heap/2)); with speaker labels on, every decoded
+        // chunk is pinned for the whole run (64KiB/s: 115MB at 30min,
+        // 460MB at 2h) and applySpeakerLabels' merge allocates a second
+        // copy. Apply the SAME budget: estimate the retention cost from
+        // the source duration, and if it exceeds the memory-derived
+        // ceiling, disable collection (labels skipped, the reason logged
+        // and reported like the whole-file arm's ceiling).
+        val effectiveCollectSamples = if (collectSamples != null) {
+            val speakerCeilingSec = AudioDurationPolicy.ceilingSeconds(
+                AudioDurationPolicy.DecodePath.WHOLE_FILE_PCM,
+                availableMemoryBytes(context).takeIf { it > 0 },
+                MemoryReadings.maxHeapBytes().takeIf { it > 0 })
+            val sourceDurationSec = runCatching {
+                audioPreprocessor.getAudioDuration(filePath)
+            }.getOrNull()
+            if (sourceDurationSec != null && sourceDurationSec > speakerCeilingSec) {
+                Log.w(TAG, "Speaker labels skipped: audio ${sourceDurationSec.toInt()}s exceeds the " +
+                    "memory budget ${speakerCeilingSec}s (streaming retention " +
+                    "${sourceDurationSec.toLong() * AudioDurationPolicy.PCM_BYTES_PER_SECOND / MB}MB); " +
+                    "TASK-597 gate")
+                null
+            } else collectSamples
+        } else null
+        val speakerChunks = if (effectiveCollectSamples != null) mutableListOf<FloatArray>() else null
+        var speakerSampleRate = 16000
 
         val pipelineStartMs = System.currentTimeMillis()
         val chunkProcessingStartTime = System.currentTimeMillis()
@@ -1718,6 +3127,7 @@ class TranscriptionOrchestrator @Inject constructor(
         var firstChunkDecodeMs = 0L
         var firstChunkInferStartMs = 0L
         var failedChunks = 0
+        var blankChunks = 0
         var minConfidence: Float? = null
         var detectedLang: String? = null
         // GH #92: cue boundaries from the running decoded total (container
@@ -1750,6 +3160,10 @@ class TranscriptionOrchestrator @Inject constructor(
                     }
                     is AudioPreprocessor.StreamEvent.Chunk -> {
                         val chunk = event.chunk
+                        if (speakerChunks != null) {
+                            speakerChunks.add(chunk.samples)
+                            speakerSampleRate = chunk.sampleRate
+                        }
                         processedChunks++
                         val chunkStartMs = (decodedSeconds * 1000).toLong()
                         decodedSeconds += chunk.samples.size.toDouble() / chunk.sampleRate
@@ -1778,8 +3192,11 @@ class TranscriptionOrchestrator @Inject constructor(
                                     if (accumulatedText.isNotEmpty()) accumulatedText.append(' ')
                                     accumulatedText.append(trimmed)
                                     segments.addAll(cuesForChunk(tr.tokens, trimmed, chunkStartMs, chunkEndMs))
-                                    if (progressiveEnabled) {
-                                        updateInterimResult(taskId, accumulatedText.toString())
+                                    // TASK-673: this is the pipeline arm of the
+                                    // offline partials contract; see the KDoc on
+                                    // processProgressiveSegments for the cost bound.
+                                    updateInterimResult(taskId, accumulatedText.toString(), writeRow = emitInterim)
+                                    if (progressiveEnabled && emitInterim) {
                                         listener.onInterimResult(
                                             contentText = trimmed,
                                             bigText = trimmed,
@@ -1789,11 +3206,19 @@ class TranscriptionOrchestrator @Inject constructor(
                                             totalChunks = expectedChunkCount
                                         )
                                     }
+                                } else {
+                                    blankChunks++
                                 }
                                 minConfidence = aggregateConfidence(minConfidence, tr.confidence)
                                 if (detectedLang == null) detectedLang = tr.detectedLanguage
                             },
                             onFailure = { error ->
+                                if (error is EngineWedgeTimeoutException) {
+                                    // TASK-606 F2: wedged engine; abort the
+                                    // stream instead of a second ceiling.
+                                    Log.e(TAG, "Pipeline chunk ${chunk.chunkIndex} timed out; engine wedged, aborting the run")
+                                    throw WedgeAbortException(error)
+                                }
                                 Log.w(TAG, "Pipeline chunk ${chunk.chunkIndex} failed, retrying with memory cleanup", error)
                                 val retried = retryChunkWithGc(backend, chunk.samples, chunk.sampleRate, resolvedPrompt)
                                 retried.fold(
@@ -1804,8 +3229,11 @@ class TranscriptionOrchestrator @Inject constructor(
                                             if (accumulatedText.isNotEmpty()) accumulatedText.append(' ')
                                             accumulatedText.append(trimmed)
                                             segments.addAll(cuesForChunk(tr.tokens, trimmed, chunkStartMs, chunkEndMs))
-                                            if (progressiveEnabled) {
-                                                updateInterimResult(taskId, accumulatedText.toString())
+                                            // TASK-673: retry-success arm of the
+                                            // same offline partials contract (see
+                                            // processProgressiveSegments' KDoc).
+                                            updateInterimResult(taskId, accumulatedText.toString(), writeRow = emitInterim)
+                                            if (progressiveEnabled && emitInterim) {
                                                 listener.onInterimResult(
                                                     contentText = trimmed,
                                                     bigText = trimmed,
@@ -1815,6 +3243,8 @@ class TranscriptionOrchestrator @Inject constructor(
                                                     totalChunks = expectedChunkCount
                                                 )
                                             }
+                                        } else {
+                                            blankChunks++
                                         }
                                         minConfidence = aggregateConfidence(minConfidence, tr.confidence)
                                         if (detectedLang == null) detectedLang = tr.detectedLanguage
@@ -1831,16 +3261,16 @@ class TranscriptionOrchestrator @Inject constructor(
                             val ttft = System.currentTimeMillis() - firstChunkInferStartMs
                             Log.i(TAG, "PERF: pipeline time-to-first-text = ${System.currentTimeMillis() - pipelineStartMs}ms (decode=${firstChunkDecodeMs}ms + infer=${ttft}ms)")
                             if (!progressiveEnabled) {
-                                listener.onStatusUpdate("Transcribing…")
+                                if (emitInterim) listener.onStatusUpdate("Transcribing…")
                             }
                         }
                     }
                 }
             }
         } catch (e: PreprocessingError) {
-            return pipelineFailed(taskId, e, accumulatedText.toString(), decodedSeconds, totalDurationSeconds, processedChunks, failedChunks, context, backend.id)
+            return pipelineFailed(taskId, e, accumulatedText.toString(), decodedSeconds, totalDurationSeconds, processedChunks, failedChunks, blankChunks, context, backend.id)
         } catch (e: Exception) {
-            return pipelineFailed(taskId, e, accumulatedText.toString(), decodedSeconds, totalDurationSeconds, processedChunks, failedChunks, context, backend.id)
+            return pipelineFailed(taskId, e, accumulatedText.toString(), decodedSeconds, totalDurationSeconds, processedChunks, failedChunks, blankChunks, context, backend.id)
         }
 
         val combinedResult = accumulatedText.toString()
@@ -1856,12 +3286,37 @@ class TranscriptionOrchestrator @Inject constructor(
         val totalMs = System.currentTimeMillis() - pipelineStartMs
         Log.i(TAG, "PERF: pipeline total ${totalMs}ms for ${totalDurationSeconds}s audio, $processedChunks chunks (expected $expectedChunkCount), backend=${backend.id}, ttft_decode=${firstChunkDecodeMs}ms")
 
+        // GH #83: hand the accumulated contiguous chunks to the caller's
+        // speaker-labeling pass. By construction the pipeline never strips
+        // silence and cue times derive from the same accumulated decoded
+        // seconds, so the timelines match; chunks are references, the
+        // concatenated copy is built lazily inside the pass.
+        speakerChunks?.let { effectiveCollectSamples?.invoke(it, speakerSampleRate) }
+
+        // TASK-622: logged BEFORE the blank fail-fast so an all-blank run
+        // (the swallowed-decode signature) still leaves the tell in logcat;
+        // the pipeline stream never strips silence, so blanks here are
+        // expected-quiet first, suspect second (contrast the VAD paths).
+        if (blankChunks > 0) {
+            Log.i(TAG, "Pipeline: $blankChunks/$processedChunks chunks decoded blank (${blankCause(true)})")
+        }
+        // TASK-675: same whole-clip-empty aggregate as the parallel path
+        // (text anywhere means a working model), and this path never runs VAD
+        // (decode overlaps inference), so the only honest signal-2 here is
+        // decodedSeconds > 0: PCM actually reached the model (the header's
+        // metadata duration can lie, the decoded sample count cannot).
+        // TASK-622: all-blank IS the swallowed-decode signature; the count
+        // rides to the ERROR row's FailureContext.
         return if (combinedResult.isBlank()) {
-            Result.failure(TranscriptionException.NoTranscriptionProduced())
+            // Review F1: this path never runs VAD; decodedSeconds proves PCM
+            // reached the model, not that speech was in it. The design note's
+            // confirm-gate rule wins over coverage: no demotion here.
+            silentDecodeFailure(backend, blankChunks, false)
         } else {
             if (failedChunks > 0) {
                 Log.w(TAG, "Pipeline completed with $failedChunks/$processedChunks failed chunks")
             }
+            silentModelDemoter.onSuccessfulDecode(backend.id)
             Result.success(TranscriptionResult(
                 text = combinedResult,
                 confidence = minConfidence,
@@ -1871,6 +3326,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 streamedWithoutVad = streamedWithoutVad,
                 segments = segments,
                 processing = ProcessingContext(
+                    backendId = backend.id,
                     decodePath = if (streamedWithoutVad) "streamed_no_vad" else "pipeline",
                     // Counted, not the metadata estimate: the estimate
                     // under-reports on lying duration tags (TASK-449), which
@@ -1878,6 +3334,7 @@ class TranscriptionOrchestrator @Inject constructor(
                     // counted failedChunks numerator.
                     totalChunks = processedChunks,
                     failedChunks = failedChunks,
+                    blankChunks = blankChunks.takeIf { it > 0 },
                     transcribedSeconds = totalDurationSeconds.takeIf { it > 0.0 },
                     chunkCapSeconds = maxChunkDurationSeconds,
                     availableRamBytes = availableRamBytes,
@@ -2069,10 +3526,13 @@ class TranscriptionOrchestrator @Inject constructor(
      * picker displays it: untouched preference = "auto"; the phone pin = the
      * device's language; a code pin = itself. Row-level fact: report-time
      * reads would misattribute settings changed since the run (the TASK-545
-     * review lesson).
+     * review lesson). TASK-546 AC3: a per-request override replaces the
+     * preference read (the one normalization below covers both sources), so
+     * the row reflects what actually ran instead of the preference the
+     * request never consulted.
      */
-    private suspend fun resolvedLanguagePin(context: Context): String {
-        val pref = preferencesManager.transcriptionLanguage.first()
+    private suspend fun resolvedLanguagePin(context: Context, languageOverride: String?): String {
+        val pref = languageOverride ?: preferencesManager.transcriptionLanguage.first()
         return when {
             pref.isBlank() || pref == TranscriptionLanguagePolicy.PREF_SYSTEM -> TranscriptionLanguagePolicy.PREF_AUTO
             pref == TranscriptionLanguagePolicy.PREF_PHONE ->
@@ -2104,6 +3564,9 @@ class TranscriptionOrchestrator @Inject constructor(
         detectedLanguage: String? = null,
         /** TASK-546: the policy-resolved pin in force ("auto" when untouched). */
         languagePin: String? = null,
+        /** GH #43: the superseded fast first-pass transcript, persisted when
+         *  a two-pass run refined it (null on single-model runs). */
+        firstPassTranscript: String? = null,
     ) {
         val entity = logDao.getByTaskId(taskId) ?: return
         logDao.update(entity.toLogEntry().copy(
@@ -2114,6 +3577,7 @@ class TranscriptionOrchestrator @Inject constructor(
             summarySkipReason = summarySkipReason,
             segments = TimedSegmentsConverter.toJson(segments),
             processingContext = ProcessingContextConverter.toJson(processing),
+            firstPassTranscript = firstPassTranscript,
             detectedLanguage = detectedLanguage,
             languagePin = languagePin
         ).toEntity())
@@ -2144,7 +3608,15 @@ class TranscriptionOrchestrator @Inject constructor(
         logDao.failNonTerminal(taskId, errorMessage, durationMs)
     }
 
-    private suspend fun updateInterimResult(taskId: String, accumulatedText: String) {
+    private suspend fun updateInterimResult(
+        taskId: String,
+        accumulatedText: String,
+        /** GH #43 review F3: phase 2 of a two-pass run passes false: the
+         *  row keeps the complete first-pass text, but the crash-recovery
+         *  state must keep refreshing or the 15s staleness gate misfires a
+         *  false interruption dialog on a live refinement. */
+        writeRow: Boolean = true,
+    ) {
         // Throttle interim Room writes to the same 5s cadence as the partial-state save
         // (TASK-340 Fix 2b): every interim partial used to write Room, and each write
         // re-emitted the whole (bounded) log list through LogsViewModel. The final
@@ -2153,11 +3625,18 @@ class TranscriptionOrchestrator @Inject constructor(
         // listener, which is NOT throttled here.
         val now = throttleClock()
         if (now - (lastInterimRoomWriteMs[taskId] ?: 0L) < PARTIAL_SAVE_INTERVAL_MS) return
+        // NOTE (TASK-602 review F7): the key advances on EVERY pass, including
+        // writeRow=false ones, so it means "last updateInterimResult pass", not
+        // "last Room write"; a writeRow=true caller within 5s of a suppressed
+        // pass still skips its row write (acceptable: the final logSuccess is
+        // unconditional).
         lastInterimRoomWriteMs[taskId] = now
 
         // TASK-390: column-scoped update (no read): a whole-row write-back could
         // resurrect a row that a concurrent close (cancel/sweep) had just terminalized.
-        logDao.updateInterimResult(taskId, accumulatedText, isPartial = true)
+        if (writeRow) {
+            logDao.updateInterimResult(taskId, accumulatedText, isPartial = true)
+        }
 
         if (now - lastPartialSaveMs >= PARTIAL_SAVE_INTERVAL_MS) {
             lastPartialSaveMs = now
@@ -2209,6 +3688,35 @@ class TranscriptionOrchestrator @Inject constructor(
     }
 
     /**
+     * TASK-679: one guarded breadcrumb write shared by the memory-class
+     * failure arms (the OOM catch, the pre-flight load refusal, the decode
+     * refusal fold). Request shape only: backend id, metadata duration, the
+     * effective-VAD approximation (preference OR the active backend's forced
+     * flag); the recorder itself owns the scrub contract. The outer runCatching
+     * is belt-and-braces (the recorder never throws by contract).
+     */
+    private suspend fun recordMemoryBreadcrumb(
+        context: Context,
+        error: Throwable,
+        filePath: String?,
+        requestBackendId: String?,
+    ) {
+        runCatching {
+            oomBreadcrumbRecorder.record(
+                context = context,
+                error = error,
+                requestBackendId = requestBackendId,
+                audioDurationSeconds = filePath?.let {
+                    runCatching { audioPreprocessor.getAudioDuration(it) }.getOrNull()
+                },
+                vadEnabled = runCatching { preferencesManager.vadEnabled.first() }
+                    .getOrDefault(false) ||
+                    backendManager.getActiveBackend()?.requiresVadAlignedChunking == true,
+            )
+        }
+    }
+
+    /**
      * TASK-570: one builder for the structured failure context persisted on
      * the ERROR row (backend, provider, version, chunk coverage, durations).
      * Every read is runCatching-wrapped: diagnostics must never turn a
@@ -2220,6 +3728,7 @@ class TranscriptionOrchestrator @Inject constructor(
         context: Context,
         processedChunks: Int? = null,
         failedChunks: Int? = null,
+        blankChunks: Int? = null,
         metadataSeconds: Double? = null,
         decodedSeconds: Double? = null,
         backendId: String? = null,
@@ -2248,6 +3757,9 @@ class TranscriptionOrchestrator @Inject constructor(
                         appVersion = version,
                         processedChunks = processedChunks,
                         failedChunks = failedChunks,
+                        blankChunks = blankChunks
+                            ?: (error as? TranscriptionException.NoTranscriptionProduced)?.blankChunks
+                            ?: (error as? BlankSegmentsException)?.blankChunks,
                         metadataSeconds = metadataSeconds,
                         decodedSeconds = decodedSeconds,
                     )))
@@ -2269,6 +3781,32 @@ class TranscriptionOrchestrator @Inject constructor(
     ) : IllegalStateException("Pipeline failed: ${cause.message}", cause)
 
     /**
+     * TASK-606 F2: a chunk generation timeout means the LLM engine is
+     * wedged, not that the chunk is hard. Feeding it to retryChunkWithGc
+     * burns a second full ceiling per chunk and letting the loop continue
+     * burns one per remaining chunk (a 30-chunk recording at 2 x 5min each
+     * was a ~5-hour foreground crawl). The loops abort the whole run
+     * instead; LlmManager's engineWedged flag makes the surviving
+     * generations fail fast.
+     */
+    class WedgeAbortException(cause: Throwable) :
+        IllegalStateException(
+            "LLM engine wedged (chunk generation timeout); run aborted to spare the remaining chunks",
+            cause)
+
+    /**
+     * TASK-622: the progressive path's no-text terminal state (all segments
+     * blank, or a fail+blank mix). Carries the blank count to the ERROR row
+     * the same way [TranscriptionException.NoTranscriptionProduced] does.
+     */
+    class BlankSegmentsException(
+        blankChunks: Int,
+        message: String,
+    ) : IllegalStateException(message) {
+        val blankChunks: Int = blankChunks
+    }
+
+    /**
      * The one streaming-failure tail (TASK-568, shared by both catches):
      * persist the salvaged text and the decoded-at-failure seconds, keep the
      * row length at the larger of header-total and writeback (TASK-522's
@@ -2284,6 +3822,7 @@ class TranscriptionOrchestrator @Inject constructor(
         totalDurationSeconds: Double,
         processedChunks: Int,
         failedChunks: Int,
+        blankChunks: Int = 0,
         context: Context,
         backendId: String?,
     ): Result<Nothing> {
@@ -2291,6 +3830,7 @@ class TranscriptionOrchestrator @Inject constructor(
         persistFailureContext(
             taskId, cause, context,
             processedChunks = processedChunks, failedChunks = failedChunks,
+            blankChunks = blankChunks.takeIf { it > 0 },
             metadataSeconds = totalDurationSeconds, decodedSeconds = decodedSeconds,
             backendId = backendId)
         failureWritebackSeconds(cause as? PreprocessingError, decodedSeconds)
@@ -2318,18 +3858,29 @@ class TranscriptionOrchestrator @Inject constructor(
     /**
      * Saved model path for [backendId], read via the registry descriptor's model-path
      * flow (TASK-322; the descriptor for the LLM backend already points at the generic
-     * [PreferencesManager.modelPath]). The unregistered GGUF backend keeps its dedicated
-     * preference and any other unknown id degrades to the generic one, matching the
-     * former string-keyed when.
+     * [PreferencesManager.modelPath]). Any unknown id degrades to the generic one,
+     * matching the former string-keyed when.
      */
     private suspend fun modelPathForBackend(backendId: String): String {
         val descriptor = backendRegistry.byBackendId(backendId)
         return when {
             descriptor != null -> descriptor.modelPathFlow(preferencesManager).first()
-            backendId == GGUF_BACKEND_ID -> preferencesManager.ggufModelPath.first()
             else -> preferencesManager.modelPath.first()
         } ?: ""
     }
+
+    /**
+     * TASK-601: the display name for a backend id, variant-aware when a
+     * saved model path resolves, the id itself as the fallback. Shared by
+     * the refining status, the Logs model credit, and the notification's
+     * "Refined from" line (the GH #45 credit site keeps its own chain:
+     * its unknown-id fallback is the backend's display name, not the raw
+     * id, and it is not this helper's to change).
+     */
+    private suspend fun displayNameForBackend(context: Context, backendId: String): String =
+        backendRegistry.byBackendId(backendId)
+            ?.let { variantAwareDisplayName(context, it, modelPathForBackend(backendId)) }
+            ?: backendId
 
     internal fun deriveDisplayName(backendId: String, modelPath: String, fallbackName: String?): String {
         val dirName = File(modelPath).name

@@ -62,7 +62,11 @@ interface TranscriptionListener {
         streamedWithoutVad: Boolean = false,
         /** GH #92: the subtitle cues (sentence-level when token timing exists,
          *  else one per chunk), empty when no honest timing exists. */
-        segments: List<TimedSegment> = emptyList()
+        segments: List<TimedSegment> = emptyList(),
+        /** GH #43: the fast backend a two-pass run refined (its display
+         *  name), or the DualRefinementPolicy.NOT_REFINED token when the first pass was
+         *  delivered unrefined. Null on single-model runs. */
+        refinementOutcome: String? = null,
     )
 
     /** Transcription or backend loading failed */
@@ -72,6 +76,10 @@ interface TranscriptionListener {
         errorMessage: String,
         isShareRequest: Boolean,
         isNoModelError: Boolean,
-        durationMs: Long
+        durationMs: Long,
+        /** TASK-625: a memory-class failure (typed, see
+         * [com.antivocale.app.transcription.isMemoryClassFailure]); the error
+         * notification offers the Memory-protection action for these. */
+        isMemoryFailure: Boolean = false
     )
 }

@@ -50,6 +50,7 @@ import com.antivocale.app.MainActivity
 import com.antivocale.app.R
 import com.antivocale.app.ui.onboarding.tourRevealable
 import com.antivocale.app.transcription.SummaryPolicy
+import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.data.local.FailureContextJson
 import com.antivocale.app.data.local.ProcessingContextConverter
 import com.antivocale.app.util.AppInfoUtils
@@ -62,6 +63,10 @@ import com.antivocale.app.service.InferenceService
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.Crossfade
 import com.antivocale.app.ui.components.SkeletonTranscriptionCard
+import com.antivocale.app.ui.components.languageOptionLabel
+import com.antivocale.app.ui.components.transcriptionSentinelLabels
+import com.antivocale.app.ui.components.transcriptionPickerFor
+import com.antivocale.app.util.LocaleManager
 import com.antivocale.app.ui.components.SkeletonTranscriptionPreview
 import com.antivocale.app.ui.components.SwipeAction
 import com.antivocale.app.ui.components.VadAdvisoryCard
@@ -120,6 +125,12 @@ private fun reportTranscription(context: Context, log: LogEntry) {
                 deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
                 processingLine = ProcessingContextConverter.render(
                     ProcessingContextConverter.fromJson(log.processingContext)),
+                isPartial = log.isPartial,
+                failedChunkCount = log.failedChunkCount,
+                languageLine = listOfNotNull(
+                    log.detectedLanguage?.let { "detected=$it" },
+                    log.languagePin?.takeIf { it.isNotBlank() }?.let { "pin=$it" }
+                ).takeIf { it.isNotEmpty() }?.joinToString(" "),
             ),
             FeedbackHelper.TranscriptLabels(
                 task = context.getString(R.string.feedback_label_task),
@@ -144,7 +155,11 @@ private fun copyTranscriptionToClipboard(
 ) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
             as android.content.ClipboardManager
-    val clip = ClipData.newPlainText(context.getString(labelRes), text)
+    // TASK-650 F5: the clipboard is an exit surface here too.
+    val sig = com.antivocale.app.util.TranscriptSignature.lastResolved
+    val clip = ClipData.newPlainText(
+        context.getString(labelRes),
+        com.antivocale.app.util.TranscriptSignature.apply(text, sig.text, sig.position))
     clipboard.setPrimaryClip(clip)
     ToastCompat.show(context, context.getString(R.string.copied_to_clipboard))
 }
@@ -165,9 +180,13 @@ private fun cancelTask(context: Context, taskId: String) {
  * Shares transcription text via an intent chooser.
  */
 private fun shareTranscription(context: Context, text: String) {
+    // TASK-650 F5: sharing is an exit surface here too.
+    val sig = com.antivocale.app.util.TranscriptSignature.lastResolved
     val sendIntent = Intent().apply {
         action = Intent.ACTION_SEND
-        putExtra(Intent.EXTRA_TEXT, text)
+        putExtra(
+            Intent.EXTRA_TEXT,
+            com.antivocale.app.util.TranscriptSignature.apply(text, sig.text, sig.position))
         type = "text/plain"
     }
     val shareIntent = Intent.createChooser(
@@ -272,7 +291,12 @@ private fun buildSwipeActions(
                 label = copyLabel,
                 tint = colors.onPrimaryContainer,
                 background = colors.primaryContainer,
-                onClick = { copyTranscriptionToClipboard(context, log.result) }
+                onClick = {
+                    // GH #107/TASK-598 F3: the swipe copy hands off the
+                    // speaker-annotated text when the row carries labels.
+                    copyTranscriptionToClipboard(
+                        context, viewModel.speakerAnnotatedFlow(log.id).value ?: log.result)
+                }
             )
         )
         actions.add(
@@ -281,7 +305,10 @@ private fun buildSwipeActions(
                 label = shareLabel,
                 tint = colors.onSecondaryContainer,
                 background = colors.secondaryContainer,
-                onClick = { shareTranscription(context, log.result) }
+                onClick = {
+                    shareTranscription(
+                        context, viewModel.speakerAnnotatedFlow(log.id).value ?: log.result)
+                }
             )
         )
     }
@@ -303,6 +330,9 @@ private fun buildSwipeActions(
 @Composable
 fun LogsTab(
     onNavigateToSettings: (() -> Unit)? = null,
+    /** TASK-617: the chip's own destination (transcription section), NOT
+     *  the auto-save hint's export page: one callback cannot serve both. */
+    onOpenLanguageSetting: (() -> Unit)? = null,
     viewModel: LogsViewModel = hiltViewModel(),
     highlightTaskId: String? = null,
     tourRevealState: com.svenjacobs.reveal.RevealState,
@@ -491,6 +521,17 @@ fun LogsTab(
                 }
             }
 
+            // TASK-662 (Reddit r/droidappshowcase): the search field is PINNED
+            // above the content switch, not an item inside the result list. It
+            // used to live as the list's first item, so a query matching
+            // nothing replaced the whole list (field included) with the
+            // no-results state: no field, no clear button, no way back to the
+            // transcripts until app restart. Pinned here, every state keeps
+            // the one-tap clear path. TASK-564: same 16dp inset and surface as
+            // the Settings search field. The emptiness test lives ONCE, in
+            // this switch: empty history shows the placeholder and no field;
+            // every other state shows the field (review: two adjacent gates
+            // drift apart by convention only).
             if (logs.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -518,14 +559,58 @@ fun LogsTab(
                         )
                     }
                 }
-            } else if (filteredLogs.isEmpty()) {
+            } else {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.onSearchQueryChanged(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    placeholder = { Text(stringResource(R.string.logs_search_placeholder)) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                    trailingIcon = {
+                        // Search-clear when a query is active; history-clear
+                        // otherwise, sharing the trailing slot.
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.clearSearch() }) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = stringResource(R.string.clear_search)
+                                )
+                            }
+                        } else {
+                            IconButton(onClick = { showClearDialog = true }) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = stringResource(R.string.logs_clear),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true
+                )
+                if (filteredLogs.isEmpty()) {
                 // Search yielded no results
                 Box(
+                    // TASK-662 maintainer trial round 2: TOP-anchored, right
+                    // below the pinned field (fillMaxWidth keeps the horizontal
+                    // centering). The vertical-center first pass landed the
+                    // block at ~67% height, inside the zone the IME covers;
+                    // under the field it is always visible whatever the
+                    // keyboard does.
                     modifier = Modifier
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(top = 64.dp)
+                    ) {
                         Icon(
                             Icons.Default.SearchOff,
                             contentDescription = null,
@@ -590,49 +675,6 @@ fun LogsTab(
                         bottom = 96.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                     )
                 ) {
-                    item(key = "header") {
-                        // TASK-564 (maintainer): the search field is the
-                        // tab's first element, at the same 16dp inset and on
-                        // the same surface as the Settings search field.
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text(stringResource(R.string.logs_search_placeholder)) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Search, contentDescription = null)
-                                },
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                                trailingIcon = {
-                                    // Search-clear when a query is active;
-                                    // history-clear otherwise (the title row
-                                    // that used to carry it is gone).
-                                    if (searchQuery.isNotEmpty()) {
-                                        IconButton(onClick = { viewModel.clearSearch() }) {
-                                            Icon(
-                                                Icons.Default.Clear,
-                                                contentDescription = stringResource(R.string.clear_search)
-                                            )
-                                        }
-                                    } else if (logs.isNotEmpty()) {
-                                        IconButton(onClick = { showClearDialog = true }) {
-                                            Icon(
-                                                Icons.Default.DeleteSweep,
-                                                contentDescription = stringResource(R.string.logs_clear),
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
-                                },
-                                singleLine = true
-                            )
-                        }
-                    }
                     item(key = "vad_advisory") {
                         VadAdvisoryCard(
                             visible = showVadAdvisory,
@@ -682,6 +724,7 @@ fun LogsTab(
                                         onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
                                         compactActions = compactActions,
                                         onNavigateToSettings = onNavigateToSettings,
+                                        onOpenLanguageSetting = onOpenLanguageSetting,
                                     )
                                     HorizontalDivider(
                                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -720,6 +763,7 @@ fun LogsTab(
                                     onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
                                     compactActions = compactActions,
                                     onNavigateToSettings = onNavigateToSettings,
+                                    onOpenLanguageSetting = onOpenLanguageSetting,
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -729,6 +773,7 @@ fun LogsTab(
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -827,8 +872,13 @@ private fun startOfDay(timestamp: Long): Long {
     return cal.timeInMillis
 }
 
-/** Fixed LazyColumn items above the date groups: header (0) and vad_advisory (1). */
-private const val FIXED_ITEMS_ABOVE_GROUPS = 2
+/**
+ * Fixed LazyColumn items above the date groups: vad_advisory (0). TASK-662
+ * removed the header item (the search field is pinned above the list now, not
+ * a list item), so this is 1; a wrong value lands every scroll one slot off
+ * (the class of bug a stale pin hides: update IndexOfTaskIdTest with it).
+ */
+private const val FIXED_ITEMS_ABOVE_GROUPS = 1
 
 internal fun indexOfTaskIdInGroups(groups: List<LogGroup>, taskId: String): Int {
     var flatIndex = FIXED_ITEMS_ABOVE_GROUPS
@@ -878,6 +928,14 @@ private fun PartialTranscriptionBanner(failedChunkCount: Int) {
 @Composable
 fun LogEntryItem(
     log: LogEntry,
+    /** TASK-599: the pre-annotated transcript when this row carries speaker
+     *  cues (the expanded detail since TASK-599; the collapsed preview too,
+     *  TASK-598 F15); the item stays stateless (no ViewModel). */
+    speakerAnnotated: String?,
+    /** TASK-601: the first-pass header's display name, pre-derived. */
+    firstPassLabel: String = "",
+    /** TASK-595: the first-pass transcript via the lean per-row flow. */
+    firstPassTranscript: String? = null,
     searchQuery: String = "",
     expanded: Boolean = false,
     onExpandChange: (Boolean) -> Unit = {},
@@ -886,8 +944,22 @@ fun LogEntryItem(
     onCancel: (() -> Unit)? = null,
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
     onNavigateToSettings: (() -> Unit)? = null,
+    onOpenLanguageSetting: (() -> Unit)? = null,
     /** TASK-546: render the language chip (the Settings flag's value). */
     showLanguageChip: Boolean = false,
+    /** TASK-546 AC3: the languages the active backend offers for the chip's
+     *  per-request re-run; empty keeps the chip dialog facts-only. No default,
+     *  like the callback below: a call site that forgets the pass-through
+     *  must be a compile error, not a silently dead arm. */
+    reRunLanguages: Set<String>,
+    /** TASK-546 AC3: re-run this row's audio with the chosen language. No
+     *  default, like showTechnicalDetails: a call site that forgets the
+     *  pass-through must be a compile error. */
+    onReRunWithLanguage: (String) -> Unit,
+    /** TASK-616: render the technical processing-context line. No default:
+     *  a call site that forgets the pass-through must be a compile error,
+     *  not a silently dropped diagnostics line. */
+    showTechnicalDetails: Boolean,
 ) {
     val context = LocalContext.current
     var contextMenuExpanded by remember { mutableStateOf(false) }
@@ -949,7 +1021,10 @@ fun LogEntryItem(
                             when (action) {
                                 ContextMenuAction.RETRANSCRIBE -> onRetranscribe?.invoke()
                                 ContextMenuAction.CANCEL -> onCancel?.invoke()
-                                ContextMenuAction.COPY -> copyTranscriptionToClipboard(context, log.result)
+                                ContextMenuAction.COPY -> copyTranscriptionToClipboard(
+                                    // GH #107/TASK-598 F3: the stateless row
+                                    // already receives the annotated text.
+                                    context, speakerAnnotated ?: log.result)
                                 ContextMenuAction.REPORT -> reportTranscription(context, log)
                                 ContextMenuAction.DELETE -> onDelete?.invoke()
                             }
@@ -1054,7 +1129,9 @@ fun LogEntryItem(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = highlightText(
-                        getPreviewText(log.result),
+                        // TASK-598 F15: the preview derives from the
+                        // annotated form when the row carries labels.
+                        getPreviewText(speakerAnnotated ?: log.result),
                         searchQuery,
                         MaterialTheme.colorScheme.tertiary
                     ),
@@ -1084,7 +1161,9 @@ fun LogEntryItem(
                     if (hasResult) {
                         Text(
                             text = highlightText(
-                                getPreviewText(log.result),
+                                // TASK-598 F15: same annotated derivation
+                                // as the completed-row preview above.
+                                getPreviewText(speakerAnnotated ?: log.result),
                                 searchQuery,
                                 MaterialTheme.colorScheme.tertiary
                             ),
@@ -1105,6 +1184,13 @@ fun LogEntryItem(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // GH #83/TASK-599: when the cues carry speaker labels, every
+                // surface of this row's text uses the turn-annotated form,
+                // the same rendering the exports produce; the wrapper passes
+                // it pre-derived, unlabeled rows fall back to the stored
+                // transcript.
+                val displayResult = speakerAnnotated ?: log.result
+
                 // Full transcription result
                 when (log.status) {
                     LogEntry.Status.SUCCESS -> {
@@ -1119,7 +1205,7 @@ fun LogEntryItem(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         CappedTranscriptText(
-                            text = log.result,
+                            text = displayResult,
                             searchQuery = searchQuery,
                             container = MaterialTheme.colorScheme.primaryContainer,
                             onAutoSaveHintClick = onNavigateToSettings,
@@ -1161,6 +1247,21 @@ fun LogEntryItem(
                                 label = stringResource(R.string.logs_original_label),
                                 copyLabelRes = R.string.copy_original,
                                 text = original,
+                                searchQuery = searchQuery,
+                            )
+                        }
+
+                        // GH #43: the superseded fast first pass, kept copyable
+                        // when refinement replaced it with better text.
+                        firstPassTranscript?.let { firstPass ->
+                            LabeledTranscriptBlock(
+                                label = stringResource(
+                                    // TASK-601: the wrapper's pre-derived
+                                    // display name, never the raw catalog id.
+                                    R.string.logs_first_pass_label, firstPassLabel,
+                                ),
+                                copyLabelRes = R.string.copy_first_pass,
+                                text = firstPass,
                                 searchQuery = searchQuery,
                             )
                         }
@@ -1208,12 +1309,18 @@ fun LogEntryItem(
                                 }
                             }
                             // TASK-512: the processing line (decode path, chunk
-                            // coverage, cap, RAM) so a long-run report is
-                            // attributable from the card alone. Remember-parsed
-                            // (the list re-emits on every interim write).
-                            val renderedProcessing = remember(log.processingContext) {
-                                ProcessingContextConverter.render(
-                                    ProcessingContextConverter.fromJson(log.processingContext))
+                            // coverage, cap, RAM) makes a long-run report
+                            // attributable from the card alone. TASK-616: it
+                            // stays persisted and rides the feedback report,
+                            // but the card parses and renders it only on
+                            // opt-in (the list re-emits on every interim write).
+                            val renderedProcessing = remember(log.processingContext, showTechnicalDetails) {
+                                if (!showTechnicalDetails) {
+                                    null
+                                } else {
+                                    ProcessingContextConverter.render(
+                                        ProcessingContextConverter.fromJson(log.processingContext))
+                                }
                             }
                             renderedProcessing?.let { rendered ->
                                 Text(
@@ -1223,21 +1330,37 @@ fun LogEntryItem(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            // Model that produced the transcription (GH #45); null on pre-v4
-                            // rows. Long external-import names wrap (TASK-495) instead of
-                            // ellipsizing their tail.
-                            log.modelName?.let { name ->
+                            // TASK-677 (GH #92): subtitle-sourced rows (a handed
+                            // .srt/.vtt import, or a video's embedded track) are
+                            // honestly labeled with their source: they are not
+                            // ASR output and carry no model (AC#5).
+                            if (remember(log.processingContext) {
+                                    ProcessingContextConverter.isSubtitleSourced(log.processingContext)
+                                }) {
                                 Text(
-                                    text = stringResource(R.string.logs_model_label, name),
+                                    text = stringResource(R.string.logs_subtitle_sourced),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            } else {
+                                // Model that produced the transcription (GH #45); null on pre-v4
+                                // rows. Long external-import names wrap (TASK-495) instead of
+                                // ellipsizing their tail.
+                                log.modelName?.let { name ->
+                                    Text(
+                                        text = stringResource(R.string.logs_model_label, name),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             if (showLanguageChip) {
                                 LanguageChip(
                                     detected = log.detectedLanguage,
                                     pinned = log.languagePin,
-                                    onOpenSetting = { onNavigateToSettings?.invoke() },
+                                    reRunLanguages = reRunLanguages,
+                                    onReRunWithLanguage = onReRunWithLanguage,
+                                    onOpenSetting = { onOpenLanguageSetting?.invoke() },
                                 )
                             }
                         }
@@ -1266,7 +1389,7 @@ fun LogEntryItem(
                                 // Copy button
                                 ResultActionButton(
                                     compact = compactActions,
-                                    onClick = { copyTranscriptionToClipboard(context, log.result) },
+                                    onClick = { copyTranscriptionToClipboard(context, displayResult) },
                                     icon = Icons.Default.ContentCopy,
                                     labelRes = R.string.copy,
                                     contentDescriptionRes = R.string.copy_transcription
@@ -1274,7 +1397,7 @@ fun LogEntryItem(
                                 // Share button
                                 ResultActionButton(
                                     compact = compactActions,
-                                    onClick = { shareTranscription(context, log.result) },
+                                    onClick = { shareTranscription(context, displayResult) },
                                     icon = Icons.Default.Share,
                                     labelRes = R.string.share_transcription
                                 )
@@ -1446,8 +1569,12 @@ private fun formatFullTimestamp(timestamp: Long, context: Context): String {
 
 // Get preview text with ellipsis
 private fun getPreviewText(text: String, maxLength: Int = 50): String {
-    if (text.length <= maxLength) return text
-    return text.take(maxLength) + "…"
+    // TASK-598 F15: a speaker-annotated transcript is one turn per line, so
+    // the preview shows its first turn; plain transcripts are single-line
+    // and the cut changes nothing for them.
+    val firstLine = text.substringBefore('\n')
+    if (firstLine.length <= maxLength) return firstLine
+    return firstLine.take(maxLength) + "…"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1467,10 +1594,49 @@ private fun LogEntryWithSwipe(
     onRetranscribe: (() -> Unit)? = null,
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
     onNavigateToSettings: (() -> Unit)? = null,
+    onOpenLanguageSetting: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // TASK-546: the chip flag, collected once here (the item stays stateless).
     val showLanguageChip by viewModel.languageChipEnabled.collectAsState()
+    // TASK-546 AC3: the re-run picker's offered codes, same collection point
+    // (the derivation lives in the ViewModel through the Settings picker's
+    // owner, so the two cannot drift).
+    val reRunLanguages by viewModel.offeredLanguageCodes.collectAsState()
+    // TASK-616: same pattern for the technical processing-context line.
+    val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
+    // TASK-599: the row's annotated transcript is collected HERE (the item
+    // stays stateless) from the ViewModel's cached per-row flow: no
+    // cold-flow-per-recomposition, no flash of unlabeled text, no JSON
+    // parse on the composition thread.
+    // TASK-598 F15: collected for every composed row, not only the expanded
+    // one, because the collapsed one-line preview derives from the annotated
+    // form too; WhileSubscribed still stops the query once the row leaves
+    // composition.
+    val speakerAnnotated = viewModel.speakerAnnotatedFlow(log.id).collectAsState().value
+    // TASK-595 F5: the first-pass transcript rides the same lean per-row
+    // flow (it left the list projections); collected here, handed down.
+    val firstPassTranscript = if (isExpanded) {
+        viewModel.firstPassFlow(log.id).collectAsState().value
+    } else {
+        null
+    }
+    // TASK-601 via TASK-599: the first-pass header's display name, derived
+    // here (remembered; the registry lookup rebuilds external descriptors
+    // and the list re-emits on every interim write) and handed down as a
+    // string: the item stays stateless.
+    val firstPassLabel = if (firstPassTranscript != null) {
+        // Gated on the transcript actually existing (review F1): the parse
+        // and the registry lookup run only for rows that render the block,
+        // not for every row entering composition.
+        remember(log.processingContext) {
+            viewModel.fastBackendDisplayName(
+                ProcessingContextConverter.fromJson(log.processingContext)?.refinementPhase?.backendId,
+            )
+        } ?: ""
+    } else {
+        ""
+    }
     if (SwipeActionMode.from(swipeActionMode) == SwipeActionMode.REVEAL) {
         val revealState = rememberSwipeToRevealState()
 
@@ -1507,6 +1673,9 @@ private fun LogEntryWithSwipe(
         ) {
             LogEntryItem(
                 log = log,
+                speakerAnnotated = speakerAnnotated,
+                firstPassLabel = firstPassLabel,
+                firstPassTranscript = firstPassTranscript,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
                 onExpandChange = { expanded ->
@@ -1521,7 +1690,11 @@ private fun LogEntryWithSwipe(
                 onDelete = { onDeleted(log); viewModel.deleteLog(log.id) },
                 compactActions = compactActions,
                 onNavigateToSettings = onNavigateToSettings,
+                onOpenLanguageSetting = onOpenLanguageSetting,
                 showLanguageChip = showLanguageChip,
+                reRunLanguages = reRunLanguages,
+                onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
+                showTechnicalDetails = showTechnicalDetails,
             )
         }
     } else {
@@ -1562,6 +1735,9 @@ private fun LogEntryWithSwipe(
         ) {
             LogEntryItem(
                 log = log,
+                speakerAnnotated = speakerAnnotated,
+                firstPassLabel = firstPassLabel,
+                firstPassTranscript = firstPassTranscript,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
                 onExpandChange = onExpandChange,
@@ -1570,7 +1746,11 @@ private fun LogEntryWithSwipe(
                 onDelete = { onDeleted(log); onDeleteLog(log.id) },
                 compactActions = compactActions,
                 onNavigateToSettings = onNavigateToSettings,
+                onOpenLanguageSetting = onOpenLanguageSetting,
                 showLanguageChip = showLanguageChip,
+                reRunLanguages = reRunLanguages,
+                onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
+                showTechnicalDetails = showTechnicalDetails,
             )
         }
     }
@@ -1683,6 +1863,7 @@ private fun summarySkipCaptionRes(reason: String?): Int? = when (reason) {
     SummaryPolicy.SKIP_REASON_CONTEXT -> R.string.summary_skipped_context
     SummaryPolicy.SKIP_REASON_NO_MODEL -> R.string.summary_skipped_no_model
     SummaryPolicy.SKIP_REASON_FAILED -> R.string.summary_skipped_failed
+    SummaryPolicy.SKIP_REASON_TIMEOUT -> R.string.summary_skipped_timeout
     else -> null
 }
 
@@ -1694,19 +1875,30 @@ private fun summarySkipCaptionRes(reason: String?): Int? = when (reason) {
  * the path to the language setting (the recovery arm: pin there, then
  * re-transcribe the same audio). Hidden entirely when neither fact exists
  * (old rows, text entries) or via the Settings toggle (maintainer directive).
+ *
+ * TASK-546 AC3: the dialog's second recovery arm, "re-run with a language",
+ * a TRANSIENT per-request override (distinct from pinning in Settings, which
+ * stays the confirm action). The neutral action renders only when the active
+ * backend's offered set is non-empty; otherwise the dialog stays facts-only.
  */
 @Composable
 private fun LanguageChip(
     detected: String?,
     pinned: String?,
+    /** TASK-546 AC3: the languages the ACTIVE backend conditions on; empty hides the neutral action. */
+    reRunLanguages: Set<String>,
+    /** TASK-546 AC3: re-run this row's audio with the chosen language. */
+    onReRunWithLanguage: (String) -> Unit,
     onOpenSetting: () -> Unit,
 ) {
     val autoDetected = pinned == null || pinned == "auto"
     val code = if (autoDetected) detected else pinned
     if (code.isNullOrBlank()) return
-    var showFacts by remember { mutableStateOf(false) }
+    // TASK-546 AC3: null = hidden; one mode variable instead of two booleans
+    // (the hidden/facts/pick space has no fourth state).
+    var mode by remember { mutableStateOf<LanguageChipMode?>(null) }
     TextButton(
-        onClick = { showFacts = true },
+        onClick = { mode = LanguageChipMode.Facts },
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
         modifier = Modifier.height(28.dp)
     ) {
@@ -1717,34 +1909,93 @@ private fun LanguageChip(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    if (showFacts) {
+    if (mode != null) {
+        // TASK-546 AC3: the SAME picker model the Settings card renders
+        // (sentinel-first, locale-collated native names), built from the
+        // repository-owned offered set; presentation cannot drift from Settings.
+        val context = LocalContext.current
+        val picker = remember(reRunLanguages) {
+            transcriptionPickerFor(
+                reRunLanguages,
+                LocaleManager.effectiveLocale(),
+                phoneLanguage = LocaleManager.phoneLanguage(context),
+            )
+        }
         AlertDialog(
-            onDismissRequest = { showFacts = false },
-            title = { Text(stringResource(R.string.language_chip_dialog_title)) },
-            text = { Text(
-                if (autoDetected)
-                    stringResource(
-                        R.string.language_chip_detected_body,
-                        LanguageNames.nativeLanguageName(detected ?: code))
-                else
-                    stringResource(
-                        R.string.language_chip_pinned_body,
-                        LanguageNames.nativeLanguageName(code))
-            ) },
+            onDismissRequest = { mode = null },
+            title = { Text(stringResource(
+                if (mode == LanguageChipMode.Pick) R.string.language_chip_re_run
+                else R.string.language_chip_dialog_title)) },
+            text = {
+                if (mode == LanguageChipMode.Facts) {
+                    Column {
+                        Text(
+                            if (autoDetected)
+                                stringResource(
+                                    R.string.language_chip_detected_body,
+                                    LanguageNames.nativeLanguageName(detected ?: code))
+                            else
+                                stringResource(
+                                    R.string.language_chip_pinned_body,
+                                    LanguageNames.nativeLanguageName(code))
+                        )
+                        // TASK-546 AC3: the neutral action, full-width below the
+                        // facts (M3 dialogs carry two button slots, both taken).
+                        // A SINGLE offered language hides the arm too: a
+                        // single-language variant (Distil-IT) forces its own
+                        // code at the engine regardless of the config, so the
+                        // re-run could reload the recognizer and pin a
+                        // language that never governed the decode (review F1).
+                        if (reRunLanguages.size > 1) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { mode = LanguageChipMode.Pick },
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                modifier = Modifier.align(Alignment.Start)
+                            ) { Text(stringResource(R.string.language_chip_re_run)) }
+                        }
+                    }
+                } else {
+                    // Capped and scrollable: the Whisper multilingual variant
+                    // offers ~100 codes and a dialog's text slot never scrolls
+                    // by itself, so the tail would be unreachable.
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 384.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        picker.options.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(languageOptionLabel(option.code, transcriptionSentinelLabels, picker.optionByCode)) },
+                                onClick = {
+                                    mode = null
+                                    onReRunWithLanguage(option.code)
+                                },
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showFacts = false
-                    onOpenSetting()
-                }) { Text(stringResource(R.string.language_chip_open_setting)) }
+                // Picker mode acts on selection; Cancel (dismiss slot) is its only button.
+                if (mode == LanguageChipMode.Facts) {
+                    TextButton(onClick = {
+                        mode = null
+                        onOpenSetting()
+                    }) { Text(stringResource(R.string.language_chip_open_setting)) }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showFacts = false }) {
+                TextButton(onClick = { mode = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
         )
     }
 }
+
+/** TASK-546 AC3: the chip dialog's two bodies (null = closed). */
+private enum class LanguageChipMode { Facts, Pick }
 
 /**
  * A labeled secondary transcript block of the expanded log card (summary,

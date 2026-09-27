@@ -5,7 +5,7 @@ import org.json.JSONObject
 /**
  * The bundled external-model catalog index (TASK-331 Task 13): a minimal list of
  * curated models (name, languages, family, entry-JSON URL) shipped as an asset at
- * assets/external-catalog/index.json. The import-from-catalog dialog browses it
+ * the versioned assets/external-catalog/index-<version>.json (TASK-643). The import-from-catalog dialog browses it
  * by language; the query matcher below is its text-search surface and the
  * unit-test surface.
  *
@@ -75,7 +75,11 @@ object ExternalCatalog {
                 val e = arr.optJSONObject(i) ?: continue
                 val name = e.optString("name")
                 val url = e.optString("entryUrl")
-                if (name.isBlank() || url.isBlank()) continue
+                // TASK-652 review: skip relative entryUrls at the parse
+                // boundary too (the CI pin covers only the source tree; a
+                // remote or override index could ship them, and OkHttp
+                // throws at tap-to-import with a cryptic error).
+                if (name.isBlank() || url.isBlank() || !url.startsWith("http")) continue
                 val family = runCatching {
                     ModelFamily.valueOf(e.optString("family", ModelFamily.TRANSDUCER.name))
                 }.getOrNull() ?: continue

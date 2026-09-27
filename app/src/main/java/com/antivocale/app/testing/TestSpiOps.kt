@@ -2,12 +2,16 @@ package com.antivocale.app.testing
 
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalModelImportOperations
+import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelStore
+import com.antivocale.app.data.ModelFamily
+import com.antivocale.app.transcription.ModelFamilySupport
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.PunctuationPolicy
+import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.ui.theme.ThemeMode
 import com.antivocale.app.ui.theme.TextScale
 import com.antivocale.app.ui.theme.ThemeType
@@ -38,6 +42,8 @@ internal class TestSpiOps(
     private val preferences: PreferencesManager,
     private val externalModels: ExternalModelStore,
     private val importer: ExternalModelImportOperations,
+    /** Needed by the notify_memory_error op; the debug receiver passes its context. */
+    private val appContext: android.content.Context? = null,
 ) {
 
     suspend fun handle(
@@ -46,12 +52,15 @@ internal class TestSpiOps(
         value: String? = null,
         entry: String? = null,
         url: String? = null,
+        family: String? = null,
+        modelType: String? = null,
     ): String = runCatching {
         when (op) {
             OP_GET -> get()
             OP_SET -> set(key, value, entry)
             OP_RECORDS -> records()
-            OP_IMPORT -> importModel(url)
+            OP_IMPORT -> importModel(url, family, modelType)
+            OP_NOTIFY_MEMORY_ERROR -> notifyMemoryError()
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -86,19 +95,36 @@ internal class TestSpiOps(
             .put("paths", paths)
             .put("summarizeEnabled", preferences.summarizeEnabled.first())
             .put("autoCopyEnabled", preferences.autoCopyEnabled.first())
-            .put("forceModelLoad", preferences.forceModelLoad.first())
+            .put("signatureEnabled", preferences.signatureEnabled.first())
+            .put("signatureText", preferences.signatureText.first())
+            .put("signaturePosition", preferences.signaturePosition.first())
+            .put("memoryProtection", preferences.memoryProtection.first())
+            .put("externalAutomationEnabled", preferences.externalAutomationEnabled.first())
+            // TASK-681: the LAN-offload config (endpoint visible for E2E
+            // verification; the key is masked to its last 4 chars).
+            .put("remoteOmnivoiceEnabled", preferences.remoteOmnivoiceEnabled.first())
+            .put("remoteOmnivoiceEndpoint", preferences.remoteOmnivoiceEndpoint.first())
+            .put("remoteOmnivoiceApiKeyMasked", preferences.remoteOmnivoiceApiKey.first()
+                .takeLast(4).let { if (it.length < 4) "" else "****$it" })
+            .put("remoteOmnivoiceModel", preferences.remoteOmnivoiceModel.first())
             .put("compactResultActions", preferences.compactResultActions.first())
             .put("languageChipEnabled", preferences.languageChipEnabled.first())
             // TASK-575: read-only over the SPI (records are written by loads).
             .put("measuredModelMemory", preferences.measuredModelMemory.first().entries.joinToString(",") { e -> e.key + "=" + e.value.runs + "runs" })
+            // TASK-675: read-only over the SPI too (decodes write entries, a
+            // manual selection clears them; device tests only need to read).
+            .put("demotedBackends", JSONArray(preferences.demotedBackends.first()))
             .put("advancedSharingEnabled", preferences.advancedSharingEnabled.first())
             .put("showRetranscribeButton", preferences.showRetranscribeButton.first())
             .put("groupLogsByConversation", preferences.groupLogsByConversation.first())
+            .put("showTechnicalDetails", preferences.showTechnicalDetails.first())
             .put("vadAdvisoryDismissed", preferences.vadAdvisoryDismissed.first())
             .put("onboardingCompleted", preferences.onboardingCompleted.first())
             .put("swipeActionMode", preferences.swipeActionMode.first())
             .put("themePreference", preferences.themePreference.first())
             .put("textScalePreference", preferences.textScalePreference.first())
+            .put("refinementEnabled", preferences.refinementEnabled.first())
+            .put("speakerLabelsEnabled", preferences.speakerLabelsEnabled.first())
             .put("themeMode", preferences.themeMode.first())
             .put("defaultPrompt", preferences.defaultPrompt.first())
             .put("summaryPrompt", preferences.summaryPrompt.first())
@@ -130,15 +156,24 @@ internal class TestSpiOps(
         "vad" to preferences::saveVadEnabled,
         "progressive" to preferences::saveProgressiveTranscription,
         "summarize" to preferences::saveSummarizeEnabled,
+        "refinement_enabled" to preferences::saveRefinementEnabled,
+        "speaker_labels_enabled" to preferences::saveSpeakerLabelsEnabled,
         "auto_copy" to preferences::saveAutoCopyEnabled,
         "vad_advisory" to preferences::saveVadAdvisoryDismissed,
         "onboarding" to preferences::saveOnboardingCompleted,
         "group_logs" to preferences::saveGroupLogsByConversation,
         "advanced_sharing" to preferences::saveAdvancedSharingEnabled,
         "show_retranscribe" to preferences::saveShowRetranscribeButton,
-        "force_model_load" to preferences::saveForceModelLoad,
+        "memory_protection" to preferences::saveMemoryProtection,
+        // TASK-274: consent gate for the exported automation receivers.
+        "external_automation" to preferences::saveExternalAutomationEnabled,
+        // TASK-681: the LAN-offload gate (device E2E drives the whole
+        // enable + configure + select sequence over the SPI).
+        "remote_enabled" to preferences::saveRemoteOmnivoiceEnabled,
         "compact_result_actions" to preferences::saveCompactResultActions,
+        "technical_details" to preferences::saveShowTechnicalDetails,
         "language_chip" to preferences::saveLanguageChipEnabled,
+        "signature_enabled" to preferences::saveSignatureEnabled,
     )
 
     /**
@@ -154,6 +189,7 @@ internal class TestSpiOps(
         "theme" to Pair(THEME_TYPES, preferences::saveThemePreference),
         "theme_mode" to Pair(THEME_MODES, preferences::saveThemeMode),
         "text_scale" to Pair(TEXT_SCALES, preferences::saveTextScale),
+        "signature_position" to Pair(PreferencesManager.SIGNATURE_POSITIONS, preferences::saveSignaturePosition),
         // GH #92: device tests flip the auto-save format over adb.
         "transcript_export_format" to Pair(
             SubtitleFormatter.Format.entries.map { it.name },
@@ -166,11 +202,21 @@ internal class TestSpiOps(
         "punctuation_prompt" to preferences::savePunctuationPrompt,
         "default_prompt" to preferences::saveDefaultPrompt,
         "summary_prompt" to preferences::saveSummaryPrompt,
-        "external_catalog_url" to preferences::saveExternalCatalogUrl,
+        "signature_text" to preferences::saveSignatureText,
+        // TASK-643: blank clears the key (a saved default literal would become a
+        // phantom override at the next version bump); any other value saves.
+        "external_catalog_url" to { v ->
+            if (v.isNullOrBlank()) preferences.clearExternalCatalogUrl()
+            else preferences.saveExternalCatalogUrl(v)
+        },
         // An unset SAF folder is null, not "": blank clears.
         "output_folder" to { preferences.saveOutputFolderUri(it.ifBlank { null }) },
         "language" to preferences::saveTranscriptionLanguage,
         "model_path" to preferences::saveModelPath,
+        // TASK-681: the LAN-offload config triple.
+        "remote_endpoint" to preferences::saveRemoteOmnivoiceEndpoint,
+        "remote_api_key" to preferences::saveRemoteOmnivoiceApiKey,
+        "remote_model" to preferences::saveRemoteOmnivoiceModel,
     )
 
     /**
@@ -246,8 +292,8 @@ internal class TestSpiOps(
             }
             putUnique("backend") { value, _ ->
                 if (!isKnownBackend(value)) {
-                    "unknown backend '$value' (expected a catalog id, '${LlmTranscriptionBackend.BACKEND_ID}' " +
-                        "or '${ExternalModelRecord.BACKEND_ID_PREFIX}<record id>')"
+                    "unknown backend '$value' (expected a catalog id, '${LlmTranscriptionBackend.BACKEND_ID}', " +
+                        "'${RemoteOmnivoiceBackend.BACKEND_ID}' or '${ExternalModelRecord.BACKEND_ID_PREFIX}<record id>')"
                 } else {
                     preferences.saveTranscriptionBackend(value)
                     null
@@ -267,9 +313,22 @@ internal class TestSpiOps(
     /** Every key accepted by op=set: the dispatch map IS the list (TASK-469). */
     val SET_KEYS: List<String> = setDispatch.keys.sorted()
 
+    /**
+     * TASK-649: keys whose handlers document blank-clear semantics. `am
+     * broadcast --es value ""` DROPS the empty extra at the shell layer, so
+     * the value arrives null; for these keys that null IS the intentional
+     * blank (the documented way to clear), not a malformed broadcast.
+     */
+    private val blankClearingKeys = setOf(
+        "external_catalog_url", "output_folder", "signature_text",
+        "punctuation_prompt", "default_prompt", "summary_prompt",
+    )
+
     private suspend fun set(key: String?, value: String?, entry: String?): String {
         if (key == null) return setError("missing key extra")
-        if (value == null) return setError("missing value extra for key '$key'")
+        val effectiveValue = if (value == null && key in blankClearingKeys) "" else value
+        if (effectiveValue == null) return setError("missing value extra for key '$key'")
+        val value = effectiveValue
         // Lookup and invocation must stay separate: a found handler whose
         // validation passes returns null, which must not collapse into the
         // unknown-key branch.
@@ -342,35 +401,91 @@ internal class TestSpiOps(
      * exactly the path the import dialog uses; the response is the imported
      * record, so a device test can chain set backend=external:<id> on it.
      */
-    private suspend fun importModel(url: String?): String {
+    private suspend fun importModel(url: String?, family: String?, modelType: String?): String {
         if (url.isNullOrBlank()) {
-            return JSONObject()
-                .put("op", OP_IMPORT)
-                .put("error", "missing 'url' extra")
-                .toString()
+            throw IllegalArgumentException("missing 'url' extra")
         }
-        val record = importer.importFromUrl(url)
+        // TASK-618: optional family override, because URL imports are
+        // detect-then-tell by design (the UI dialog owns the chooser) and a
+        // headless test must be able to make the same choice the user makes.
+        // Errors are THROWN: handle()'s runCatching wrapper already renders
+        // them as the {op, error} envelope (one construction site, not four).
+        val familyOverride = family?.let { raw ->
+            ModelFamily.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+                ?: throw IllegalArgumentException(
+                    "unknown family '$raw' (use one of: " +
+                        ModelFamily.entries.joinToString("/") { it.name } + ")")
+        }
+        val parsedFamily = familyOverride ?: ModelFamily.TRANSDUCER
+        // Catalog-entry JSON carries its own family AND modelType; either
+        // override would be silently dropped there, so say so instead of
+        // diverging from the dialog path the SPI mirrors. Checked BEFORE the
+        // pair validation: on an entry URL the override is the specific
+        // error, not the pair incoherence (review round). The nullable
+        // [familyOverride], not the resolved [parsedFamily], drives the
+        // test: an EXPLICIT family=TRANSDUCER on an entry URL is still an
+        // override the entry would drop (simplify round: the resolved
+        // default made it indistinguishable from absent).
+        if ((familyOverride != null || modelType != null) &&
+            ExternalModelImporter.isCatalogEntryUrl(url)
+        ) {
+            throw IllegalArgumentException(
+                "family/model_type overrides apply to repo URLs only; entry JSON carries its own")
+        }
+        // model_type carries the CTC subtype (the dialog's nemo/zipformer
+        // selector). Validated against the resolved family HERE (review
+        // round): the repo-URL import path never runs isValidModelType, and
+        // an incoherent pair (family=TRANSDUCER with nemo_ctc) would persist
+        // and native-exit at load, the exit(255) class, debug build or not.
+        if (modelType != null && !ModelFamilySupport.isValidModelType(parsedFamily, modelType)) {
+            throw IllegalArgumentException(
+                "model_type '$modelType' is not valid for family ${parsedFamily.name}")
+        }
+        val record = importer.importFromUrl(url, modelType = modelType, family = parsedFamily)
         return JSONObject()
             .put("op", OP_IMPORT)
             .put("record", record.toJson().put("backendId", record.backendId))
             .toString()
     }
 
+    /**
+     * TASK-625 trial tool: posts the production memory-failure error
+     * notification (the exact ResultNotificationFactory builder both error
+     * surfaces use) so the Open-setting action can be exercised on device
+     * without engineering a real out-of-memory failure. Debug receiver only.
+     */
+    private fun notifyMemoryError(): String {
+        val ctx = appContext ?: error("notify_memory_error requires a Context (debug receiver only)")
+        val factory = com.antivocale.app.service.ResultNotificationFactory(ctx)
+        val message = ctx.getString(
+            com.antivocale.app.R.string.model_load_low_memory, "1.2GB", "4.8GB")
+        val id = com.antivocale.app.service.ResultNotificationFactory.nextNotificationId()
+        ctx.getSystemService(android.app.NotificationManager::class.java)
+            .notify(id, factory.errorNotification(message, memoryAction = true))
+        return JSONObject()
+            .put("op", OP_NOTIFY_MEMORY_ERROR)
+            .put("posted", id)
+            .toString()
+    }
+
     private fun help(error: String? = null): String = JSONObject()
         .apply { error?.let { put("error", it) } }
         .put("op", OP_HELP)
-        .put("ops", JSONArray(listOf(OP_GET, OP_SET, OP_RECORDS, OP_IMPORT, OP_HELP)))
+        .put("ops", JSONArray(listOf(OP_GET, OP_SET, OP_RECORDS, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_HELP)))
         .put("setKeys", JSONArray(SET_KEYS))
         .put(
             "usage",
             "am broadcast -a com.antivocale.app.TEST_SPI --es op=<$OP_GET|$OP_SET|$OP_RECORDS|$OP_IMPORT|$OP_HELP> " +
                 "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path only)] " +
-                "[--es url=<entry-or-repo url> (import only)]")
+                "[--es url=<entry-or-repo url> (import only)] [--es family=<ModelFamily> (import only, optional override)] "
+            + "[--es model_type=<subtype> (import only, CTC: nemo_ctc/zipformer_ctc/omnilingual_ctc)]")
         .put(
             "transcription",
             "transcription is NOT triggered here: broadcast com.antivocale.app.PROCESS_REQUEST with extras " +
                 "request_type=audio file_path=<appReadablePath> task_id=<id> [backend_id=<backend>] " +
-                "(TaskerRequestReceiver)")
+                "(TaskerRequestReceiver). TASK-274: that receiver is gated by the external_automation " +
+                "consent toggle (default OFF): set key=external_automation value=true first or every " +
+                "request answers STATUS_ERROR")
         .toString()
 
     companion object {
@@ -378,6 +493,7 @@ internal class TestSpiOps(
         const val OP_SET = "set"
         const val OP_RECORDS = "records"
         const val OP_IMPORT = "import"
+        const val OP_NOTIFY_MEMORY_ERROR = "notify_memory_error"
         const val OP_HELP = "help"
 
         /** TASK-276: the single source is PunctuationPolicy.MODE_PREFS; the SPI only adds write-time strictness. */

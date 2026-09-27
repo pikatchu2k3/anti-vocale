@@ -42,6 +42,21 @@ class TranscriptionLanguagePolicyTest {
 
     // ---- The online languageOption (Nemotron) mapping is unchanged ----
 
+    /**
+     * TASK-546 AC3: the chip's re-run override speaks the preference
+     * vocabulary, so an explicit "auto" must detect exactly like the
+     * untouched preference does on a passLanguage (Whisper) entry.
+     */
+    @Test
+    fun `explicit auto resolves to model detection on a passLanguage entry`() {
+        assertEquals(
+            "",
+            TranscriptionLanguagePolicy.resolveForEntry(
+                whisperEntry(),
+                TranscriptionLanguagePolicy.PREF_AUTO),
+        )
+    }
+
     @Test
     fun `stream mapping sends auto for sentinels and passes codes through`() {
         assertEquals("auto", TranscriptionLanguagePolicy.resolveStream(TranscriptionLanguagePolicy.PREF_SYSTEM))
@@ -201,7 +216,7 @@ class TranscriptionLanguagePolicyTest {
             emptySet<String>(),
             TranscriptionLanguagePolicy.offeredLanguages(null, null),
         )
-        // The LLM backend, the disabled GGUF backend, external imports, and a
+        // The LLM backend, external imports, and a
         // missing whisper catalog entry: no conditioning, empty set.
         assertEquals(
             emptySet<String>(),
@@ -209,7 +224,7 @@ class TranscriptionLanguagePolicyTest {
         )
         assertEquals(
             emptySet<String>(),
-            TranscriptionLanguagePolicy.offeredLanguages("/models/gemma.gguf", null),
+            TranscriptionLanguagePolicy.offeredLanguages("/models/gemma.bin", null),
         )
         assertEquals(
             emptySet<String>(),

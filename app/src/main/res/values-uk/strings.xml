@@ -39,6 +39,7 @@
     <string name="saved_model_found">Збережену модель знайдено</string>
     <string name="saved_model_not_found">Збережену модель не знайдено</string>
     <string name="model_selected">Вибрано модель: %1$s</string>
+    <string name="model_import_invalid_file">Вибраний файл не схожий на придатну модель LiteRT-LM (%1$s)</string>
     <string name="model_copy_failed">Не вдалося скопіювати файл моделі</string>
     <string name="model_file_not_found">Файл моделі не знайдено за адресою: %1$s</string>
     <string name="model_loading">Завантаження моделі в пам\'ять…</string>
@@ -99,7 +100,9 @@
     <string name="summary_skipped_context">Резюме пропущено: транскрипція перевищує довжину, яку може обробити прохід резюме.</string>
     <string name="summary_skipped_no_model">Резюме пропущено: модель Gemma не налаштована. Завантажте її на вкладці «Моделі», щоб увімкнути резюме.</string>
     <string name="summary_skipped_failed">Не вдалося створити резюме; транскрипція не постраждала.</string>
+    <string name="summary_skipped_timeout">Створення резюме перевищило ліміт часу; транскрипція не постраждала.</string>
     <string name="summary_skipped_guard">Резюме пропущено: згенероване резюме вийшло за межі обмежень довжини (занадто коротке чи задовге для резюме).</string>
+    <string name="summary_partial_note">(деякі частини транскрипції не вдалося резюмувати)</string>
     <string name="copy_summary">Копіювати резюме</string>
     <string name="copy_original">Копіювати оригінал</string>
     <string name="logs_model_label">Модель: %1$s</string>
@@ -280,10 +283,53 @@
     <string name="oom_crash_warning">Додаток було закрито, оскільки на пристрої закінчувалася пам\'ять. Перед новою розшифровкою спробуйте закрити інші додатки або використати меншу модель.</string>
     <string name="native_crash_title">Додаток несподівано закрився</string>
     <string name="native_crash_go_to_model">Перейти на вкладку «Модель»</string>
-    <string name="model_load_low_memory">Недостатньо вільної пам\'яті для цієї моделі (доступно %1$s, потрібно близько %2$s). Закрийте інші додатки або використайте меншу модель. Можна також увімкнути \"Примусове завантаження моделі\" в Налаштуваннях, щоб спробувати попри все.</string>
-    <string name="transcribe_low_memory">Недостатньо вільної памʼяті для транскрипції цією моделлю (вільно близько %1$s, потрібно %2$s). Закрийте інші застосунки та спробуйте ще раз або увімкніть примусове завантаження моделі в налаштуваннях.</string>
-    <string name="force_model_load">Примусове завантаження моделі</string>
-    <string name="force_model_load_desc">Завантажувати модель, навіть коли пам\'яті видається недостатньо. Може закривати додаток на пристроях з малою кількістю ОЗП.</string>
+    <string name="model_load_low_memory">Недостатньо вільної памʼяті для цієї моделі (доступно %1$s, потрібно близько %2$s). Захист памʼяті активний: закрийте інші додатки, використайте меншу модель або вимкніть його в налаштуваннях, щоб спробувати попри все.</string>
+    <string name="memory_margin_warning_title">Модель близька до межі пам\'яті цього телефону</string>
+    <string name="memory_margin_warning_body">Модель %1$s, можливо, близька до межі можливостей цього телефону. Транскрипція все одно виконається; можна ввімкнути захист пам\'яті в Налаштуваннях, щоб блокувати такі завантаження.</string>
+    <string name="transcribe_low_memory">Недостатньо вільної памʼяті для транскрипції цією моделлю (вільно близько %1$s, потрібно %2$s). Захист памʼяті активний: закрийте інші застосунки та спробуйте ще раз або вимкніть його в налаштуваннях, щоб спробувати попри все.</string>
+    <string name="external_model_quarantined_title">Зовнішню модель вимкнено після збою</string>
+    <string name="external_model_quarantined_text">Завантаження «%1$s» закрило застосунок, тому її вимкнено, щоб уникнути повторних збоїв. Видаліть і знову імпортуйте модель у вкладці Моделі, щоб спробувати ще раз.</string>
+    <string name="memory_protection">Захист памʼяті</string>
+    <string name="memory_protection_desc">Блокує завантаження моделі, коли вільної памʼяті видається недостатньо, щоб уникнути тихого закриття додатка. Типово вимкнена: зазвичай додаток завжди намагається запустити модель.</string>
+    <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
+    <string name="external_automation_title">Зовнішня автоматизація (Tasker)</string>
+    <string name="external_automation_description">Дозволяє іншим додаткам запускати транскрипцію через API автоматизації (наприклад, Tasker). Типово вимкнено.</string>
+    <string name="external_automation_disabled">Зовнішня автоматизація вимкнена. Увімкніть її в розділі Налаштування > Розширені > Зовнішня автоматизація.</string>
+    <string name="remote_omnivoice_name">Перенесення на сервер LAN (OmniVoice)</string>
+    <string name="remote_offload_title">Перенесення на сервер LAN (експериментально)</string>
+    <string name="remote_offload_description">Передача довгих або важких розшифровок вашому власному серверу OmniVoice у вашій мережі Wi-Fi. Після ввімкнення виберіть його на вкладці «Моделі».</string>
+    <string name="remote_offload_disclosure">Коли функцію ввімкнено та вибрано, звук цих розшифровок надсилається лише на адресу сервера, яку ви вкажете нижче, у вашій власній мережі. Усе інше розшифровується на цьому пристрої. Типово вимкнено: нічого не залишає телефон, доки ви це не ввімкнете.</string>
+    <string name="remote_offload_endpoint_label">Адреса сервера</string>
+    <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
+    <string name="remote_offload_key_label">Ключ API</string>
+    <string name="remote_offload_model_label">Назва моделі</string>
+    <string name="remote_offload_model_hint">Назва моделі, яку розпізнає ваш сервер OmniVoice; типово whisper-1.</string>
+    <string name="remote_offload_save">Зберегти</string>
+    <string name="remote_offload_test">Перевірити з\'єднання</string>
+    <string name="remote_offload_test_running">Перевірка…</string>
+    <string name="remote_offload_test_success">З\'єднання працює.</string>
+    <string name="remote_test_reason_unreachable">Сервер недоступний. Перевірте адресу і те, що OmniVoice запущено.</string>
+    <string name="remote_test_reason_auth">Сервер відхилив ключ API.</string>
+    <string name="remote_test_reason_timeout">Немає відповіді протягом %1$d секунд; можливо, сервер зайнятий.</string>
+    <string name="remote_test_reason_server">Сервер повернув помилку (HTTP %1$d).</string>
+    <string name="error_remote_timeout">Розшифровка на вашому сервері OmniVoice не завершилася за %1$d хвилин і була зупинена.</string>
+    <string name="error_remote_unreachable">Ваш сервер OmniVoice недоступний. Перевірте, що він запущений і що адреса в налаштуваннях вказана правильно.</string>
+    <string name="error_remote_server">Сервер OmniVoice відхилив запит (HTTP %1$d).</string>
+    <string name="remote_offload_status">Розшифровка на вашому сервері OmniVoice…</string>
+    <!-- TASK-679: панель резидентних моделей (Налаштування > Додатково) та запис після OOM. -->
+    <string name="memory_diagnostics_title">Пам\'ять пристрою</string>
+    <string name="memory_diagnostics_subtitle">Моделі, завантажені зараз, вільна RAM і останній запис про нестачу пам\'яти.</string>
+    <string name="memory_diagnostics_resident_label">Резидентні моделі</string>
+    <string name="memory_diagnostics_resident_none">Зараз не завантажено жодної моделі</string>
+    <string name="memory_diagnostics_ram_label">Вільна RAM</string>
+    <string name="memory_diagnostics_ram_value">%1$s вільно з %2$s</string>
+    <string name="memory_diagnostics_ram_unknown">На цьому пристрої не читається</string>
+    <string name="memory_diagnostics_heap_label">Ліміт пам\'яти застосунку</string>
+    <string name="memory_diagnostics_breadcrumb_label">Остання подія нестачі пам\'яти</string>
+    <string name="memory_diagnostics_breadcrumb_none">Нічого не записано</string>
+    <string name="memory_diagnostics_breadcrumb_hint">Коли транскрипція завершується помилкою через пам\'ять, один рядок записує, які моделі були завантажені та що робив запит.</string>
+    <string name="memory_diagnostics_scrub_note">Діагностичні дані містять лише назви моделей і числа пам\'яти: ніколи текст транскрипції чи шляхи файлів.</string>
+    <string name="memory_diagnostics_copy">Копіювати діагностику</string>
     <string name="copy">Копіювати</string>
     <string name="share">Поділитися</string>
     <string name="char_counter">%1$d з %2$d символів</string>
@@ -328,6 +374,7 @@
     <string name="active_badge">Активна</string>
     <string name="model_selected_message">Вибрано %1$s</string>
     <string name="model_use_missing_files">Файли моделі %1$s відсутні або неповні. Завантажте варіант знову на вкладці «Модель».</string>
+    <string name="model_demoted_notice">Не вибирається автоматично: ця модель не видала тексту за наявності мовлення. Виберіть її знову, щоб дати їй ще один шанс.</string>
     <string name="delete">Видалити</string>
     <string name="download">Завантажити</string>
     <string name="model_update_button">Оновити</string>
@@ -485,6 +532,13 @@
     <string name="punctuation_prompt_description">Інструкція для кроку пунктуації. Залиште порожнім, щоб використати вбудовану.</string>
     <string name="punctuation_prompt_placeholder">Вбудований промпт</string>
     <string name="summary_prompt_title">Промпт підсумку</string>
+    <string name="signature_setting_title">Підпис транскрипції (повідомлення про ШІ)</string>
+    <string name="signature_setting_description">Додає рядок підпису до кожної транскрипції, що залишає застосунок: копії, поширення та експортовані файли. Екрани застоску залишаються зі звичайним текстом.</string>
+    <string name="signature_text_title">Текст підпису</string>
+    <string name="signature_text_description">Залиште порожнім для стандартного повідомлення.</string>
+    <string name="signature_position_title">Розташування</string>
+    <string name="signature_position_prepend">Перед транскрипцією</string>
+    <string name="signature_position_append">Після транскрипції</string>
     <string name="summary_prompt_description">Власна інструкція для ШІ-підсумку. Порожньо означає вбудований промпт (два-три речення).</string>
     <string name="punctuation_default_prompt">Додай пунктуацію та великі літери до цієї розшифровки. Збережи кожне слово точно як написано; нічого не виправляй, не перекладай, не додавай і не видаляй. Виведи лише виправлену розшифровку.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
@@ -626,6 +680,7 @@
     <string name="notification_no_model_title">Немає моделі розшифровки</string>
     <string name="notification_no_model_message">Відкрийте додаток, щоб завантажити модель розшифровки</string>
     <string name="notification_no_model_action">Відкрити додаток</string>
+    <string name="error_open_memory_protection_setting">Відкрити налаштування</string>
 
     <!-- Tasker fallback notification -->
     <string name="notification_channel_tasker_fallback">Автоматизація Tasker</string>
@@ -711,6 +766,8 @@
     <string name="performance_stats_hours_ago">%1$dг тому</string>
     <string name="performance_stats_days_ago">%1$dд тому</string>
     <string name="performance_stats_total_audio">Всього: оброблено %1$s аудіо</string>
+    <string name="performance_stats_accuracy_title">Точність</string>
+    <string name="performance_stats_accuracy_footnote">Виміряно на наших наборах реальних повідомлень і чистих наборах, вибірках класу FLEURS або громадських бенчмарках; те, чого немає в списку, не вимірювалося.</string>
 
     <!-- Transcription active protection -->
     <string name="dialog_transcription_active_title">Триває розшифровка</string>
@@ -751,6 +808,7 @@
     <string name="loading_model">Завантаження моделі %1$s…</string>
     <string name="preprocessing_audio">Попередня обробка аудіо…</string>
     <string name="clipboard_label_transcription">Результат</string>
+    <string name="signature_default_text">Транскрибовано локально на телефоні за допомогою ШІ-моделі.</string>
 
     <!-- Settings accessibility -->
     <string name="open_prompt_settings">Відкрити налаштування запитів</string>
@@ -766,30 +824,10 @@
     <string name="pip_enter_button">PiP</string>
     <string name="pip_enter_description">Показати у вікні «картинка в картинці»</string>
 
-    <!-- GGUF model descriptions -->
-    <string name="model_title_gemma4_gguf_q4km">Gemma 4 GGUF (Q4_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q4km">4,9 ГБ · Apache 2.0 · Генерування тексту через llama.cpp. Найкращий баланс якості та розміру.</string>
-    <string name="model_title_gemma4_gguf_q5km">Gemma 4 GGUF (Q5_K_M)</string>
-    <string name="model_desc_gemma4_gguf_q5km">5,3 ГБ · Apache 2.0 · Якісніше генерування тексту через llama.cpp.</string>
-    <string name="model_title_gemma4_gguf_q8">Gemma 4 GGUF (Q8_0)</string>
-    <string name="model_desc_gemma4_gguf_q8">7,4 ГБ · Apache 2.0 · Найкраща якість генерування тексту через llama.cpp. Потребує 8ГБ+ ОЗП.</string>
     <string name="model_title_gemma_4_e2b">Gemma 4 E2B</string>
     <string name="model_title_gemma_4_e4b">Gemma 4 E4B</string>
     <string name="model_title_gemma_3n_e2b">Gemma 3n E2B</string>
     <string name="model_title_gemma_3n_e4b">Gemma 3n E4B</string>
-    <string name="backend_gemma4_gguf">Gemma 4 (GGUF)</string>
-    <string name="gguf_inference_unavailable">Вивід GGUF потребує рідної бібліотеки llama.cpp. Зберіть libllama.so для Android ARM64.</string>
-    <string name="gguf_model_download_error">Не вдалося завантажити модель GGUF</string>
-
-    <!-- GGUF model download section -->
-    <string name="gguf_title">Gemma 4 GGUF (генерування тексту)</string>
-    <string name="gguf_description">Локальна LLM для генерування тексту на пристрої; без залежності від хмари. Потребує рідної бібліотеки llama.cpp.</string>
-    <string name="gguf_unsupported_arch">Не підтримується на цьому пристрої (потрібен ARM64).</string>
-    <string name="gguf_download_confirm_title">Завантажити %1$s?</string>
-    <string name="gguf_download_confirm_message">Буде завантажено ~%1$dМБ. Моделі GGUF уможливлюють локальне генерування тексту без інтернету.</string>
-    <string name="gguf_downloaded">%1$s успішно завантажено</string>
-    <string name="gguf_delete_message">Видалити %1$s? Це звільнить ~%2$dМБ пам\'яті.</string>
-    <string name="gguf_deleted">%1$s видалено</string>
 
     <!-- Language filter -->
     <string name="lang_filter_label">Фільтрувати за мовою</string>
@@ -938,6 +976,7 @@
     <string name="external_option_itn">Зворотна нормалізація тексту</string>
     <string name="external_ctc_subtype">Підтип CTC</string>
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
+    <string name="external_ctc_subtype_omnilingual">Багатомовний CTC (1600+ мов, експериментально)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
     <string name="external_notice_single_pass">Однопрохідна розшифровка: дуже довге аудіо може не вдатися з великими моделями. Обріжте аудіо або використайте меншу модель.</string>
     <string name="external_notice_family">Якщо розшифровка аварійно завершується без помилки, архітектура може бути хибною: видаліть модель та імпортуйте її знову з іншою вибраною архітектурою.</string>
@@ -980,6 +1019,9 @@
     <string name="action_transcribe_audio">Розшифрувати аудіо</string>
     <string name="subtitle_fallback_status">Не вдалося витягти субтитри; розшифровуємо аудіо</string>
     <string name="subtitle_choice_notification_text">Очікування вашого вибору…</string>
+    <!-- TASK-677 (GH #92 import half): subtitle-file ingest -->
+    <string name="subtitle_import_failed">Не вдалося прочитати файл субтитрів</string>
+    <string name="logs_subtitle_sourced">З субтитрів (без розпізнавання)</string>
     <!-- TASK-336: background-kill remediation card -->
     <string name="battery_exemption_title">Дозволити розшифровку у фоні</string>
     <string name="battery_exemption_description">Ваш пристрій зупинив розшифровку, поки додаток був у фоні (часто на деяких телефонах з Android). Дозвольте Anti-Vocale працювати у фоні, щоб завершувати розшифровки.</string>
@@ -1003,7 +1045,8 @@
     <string name="a11y_back">Назад</string>
     <string name="litertlm_importing">Імпортування…</string>
     <string name="model_ram_warning">%1$s може не вистачити пам\'яті на цьому пристрої. Завантаження може не вдатися; легші моделі надійніші.</string>
-    <string name="error_oom_transcription">Недостатньо пам\'яті для розшифровки цього аудіо. Спробуйте коротший файл, меншу модель або закрийте інші застосунки. Якщо й далі не вдасться, Налаштування > Додатково > Примусове завантаження моделі може пропустити цю перевірку.</string>
+    <string name="error_oom_transcription">Недостатньо памʼяті для розшифровки цього аудіо. Спробуйте коротший файл, меншу модель або закрийте інші застосунки. Щоб узагалі уникнути спроби, увімкніть захист памʼяті в Налаштування > Додатково.</string>
+    <string name="error_oom_transcription_protected">Недостатньо памʼяті, щоб розшифрувати це аудіо навіть при увімкненому захисті памʼяті. Спробуйте коротший файл, меншу модель або закрийте інші застосунки.</string>
     <string name="external_family_detected">Виявлено: %1$s</string>
     <string name="external_family_pick_title">До якої сім\'ї належить ця модель?</string>
     <string name="subtitle_timeout_title">Час автоматичного вибору</string>
@@ -1034,6 +1077,7 @@
     <string name="language_chip_detected_body">Визначено автоматично: %1$s. Не та мова? Змініть мову розшифровки та розшифруйте аудіо ще раз.</string>
     <string name="language_chip_pinned_body">Закріплено: %1$s. Щоб змінити, відкрийте налаштування мови розшифровки.</string>
     <string name="language_chip_open_setting">Відкрити налаштування мови</string>
+    <string name="language_chip_re_run">Перезапустити з іншою мовою</string>
     <string name="curated_section_title">Для вашої мови</string>
     <string name="curated_browse_all">Переглянути всі мови</string>
     <string name="curated_suggest_model">Запропонуйте модель для вашої мови</string>
@@ -1043,4 +1087,31 @@
     <string name="text_scale_small">Малий</string>
     <string name="text_scale_large">Великий</string>
     <string name="text_scale_xlarge">Дуже великий</string>
+    <string name="logs_first_pass_label">Перший прохід (%1$s)</string>
+    <string name="copy_first_pass">Копіювати перший прохід</string>
+    <string name="refining_status">Уточнення з %1$s…</string>
+    <string name="speaker_labels_status">Визначення мовців…</string>
+    <string name="speaker_labels_title">Визначати мовців</string>
+    <string name="speaker_labels_description">Додає мітку мовця до кожного речення. При першому використанні завантажує близько~47 МБ моделей; збільшує час обробки.</string>
+    <string name="transcription_not_refined">Не уточнено (миттєвий перегляд)</string>
+    <string name="transcription_refined_from">Уточнено з %1$s</string>
+    <string name="refinement_title">Двопрохідна розшифровка</string>
+    <string name="refinement_description">Спочатку миттєвий перегляд швидкою моделлю, потім уточнення у фоні обраною моделлю</string>
+    <string name="curated_why_distil_it">Налаштований для італійської: найточніший вибір</string>
+    <string name="curated_why_parakeet">Дуже швидкий (приблизно у 17 разів) і досі дуже точний</string>
+    <string name="curated_why_german_whisper">Налаштований для німецької: найточніший варіант</string>
+    <string name="curated_why_canary">Компактний: невелике завантаження, швидкі результати</string>
+    <string name="curated_why_swiss_german">Для швейцарських діалектів німецької</string>
+    <string name="curated_why_kroko">Потоковий режим: текст з\'являється під час розмови</string>
+    <string name="language_chip_setting_note">Визначати мову вміють лише моделі Whisper і SenseVoice.</string>
+    <string name="technical_details_title">Показувати технічні деталі</string>
+    <string name="technical_details_description">Показує технічний рядок обробки (шлях декодування, фрагменти, VAD, пам\'ять) у записах транскрипції. Типово вимкнено; деталі завжди включаються до звітів.</string>
+    <string name="external_family_moonshine">Moonshine</string>
+    <string name="external_family_moonshine_help">Потребує preprocess + encode + uncached/cached decode + tokens (v1) або encoder_model.ort + decoder_model_merged.ort + tokens (v2); англійська та деякі експорти 2026</string>
+    <string name="external_family_dolphin">Dolphin</string>
+    <string name="external_family_dolphin_help">Потребує файли model + tokens; багатомовна (база zh/en)</string>
+  <plurals name="subtitle_import_skipped_cues">
+    <item quantity="one">рядок пропущено</item>
+    <item quantity="other">рядків пропущено</item>
+  </plurals>
 </resources>

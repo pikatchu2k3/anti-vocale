@@ -68,6 +68,13 @@ class SherpaBackend(
         val CANONICAL_JOINER = REQUIRED_MODEL_FILES.first { it.startsWith("joiner") }
         val CANONICAL_TOKENS = REQUIRED_MODEL_FILES.first { it.startsWith("tokens") }
 
+        /** Single-model families (SenseVoice, Dolphin): the one model file's
+         *  canonical name, the owner both families alias so a rename on one
+         *  side cannot re-point the other. Deliberately NOT derived:
+         *  REQUIRED_MODEL_FILES is the transducer set, and single-model
+         *  families have no list here to derive from (review round). */
+        const val CANONICAL_MODEL = "model.int8.onnx"
+
         /**
          * Metadata keys a transducer encoder must carry for [modelType], shared by the
          * external-model importer (import-time validation) and the external engine
@@ -95,7 +102,11 @@ class SherpaBackend(
         fun requiredMetadataKeys(entry: CatalogEntry): List<String> =
             entry.flags.metaKeys.ifEmpty { requiredTransducerMetadataKeys(entry.modelType) }
 
-        private const val ONNX_METADATA_SCAN_LIMIT: Long = 2L * 1024 * 1024
+        // TASK-413: internal (not private) so MetadataFixturesContractTest can
+        // assert the fixtures' recorded scan window against the production
+        // window; the extractor and the scanner must read the same bytes.
+        @VisibleForTesting
+        internal const val ONNX_METADATA_SCAN_LIMIT: Long = 2L * 1024 * 1024
 
         /**
          * Returns the metadata keys from [requiredKeys] that are NOT present in [file].
@@ -133,6 +144,12 @@ class SherpaBackend(
             valueKey: String?,
             maxScanBytes: Long = ONNX_METADATA_SCAN_LIMIT
         ): Pair<List<String>, String?> {
+            // No keys and no value to read: skip the tail scan entirely
+            // (review round: the empty-gate families paid a 2 MiB read on
+            // every initialize and every post-idle re-initialization for
+            // bytes nothing consumed; the sibling missingOnnxMetadata
+            // already short-circuits this way).
+            if (requiredKeys.isEmpty() && valueKey == null) return emptyList<String>() to null
             val data = readTail(file, maxScanBytes) ?: return requiredKeys to null
             val value = valueKey?.let { onnxMetadataValueBytes(data, it) }
             return missingOnnxMetadataKeys(data, requiredKeys) to value
@@ -433,14 +450,24 @@ class SherpaBackend(
             // files the catalog pins. Failed files are removed with their
             // sidecars so the next attempt is a clean re-download, not
             // another abort.
+            // TASK-660: the verdict is the TYPED
+            // [TranscriptionException.CorruptModelFiles] the orchestrator
+            // heals on; the abort mechanism this gate exists to prevent lives
+            // in that exception's KDoc (the one authoritative home).
             val integrityFailures = ModelDirIntegrity.verify(dir, variant, verifyPins = variantMatchesDir)
             if (integrityFailures.isNotEmpty()) {
+                // TASK-660 review F1: the files stay ON DISK (no removeFailed
+                // here) so the typed verdict stays REPEATABLE: a direct
+                // backend caller that cannot heal (the benchmark) would
+                // otherwise strip them, and every later load would fail the
+                // completeness check with a generic missing-files error the
+                // heal can never fire on. The orchestrator's heal removes the
+                // whole directory on the first ordinary load.
                 Log.e(TAG, "Corrupt model files in $modelDirectory: " +
                     integrityFailures.joinToString { "${it.file.name} (${it.reason})" } +
-                    " - removing for re-download")
-                ModelDirIntegrity.removeFailed(integrityFailures)
-                return@withContext Result.failure(TranscriptionException.ModelLoadError(
-                    "corrupt model files (removed, re-download from the Models tab): " +
+                    " - the orchestrator heal removes the dir for re-download")
+                return@withContext Result.failure(TranscriptionException.CorruptModelFiles(
+                    "corrupted model files (re-download from the Models tab): " +
                     integrityFailures.joinToString { it.file.name })
                 )
             }
@@ -629,7 +656,7 @@ class SherpaBackend(
 
                 val result = rec.getResult(stream)
                 val transcription = result.text
-                val detectedLang = result.lang.ifBlank { null }
+                val detectedLang = TranscriptionResult.normalizedDetectedLanguage(result.lang)
 
                 // GH #92: token timestamps decide whether sentence-level subtitle
                 // cues are possible for this model (empty = chunk cues only), and
@@ -802,6 +829,12 @@ class SherpaBackend(
     }
 
     override fun getModelPath(): String? = modelDir
+
+    /** TASK-546 AC3: the configured language IS the engine's decode language (streaming reads [language] per stream via setOption; offline bakes it in at init), so residency compares against it. */
+    override fun getConfiguredLanguage(): String = language
+
+    /** TASK-644: a native decode is in flight (the transcribe bracket). */
+    override fun isBusy(): Boolean = keepAlive.workInFlightCount() > 0
 }
 /**
  * Lazily-allocated, shared all-zero silence buffer for tail padding (TASK-340 Fix 1b).

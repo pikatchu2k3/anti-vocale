@@ -99,6 +99,14 @@ cd "$APP_REPO"
 
 # --- guards: this script PUBLISHES, so every input is verified first --------
 
+# TASK-683.1: preflight is guard 0. The gate script existed but nothing ran
+# it; both 2026-09-26 release-day failures (stale fallback literal, notes
+# extraction) were preflight-detectable and surfaced only mid-run instead.
+# Read-only, so it runs under DRY_RUN too; its nonzero exit is authoritative.
+say "guard 0/5: release preflight (refusal here costs seconds, not runner hours)"
+"$HERE/release-preflight.sh" --tag "$TAG" --commit "$COMMIT" \
+  || fail "release-preflight.sh exited nonzero: fix the named blocker(s) above before publishing (the exit code, not the text, is the verdict)"
+
 say "guard 1/5: tag $TAG must not exist yet"
 EXISTING=$(tag_commit "$TAG")
 [ -z "$EXISTING" ] || fail "tag $TAG already exists at $EXISTING (already published? re-dispatch instead)"
@@ -129,11 +137,34 @@ RUN_JSON=$(gh run view "$RUN_ID" -R "$REPO" --json status,conclusion,headSha,job
 # the bump, Step 5 dispatches immediately); a main push in between fails here
 # loudly, which is the safe direction.
 RUN_HEAD=$(echo "$RUN_JSON" | jq -r .headSha)
-[ "$RUN_HEAD" = "$COMMIT" ] \
-  || fail "run $RUN_ID headSha is $RUN_HEAD, expected the bump commit $COMMIT (stale run id? re-check: gh run list --event workflow_dispatch --limit 3)"
+# Micro-release order (release/vX.Y.Z branch, runbook's v1.11.3 pattern) merges
+# the branch into main AROUND the dispatch, so headSha can legitimately be a
+# main tip that is not the bump SHA. The equivalent binding proof for that
+# flow: the workflow's own recipe-commit guard step ran and succeeded inside
+# THIS run (it fails the job fast when the recipe's commit: is not the
+# dispatched SHA, so its success pins the built tree to $COMMIT).
+RECIPE_GUARD_OK=$(echo "$RUN_JSON" | jq -r '
+  [.jobs[].steps[]? | select(.name | test("Verify recipe commit"))] |
+  (length > 0) and all(.conclusion == "success")')
+# Review F8: the step succeeding only proves the run validated ITS OWN
+# dispatch input; a stale run of a DIFFERENT build-first dispatch would
+# pass that alone. Bind materially: the run's own log must contain the
+# expected commit SHA at the guard step (the comparison prints both SHAs).
+if [ "$RECIPE_GUARD_OK" = "true" ]; then
+  if ! gh run view "$RUN_ID" -R "$REPO" --log 2>/dev/null |
+      grep -A 3 "Verify recipe commit" | grep -q "$COMMIT"; then
+    RECIPE_GUARD_OK=false
+  fi
+fi
+if [ "$RUN_HEAD" != "$COMMIT" ] && [ "$RECIPE_GUARD_OK" != "true" ]; then
+  fail "run $RUN_ID headSha is $RUN_HEAD, expected the bump commit $COMMIT, and the run's recipe-commit guard step did not succeed (stale run id? re-check: gh run list --event workflow_dispatch --limit 3)"
+fi
 # Same job selector as verify-github-workflow-before-recipe-push.sh (twice:
-# the reference-run picker and the in-progress check); three copies total.
-# If the reproducible job is ever renamed, change all of them (keep aligned).
+# the reference-run picker and the in-progress check); three copies total,
+# plus the workflow's needs/release-sanity references to the job id and the
+# runbook's by-name mentions (job walkthrough, Step 5 list, the proof
+# command). If the reproducible job is ever renamed, change all of them
+# (keep aligned).
 REPRO=$(echo "$RUN_JSON" | jq -r '[.jobs[] | select(.name | contains("reproducible"))][0].conclusion // empty')
 [ "$REPRO" = "success" ] || fail "run $RUN_ID reproducible job conclusion: '${REPRO:-absent}' (was this a -f commit=<sha> dispatch?)"
 

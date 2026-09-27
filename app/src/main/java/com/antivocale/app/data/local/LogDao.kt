@@ -31,25 +31,57 @@ interface LogDao {
      * (SQL LIKE) so the bound does not silently hide older transcripts from search.
      */
     /**
-     * The two queries below list every [LogEntity] column EXCEPT `segments`
-     * (GH #92): the cues JSON re-copies the transcript per timed row, and these
-     * queries re-emit on every table write (including per-chunk interim
-     * updates), so the list paths must not carry it. Room fills the unselected
-     * nullable column with its null default (partial-entity query) and
-     * validates each column name at compile time. When a column is added to
-     * LogEntity, add it to BOTH lists or it silently reads as its default in
-     * the Logs list.
+     * The two queries below list every [LogEntity] column EXCEPT the lean
+     * per-row pair `segments` and `firstPassTranscript`: the cues JSON
+     * re-copies the transcript per timed row (GH #92) and the first pass
+     * duplicates it whole (GH #43), while these queries re-emit on every
+     * table write (including per-chunk interim updates), so the list paths
+     * must not carry them. Room fills the unselected nullable column with
+     * its null default (partial-entity query) and validates each column
+     * name at compile time. When a column is added to LogEntity, add it to
+     * BOTH lists or it silently reads as its default in the Logs list.
      */
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
         "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs ORDER BY timestamp DESC LIMIT 500")
     fun getAll(): Flow<List<LogEntity>>
 
+    // TASK-613: RAW query, ESCAPE-clause-aware. Room interfaces cannot give a
+    // default-method body the @Query annotation, so the escape is owned HERE.
+    // [searchAll] is the caller-facing API (raw text in, literal match out);
+    // [searchAllRaw] exists only as its delegate. The type system cannot
+    // enforce that (a public @Query member is callable anywhere), so the
+    // guarantee is this convention plus review: a future caller reaching for
+    // searchAllRaw with user text re-opens the TASK-613 wildcard bug (a bare
+    // "%" matching the newest 500 rows regardless of the query).
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs WHERE result LIKE '%' || :query || '%' " +
+        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
         "ORDER BY timestamp DESC LIMIT 500")
-    fun searchAll(query: String): Flow<List<LogEntity>>
+    fun searchAllRaw(query: String): Flow<List<LogEntity>>
+
+    /** TASK-613: raw-text History search; LIKE wildcards match literally. */
+    fun searchAll(query: String): Flow<List<LogEntity>> = searchAllRaw(likeLiteral(query))
+
+    /** TASK-613: escapes SQL LIKE wildcards for [searchAllRaw]'s ESCAPE clause. */
+    private fun likeLiteral(query: String): String =
+        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    /** Lean per-row read (GH #83 cues), fetched on expand; see the
+     *  lean-projection note above for why it stays out of the lists. */
+    @Query("SELECT segments FROM logs WHERE id = :id")
+    fun getSegments(id: String): Flow<String?>
+
+    /** TASK-595 F5: the first-pass transcript of ONE row (GH #43), for the
+     *  expanded detail; see the lean-projection note above. */
+    @Query("SELECT firstPassTranscript FROM logs WHERE id = :id")
+    fun getFirstPass(id: String): Flow<String?>
+
+    /** TASK-598 F2: the stored transcript of ONE row (the punctuation
+     *  pass's output) for the annotated derivation; see the lean-projection
+     *  note above for why it stays out of the lists. */
+    @Query("SELECT result FROM logs WHERE id = :id")
+    fun getResult(id: String): Flow<String?>
 
     @Query("SELECT * FROM logs WHERE taskId = :taskId LIMIT 1")
     suspend fun getByTaskId(taskId: String): LogEntity?

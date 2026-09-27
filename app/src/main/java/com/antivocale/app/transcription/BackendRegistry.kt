@@ -36,8 +36,9 @@ import javax.inject.Singleton
  * The five sherpa-onnx static descriptors are built from the bundled catalog
  * (share alias, streaming flag, fixed display-name resource and the path-derived
  * display name all come from the catalog entry), so the registry cannot drift
- * from the catalog; the LLM backend (LiteRT, not a catalog entry) stays
- * hand-written here by design.
+ * from the catalog; the LLM backend (LiteRT, not a catalog entry) and the
+ * OmniVoice LAN-offload backend (TASK-681, a configured service, not a model)
+ * stay hand-written here by design.
  *
  * Display-name contract: if [displayNameResId] is non-null the backend has a
  * fixed localized family name, which [variantAwareDisplayName] enriches with
@@ -162,7 +163,7 @@ internal fun variantAwareDisplayName(
  * Single source of truth for transcription-backend metadata: the ordered list
  * of [BackendDescriptor]s plus lookups by backend-id and share alias.
  *
- * The list is the static six plus dynamic descriptors derived from the
+ * The list is the static seven plus dynamic descriptors derived from the
  * external model store (spec: external models platform v2a): every valid
  * [ExternalModelRecord] yields one descriptor appended after the static
  * backends. The registry is therefore NO LONGER STATELESS, and the
@@ -176,8 +177,8 @@ internal fun variantAwareDisplayName(
  * Dispatch-site status (the sherpa-onnx consolidation removed the bookkeeping
  * [ExtractionService.ModelType] enum; all sites now key on backend-id strings):
  *  - [com.antivocale.app.data.ActiveModelRepository] — descriptor's model-path
- *    flow + display-name derivation; GGUF and unknown ids keep their legacy
- *    fallbacks locally (ggufModelPath / generic modelPath)
+ *    flow + display-name derivation; unknown ids keep the generic-modelPath
+ *    fallback locally
  *  - [com.antivocale.app.transcription.TranscriptionOrchestrator] — backend
  *    load keys on the [backendId]; its calibration display-name derivation is a
  *    string-keyed when (BACKEND_ID constants) that keeps its own dir-name
@@ -189,11 +190,8 @@ internal fun variantAwareDisplayName(
  *    (via ActiveModelRepository's activeModelFlow)
  *  - [com.antivocale.app.ui.viewmodel.ModelViewModel] (generic catalog layer)
  *  - [com.antivocale.app.service.ExtractionService] (downloads keyed by entry id)
- *
- * Deliberately not registered: the disabled GGUF backend (`gemma4_gguf`). It
- * has no BACKEND_ID constant and its manager is disabled (see the commented-out
- * provider in [com.antivocale.app.di.TranscriptionModule]); follow-up: give it
- * a BACKEND_ID and a descriptor if it is ever re-enabled.
+ *  - [OomBreadcrumbRecorder] (TASK-679: display-name derivation for the
+ *    resident engines the breadcrumb and the memory panel name)
  */
 @Singleton
 class BackendRegistry @Inject constructor(
@@ -217,13 +215,14 @@ class BackendRegistry @Inject constructor(
         )
     }
 
-    /** The six enabled static backends in canonical order (default backend first). */
+    /** The seven enabled static backends in canonical order (default backend first). */
     private val staticBackends: List<BackendDescriptor> by lazy {
         buildList {
             for (entryId in BuiltInBackendIds.ALL) {
                 add(catalogDescriptor(entryId))
             }
             add(llmDescriptor())
+            add(remoteOmnivoiceDescriptor())
         }
     }
 
@@ -287,6 +286,37 @@ class BackendRegistry @Inject constructor(
         accentColorRes = R.color.share_shortcut_llm,
     )
 
+    /**
+     * TASK-681: the opt-in LAN-offload backend, hand-written like the LLM's
+     * (no catalog entry). No share alias: the descriptor is reachable only
+     * through the Models-tab service card, which the tab renders only while
+     * the preference is enabled, so the backend "exists" only after the user
+     * turns it on in Settings. The PATH identity is the endpoint URL, and it
+     * reads as blank while the gate is off so every has-model consumer
+     * (retranscribe picker, share sync) treats the backend as not installed;
+     * an endpoint edit must reload the warm backend (the variantChanged
+     * convention). The Settings card owns the write, so the save/clear
+     * accessors are deliberately inert.
+     */
+    private fun remoteOmnivoiceDescriptor(): BackendDescriptor = BackendDescriptor(
+        backendId = RemoteOmnivoiceBackend.BACKEND_ID,
+        shareAlias = "",
+        displayNameResId = R.string.remote_omnivoice_name,
+        // A LAN box with a GPU is at least Parakeet-fast; 15f matches the
+        // fastest band the cold-start dialog knows (the wall-clock budget,
+        // not this estimate, is the real ceiling).
+        rtfEstimate = 15f,
+        modelPathFlow = { prefs ->
+            kotlinx.coroutines.flow.combine(
+                prefs.remoteOmnivoiceEnabled, prefs.remoteOmnivoiceEndpoint) { enabled, endpoint ->
+                endpoint.trim().takeIf { enabled && it.isNotBlank() }
+            }
+        },
+        saveModelPath = { _, _ -> /* Settings owns the endpoint field (TASK-681) */ },
+        clearModelPath = { /* Settings owns the endpoint field (TASK-681) */ },
+        accentColorRes = R.color.share_shortcut_llm,
+    )
+
     /** Static backends first (canonical order), then one descriptor per valid external record. */
     val backends: List<BackendDescriptor>
         get() = staticBackends + recordsProvider.records.value.map(::descriptorFor)
@@ -325,8 +355,11 @@ class BackendRegistry @Inject constructor(
 
     /**
      * Returns the descriptor for a share-target [alias], or null if unknown
-     * (including null/blank).
+     * (including null/blank). Blank is "no alias given", never a lookup key:
+     * TASK-681 made a static backend (the OmniVoice service) carry the blank
+     * no-share-target sentinel, so honoring the documented blank-rejection
+     * here is what keeps that sentinel internal.
      */
     fun byShareAlias(alias: String?): BackendDescriptor? =
-        alias?.let { a -> backends.firstOrNull { it.shareAlias == a } }
+        alias?.takeIf { it.isNotBlank() }?.let { a -> backends.firstOrNull { it.shareAlias == a } }
 }
