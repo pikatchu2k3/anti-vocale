@@ -63,7 +63,6 @@
     <string name="logs_empty">Henüz istek yok</string>
     <string name="request_text">Metin İsteği</string>
     <string name="request_audio">Ses İsteği</string>
-    <string name="logs_recent_requests">Son Kayıtlar (%1$d)</string>
     <string name="logs_clear">Temizle</string>
     <string name="logs_delete_entry">Kaydı sil</string>
     <string name="logs_delete_confirmation">Bu kayıt silinsin mi?</string>
@@ -149,9 +148,9 @@
     <string name="parakeet_download_confirm_title">Parakeet TDT indirilsin mi?</string>
     <string name="parakeet_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Parakeet, metin çıkarmada Gemma kadar doğru olmasa da daha hızlıdır.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 dil • Önerilen</string>
+    <string name="parakeet_smoothquant_description">~862MB • 25 dil • Varsayılanın alternatifi</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 dil • Daha hafif yedek</string>
+    <string name="parakeet_stock_description">~640MB • 25 dil • Varsayılan: cihazda ölçülen en iyi kalite</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -243,6 +242,7 @@
     <string name="copy_transcription">Panoya Kopyala</string>
     <string name="copied_to_clipboard">Panoya kopyalandı</string>
     <string name="transcription_streamed_without_vad">Sessizlik kırpılmadan</string>
+    <string name="warning_repetition_suspected">Bu transkriptte tekrar döngüsü olabilir; metni kontrol edin</string>
     <string name="audio_received_for_transcription">Metin çıkarma için ses alındı</string>
     <string name="transcription_complete">Metin çıkarma tamamlandı</string>
     <plurals name="transcription_partial">
@@ -252,6 +252,7 @@
     <string name="transcription_partial_chip">Eksik</string>
     <string name="transcription_failed">Metin çıkarma başarısız</string>
     <string name="error_model_load">Model dosyası bozuk veya yanlış biçimde olabilir. Model sekmesinden yeniden indirmeyi deneyin.</string>
+    <string name="error_model_external_corrupt">İçe aktarılan modelin dosyaları bozuk. Modeller sekmesinden silin ve yeniden içe aktarın.</string>
     <string name="error_model_corrupt_healed">Modelin bazı dosyaları bozuktu ve kaldırıldı. Modeller sekmesini açıp modeli yeniden indirin.</string>
     <string name="error_native">Metin çıkarma sırasında bir iç hata oluştu. Sorun sürerse farklı bir model deneyin.</string>
     <string name="error_not_initialized">Yüklü model yok. Model sekmesini açıp bir model indirin veya seçin.</string>
@@ -279,6 +280,8 @@
     <string name="native_crash_go_to_model">Model sekmesine git</string>
     <string name="model_load_low_memory">Bu model için yeterli boş bellek yok (%1$s boş, yaklaşık %2$s gerekiyor). Bellek koruması etkin: diğer uygulamaları kapatın, daha küçük bir model kullanın veya yine de denemek için bunu Ayarlar\'dan kapatın.</string>
     <string name="memory_margin_warning_title">Model bu telefonun bellek sınırına yakın</string>
+    <string name="memory_kill_warning_title">Sistem belleği boşaltmak için uygulamayı kapattı</string>
+    <string name="memory_kill_warning_body">Son transkript kesilmiş olabilir. Daha küçük bir model veya daha kısa bir ses dosyası daha az bellek gerektirir.</string>
     <string name="memory_margin_warning_body">%1$s modeli bu telefonun kaldırabileceği sınıra yakın olabilir. Transkript yine de çalışır; bu tür yüklemeleri engellemek için Ayarlar\'dan bellek korumasını etkinleştirebilirsin.</string>
     <string name="transcribe_low_memory">Bu modelle transkripsiyon için yeterli boş bellek yok (yaklaşık %1$s boş, %2$s gerekiyor). Bellek koruması etkin: diğer uygulamaları kapatıp tekrar deneyin veya yine de denemek için bunu Ayarlar\'dan kapatın.</string>
     <string name="external_model_quarantined_title">Çöküşten sonra harici model devre dışı bırakıldı</string>
@@ -289,6 +292,29 @@
     <string name="external_automation_title">Harici otomasyon (Tasker)</string>
     <string name="external_automation_description">Diğer uygulamaların otomasyon API\'si (örnek: Tasker) aracılığıyla transkripsiyon başlatmasına izin verir. Varsayılan olarak kapalıdır.</string>
     <string name="external_automation_disabled">Harici otomasyon devre dışı. Ayarlar > Gelişmiş > Harici otomasyon bölümünden etkinleştirin.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">Otomasyon kılavuzu</string>
+    <string name="automation_guide_description">Uygulamaya bir broadcast göndererek Tasker veya adb\'den transkripsiyon başlatın. Her şey cihazda kalır.</string>
+    <string name="automation_guide_status_on">Otomasyon açık: uygulama istek ve ön yükleme broadcast\'lerine yanıt veriyor.</string>
+    <string name="automation_guide_status_off">Otomasyon kapalı: yukarıdaki harici otomasyon anahtarını açana kadar her broadcast reddedilir.</string>
+    <string name="automation_guide_show_toggle">Anahtarı göster</string>
+    <string name="automation_guide_body">İki broadcast: PROCESS_REQUEST bir metin istemini veya uygulamanın özel klasörüne hazırlanmış bir ses dosyasını transkribe eder (sdcard yolları okunamadığı için reddedilir), PRELOAD_MODEL ise modeli önceden yükler.</string>
+    <string name="automation_guide_copy">Test komutunu kopyala</string>
+    <string name="automation_guide_open">Tam kılavuz</string>
+    <string name="automation_guide_no_browser">Kılavuzu açmak için uygulama bulunamadı</string>
+    <string name="faq_section_title">Sık sorulan sorular</string>
+    <string name="faq_full_link">GitHub da tüm SSS yi okuyun</string>
+    <string name="faq_card_calls_title">Aramaları veya toplantıları yazıya dökebilir mi?</string>
+    <string name="faq_card_calls_body">Hayır. Android diğer uygulamaların arama sesini kaydetmeyi engeller; anti-vocale yalnızca paylaştığınızı alır. Toplantılar için sesi kaydedip dosyayı paylaşın.</string>
+    <string name="faq_card_models_title">Hangi modeli kullanmalıyım?</string>
+    <string name="faq_card_models_body">Parakeet varsayılan: temiz sesli mesajlarda hızlı ve doğru. Diğer diller için Modeller sekmesinden dilinizi kapsayan bir model seçin; büyük modeller eski telefonlarda yavaştır.</string>
+    <string name="faq_card_queue_title">Sıra nasıl çalışır?</string>
+    <string name="faq_card_queue_body">İstekler geliş sırasına göre tek tek işlenir; bildirim sıradaki yeri gösterir.</string>
+    <string name="faq_card_results_title">Sonuç ayrıntıları ne demek?</string>
+    <string name="faq_card_results_body">Her kayıt modeli, süreyi ve işlem zamanını tutar. Tekrar, kopyala, sil veya bildir için kayda basılı tutun.</string>
+    <string name="faq_card_trouble_title">Bir şey ters gitti</string>
+    <string name="faq_card_trouble_body">Sonuç gelmiyorsa üretici uygulamayı arka planda dondurmuş olabilir: hata bildirimindeki pil önerisini izleyin. Başarısız sonuç bir rapor kaydı tutar.</string>
+    <string name="no_app_to_open_link">Bağlantıyı açmak için uygulama bulunamadı</string>
     <string name="remote_omnivoice_name">LAN devri (OmniVoice)</string>
     <string name="remote_offload_title">LAN devri (deneysel)</string>
     <string name="remote_offload_description">Uzun veya ağır transkripsiyonları Wi-Fi ağınızdaki kendi OmniVoice sunucunuza devreder. Etkinleştirildiğinde Model sekmesinden seçin.</string>
@@ -514,10 +540,11 @@
     <!-- Settings Tab - VAD -->
     <string name="punctuation_status">YZ ile biçimlendiriliyor…</string>
     <string name="punctuation_mode_title">Noktalama ve biçimlendirme</string>
-    <string name="punctuation_mode_description">Noktalamasız transkriptleri Gemma modeliyle yeniden yazar. Otomatik yalnızca noktalama yapmayan modeller için (Gemma indirilmiş olmalı).</string>
+    <string name="punctuation_mode_description">Transkriptleri Gemma modeliyle yeniden biçimlendirir. Otomatik yalnızca noktalama yapmayan modellerde çalışır; Her zaman noktalamayı da normalleştirir; Muhafazakâr paragraf ekler ve kelimeleri asla değiştirmez (Gemma indirilmeli).</string>
     <string name="punctuation_mode_off">Kapalı</string>
     <string name="punctuation_mode_auto">Otomatik</string>
     <string name="punctuation_mode_always">Her zaman</string>
+    <string name="punctuation_mode_conservative">Muhafazakâr (yalnızca noktalama ve paragraflar)</string>
     <string name="punctuation_prompt_title">Noktalama istemi</string>
     <string name="punctuation_prompt_description">Noktalama adımı için yönerge. Yerleşik olanı kullanmak için boş bırakın.</string>
     <string name="punctuation_prompt_placeholder">Yerleşik istem</string>
@@ -540,6 +567,11 @@
     <string name="vad_description">Metin çıkarmadan önce sesli mesajlardaki sessiz kısımları kaldırır. İşleme süresini azaltır ve doğruluğu artırır.</string>
     <string name="progressive_title">Aşamalı Görüntüleme</string>
     <string name="progressive_description">Kaydın bitmesini beklemeden, metin çıkarma ilerledikçe metni gösterir.</string>
+    <string name="early_preview_title">Erken Önizleme</string>
+    <string name="early_preview_description">Uzun bir kayıt çözümlenirken ilk kaba metni gösterir. İlk tam segment bittiğinde yerini kesin metne bırakır.</string>
+    <string name="early_preview_badge">Önizleme</string>
+    <string name="early_preview_requires_progressive">Aşamalı görüntüleme gerektirir</string>
+    <string name="auto_save_failed">Otomatik kaydetme başarısız (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Varsayılan Komut</string>
@@ -664,6 +696,8 @@
     <string name="notification_channel_inference_description">Arka plan sesli metin çıkarma işlemi</string>
     <string name="notification_channel_result">Metin Çıkarma Sonucu</string>
     <string name="notification_channel_result_description">Hazır metin ve işlemler</string>
+    <string name="notification_channel_interrupted_runs">Kesilen metin çıkarmaları</string>
+    <string name="notification_channel_interrupted_runs_description">Yeniden başlatma nedeniyle kesilen metin çıkarmaları sonraki açılışta kapatıldığında gösterilen özet.</string>
     <string name="notification_cancelling">İptal ediliyor…</string>
 
     <!-- No-model notification -->
@@ -849,6 +883,17 @@
     <string name="benchmark_provider_label">Sağlayıcı</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">Metin çıkarma kesintiye uğradı</string>
+    <string name="interrupted_runs_title">Kesilen metin çıkarmaları</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d metin çıkarma tamamlanmadan kesildi. Ayrıntılar için Kayıtlar\'a bakın.</item>
+        <item quantity="other">%1$d metin çıkarma tamamlanmadan kesildi. Ayrıntılar için Kayıtlar\'a bakın.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d metin çıkarma tamamlanmadan kesildi: uygulamanın belleği tükendi. Daha kısa bir dosya, daha küçük bir model deneyin veya diğer uygulamaları kapatın. Ayrıntılar için Kayıtlar\'a bakın.</item>
+        <item quantity="other">%1$d metin çıkarma tamamlanmadan kesildi: uygulamanın belleği tükendi. Daha kısa bir dosya, daha küçük bir model deneyin veya diğer uygulamaları kapatın. Ayrıntılar için Kayıtlar\'a bakın.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">Kesilen metin çıkarma bildirimleri</string>
+    <string name="interrupted_run_notifications_description">Uygulamanın yeniden başlatılmasıyla kesilen metin çıkarmalarının sonraki açılışta kapatılması durumunda bildirim göster.</string>
     <string name="action_dismiss">Kapat</string>
 
     <!-- Model Info Overlay -->
@@ -962,11 +1007,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">Çok dilli CTC (1600+ dil, deneysel)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">Paraformer (FunASR)</string>
     <string name="external_notice_single_pass">Çok uzun sesler büyük modellerle tek geçişte işlenemeyebilir. Sesi kısaltın veya daha küçük bir model seçin.</string>
     <string name="external_notice_family">Metin çıkarma hatasız şekilde kilitleniyorsa mimari yanlış olabilir: modeli silin ve başka bir mimari seçerek yeniden içe aktarın.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Paylaşım Menüsünde Modeller</string>
+    <string name="voice_note_identity_title">Sesli not gönderenini tanıma</string>
+    <string name="voice_note_identity_description">Paylaşılan sesli mesajın geçmiş satırına gönderenin adını yazar. Şimdilik sadece WhatsApp. Ad, yalnızca mesajın bildirimi bu açıkken geldiyse ve bildirilen süre sesle uyuyorsa görünür (tahmine dayanı ad yok). Ad, bunu kapattıktan sonra da o satırda kalır; bekleme listesi yalnız bellekte yaşar. Bildirim erişimi gerekir.</string>
+    <string name="voice_note_identity_grant_hint">Bildirim erişimi kapalı. Sistem ayarını açıp bu uygulama için etkinleştirmek üzere dokunun.</string>
     <string name="share_targets_description">İndirilen her model sistem menüsünde ayrı bir seçenek olarak görünür. Sesi seçilen model işler.</string>
     <string name="advanced_sharing_toggle">İndirilen modelleri göster</string>
     <string name="share_targets_models_info">İndirilen her model paylaşım menüsünde ayrı bir öğe olarak görünür. Model silindiğinde menüden kalkar.</string>
@@ -1008,6 +1057,9 @@
     <string name="battery_exemption_title">Arka planda çalışmaya izin ver</string>
     <string name="battery_exemption_description">Sistem, arka planda tanımayı durdurdu. Tanıma yarıda kesilmesin diye uygulamanın arka planda çalışmasına izin verin.</string>
     <string name="battery_exemption_action">Ayarı aç</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">Transkripsiyon askıya alındı</string>
+    <string name="suspension_notification_text">Sistem, transkripsiyon sırasında uygulamayı %1$s boyunca askıya aldı, bu yüzden tamamlanmadı.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Hugging Face URL’sinden içe aktar</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1045,7 +1097,6 @@
         <item quantity="other">%1$d eşleşme</item>
     </plurals>
     <string name="settings_search_no_results">Eşleşen ayar yok</string>
-    <string name="settings_search_clear">Aramayı temizle</string>
         <string name="partial_transcript_label">Kısmi transkript</string>
     
     <string name="decoded_of_total">%2$s içinden %1$s çözüldü</string>
@@ -1073,6 +1124,23 @@
     <string name="speaker_labels_status">Konuşmacılar tanımlanıyor…</string>
     <string name="speaker_labels_title">Konuşmacıları tanımla</string>
     <string name="speaker_labels_description">Her cümleye bir konuşmacı etiketi ekler. İlk kullanımda yaklaşık~47 MB model indirir; işlem süresini artırır.</string>
+    <string name="speaker_id_title">Konuşmacı kimlikleri</string>
+    <string name="speaker_id_description">Transkriptlerindeki sesleri kaydettiğin örneklerle karşılaştırır ve eşleşen adı konuşmacı etiketlerine koyar. Örnekler ve ses parmak izleri yalnızca bu telefonda kalır ve asla dışarı çıkmaz.</string>
+    <string name="speaker_id_empty">Henüz kimse kaydedilmedi.</string>
+    <string name="speaker_id_add">Ses ekle</string>
+    <string name="speaker_id_sample_seconds">%1$d sn örnek</string>
+    <string name="speaker_id_replay">Örneği oynat</string>
+    <string name="speaker_id_delete">Sesi sil</string>
+    <string name="speaker_id_name_title">Bu sese ad ver</string>
+    <string name="speaker_id_name_label">Ad</string>
+    <string name="speaker_id_name_confirm">Kaydet</string>
+    <string name="speaker_id_name_cancel">İptal</string>
+    <string name="speaker_id_error_too_short">Klip çok kısa: o kişinin sesinden en az 3 sn seçin.</string>
+    <string name="speaker_id_error_too_long">Klip çok uzun: 30 sn altında tutun.</string>
+    <string name="speaker_id_error_decode">Bu ses klibi okunamadı.</string>
+    <string name="speaker_id_error_extract">Bu klipten ses parmak izi çıkarılamadı.</string>
+    <string name="speaker_id_error_save">Kimlik kaydedilemedi. Boş depolama alanını kontrol edip tekrar deneyin.</string>
+    <string name="speaker_id_error_model">Konuşmacı modeli indirilemedi. Bağlantıyı kontrol edip tekrar deneyin.</string>
     <string name="transcription_not_refined">Rafine edilmedi (anında önizleme)</string>
     <string name="transcription_refined_from">%1$s ile rafine edildi</string>
     <string name="refinement_title">İki aşamalı transkripsiyon</string>
@@ -1091,7 +1159,38 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">model + tokens dosyalarını bekler; çok dilli (zh/en tabanı)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">satır atlandı</item>
-    <item quantity="other">satır atlandı</item>
+    <item quantity="one">%1$d satır atlandı</item>
+    <item quantity="other">%1$d satır atlandı</item>
   </plurals>
+    <string name="speaker_settings_title">Konuşmacı ayırma</string>
+    <string name="speaker_settings_summary">Konuşmacı etiketleri ve adlandırılmış kimlikler</string>
+    <string name="performance_settings_title">Performans ve bellek</string>
+    <string name="performance_settings_summary">İş parçacıkları, sağlayıcı, bellek koruması ve tanılama</string>
+    <string name="automation_settings_title">Otomasyon ve yük aktarma</string>
+    <string name="automation_settings_summary">Tasker alıcıları, broadcast kılavuzu ve LAN aktarımı</string>
+    <string name="settings_group_appearance">Görünüm</string>
+    <string name="settings_group_history">Kayıtlar</string>
+    <string name="settings_group_decoding">Kod çözme ve önizleme</string>
+    <string name="settings_group_gemma">Metin işleme (Gemma)</string>
+    <string name="settings_group_output">Çıktı</string>
+    <string name="settings_group_integrations">Entegrasyonlar</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">Paylaşma kısayolu simgeleri</string>
+    <string name="share_shortcut_icons_description">Her paylaşma kısayolu için özel bir görsel seçin ya da üretilen simgeye dönün</string>
+    <string name="shortcut_icon_choose">Görsel seç</string>
+    <string name="shortcut_icon_reset">Sıfırla</string>
+    <string name="shortcut_icon_custom">Özel görsel</string>
+    <string name="shortcut_icon_saved">Kısayolu simgesi kaydedildi</string>
+    <string name="shortcut_icon_error">Görsel yüklenemedi</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">Geçmiş</string>
+    <string name="shortcut_history_long">Geçmişi aç</string>
+    <string name="shortcut_models_short">Modeller</string>
+    <string name="shortcut_models_long">Modelleri aç</string>
+    <string name="model_switched_title">Model değiştirildi</string>
+    <string name="model_switched_message">Etkin model: %1$s</string>
+    <string name="model_switch_failed">Değiştirilemedi: model cihazda değil</string>
+    <string name="model_shortcut_switch_label">%1$s öğesine geç</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">Bu transkripte noktalama, büyük harfler ve paragraf sonları ekle. Çevirme, özetleme ve hiçbir kelimeyi ekleme, çıkarma, sırasını değiştirme veya düzeltme: kelime dizisi tamamen yazıldığı gibi kalmalı. Yalnızca biçimlendirilmiş transkripti ver.</string>
 </resources>

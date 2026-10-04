@@ -159,7 +159,15 @@ class ExternalCatalogTest {
         //   index; the unsuffixed index.json stays frozen at 14 for <=1.13.x)
         // + indicconformer per-language CTC hi/bn/mr/gu/ta/te (TASK-652:
         //   the India gap, validated 5.8-13.7% CER on FLEURS)
-        assertEquals(21, entries.size)
+        // + dolphin 19 Asian languages, parakeet 110m English, zipformer ko
+        //   (TASK-663: vocaphone gap entries, pins verified byte-for-byte
+        //   against their catalog, desktop-decoded on sherpa 1.13.8)
+        // + zipformer vietnamese (TASK-719: the text.lowercase option,
+        // uppercase-trained model)
+        // + moonshine base uk/es/vi (TASK-619, maintainer "tieni": the light
+        // NC-licensed tier accepted for the external catalog; pins hashed
+        // from the downloaded artifacts)
+        assertEquals(29, entries.size)
 
         // TASK-635/643: the omnilingual entry ships in the VERSIONED index
         // (the bundled asset); the unsuffixed index.json is the frozen legacy
@@ -180,8 +188,69 @@ class ExternalCatalogTest {
         val sense = ExternalCatalog.filter(entries, "sense")
         assertEquals(1, sense.size)
         assertEquals(ModelFamily.SENSE_VOICE, sense[0].family)
-        // the reporter's Asian-language path: zh finds it via the language code
-        assertEquals(sense, ExternalCatalog.filter(entries, "zh"))
+        // the reporter's Asian-language path: zh finds it via the language
+        // code. TASK-663: Dolphin declares zh too, so zh surfaces BOTH
+        // (asserted by lookup, not index position: order is the sortedness
+        // test's contract, not this one's).
+        val zh = ExternalCatalog.filter(entries, "zh")
+        assertEquals(2, zh.size)
+        assertEquals(setOf(ModelFamily.SENSE_VOICE, ModelFamily.DOLPHIN),
+            zh.map { it.family }.toSet())
+        assertTrue(zh.any { it == sense[0] })
+        // the dolphin entry itself: one by name, and th is dolphin-only
+        assertEquals(1, ExternalCatalog.filter(entries, "dolphin").size)
+        assertEquals(1, ExternalCatalog.filter(entries, "th").size)
+
+        // TASK-663: pin the three staged entry FILES' family/modelType (the
+        // index cannot carry modelType; a drift here fails in CI, not at
+        // import time on a user device; the TASK-652 precedent).
+        listOf(
+            Triple("parakeet-110m-english.json", "CTC" to "nemo_ctc", 2),
+            Triple("dolphin-small.json", "DOLPHIN" to "", 2),
+            Triple("zipformer-korean.json", "TRANSDUCER" to "", 4),
+            Triple("zipformer-vietnamese.json", "TRANSDUCER" to "", 4),
+            // TASK-619: the three moonshine entries share the v2 .ort shape
+            // (encoder_model.ort + decoder_model_merged.ort + tokens.txt);
+            // MOONSHINE takes no modelType.
+            Triple("moonshine-spanish.json", "MOONSHINE" to "", 3),
+            Triple("moonshine-ukrainian.json", "MOONSHINE" to "", 3),
+            Triple("moonshine-vietnamese.json", "MOONSHINE" to "", 3),
+        ).forEach { (file, pin, fileCount) ->
+            val obj = org.json.JSONObject(
+                java.io.File("src/main/assets/external-catalog/$file").readText())
+            assertEquals("$file family", pin.first, obj.getString("family"))
+            assertEquals("$file modelType", pin.second, obj.getString("modelType"))
+            val files = obj.getJSONArray("files")
+            assertEquals("$file files pinned", fileCount, files.length())
+            if (file == "zipformer-vietnamese.json") {
+                // TASK-719: the uppercase-trained model must ship with the
+                // lowering option or its transcripts arrive shouting-case.
+                assertEquals("true",
+                    obj.getJSONObject("options").getString("text.lowercase"))
+            }
+            // sha/size pins: a flipped hex digit must fail HERE, not at
+            // download verification on a user device (review round 2).
+            for (i in 0 until files.length()) {
+                val f = files.getJSONObject(i)
+                assertTrue("$file files[$i] sha256 must be 64 hex chars",
+                    Regex("^[0-9a-f]{64}$").matches(f.getString("sha256")))
+                assertTrue("$file files[$i] size must be positive", f.getLong("size") > 0)
+            }
+        }
+        // TASK-619 review: pin each moonshine entry file's OWN languages
+        // array (the coverage pins below read the INDEX, and the uk and vi
+        // files differ only by URL and hashes, so a copy-paste drift would
+        // ship wrong metadata with every test green; the indicconformer
+        // precedent pins languages in-file too).
+        listOf(
+            "moonshine-spanish.json" to "es",
+            "moonshine-ukrainian.json" to "uk",
+            "moonshine-vietnamese.json" to "vi",
+        ).forEach { (file, lang) ->
+            val obj = org.json.JSONObject(
+                java.io.File("src/main/assets/external-catalog/$file").readText())
+            assertEquals("$file language", lang, obj.getJSONArray("languages").getString(0))
+        }
         val arabic = ExternalCatalog.filter(entries, "arabic")
         assertEquals(1, arabic.size)
         val byCode = ExternalCatalog.filter(entries, "ar")
@@ -202,12 +271,24 @@ class ExternalCatalogTest {
         // languages (TASK-596: orukeet now declares its full 24-language
         // set, so it joins the German results)
         assertEquals(5, ExternalCatalog.filter(entries, "de").size)
-        // TASK-652: the six IndicConformer entries surface via their codes
+        // TASK-652: the six IndicConformer entries surface via their codes.
+        // TASK-663: Dolphin declares the same six codes, so each surfaces
+        // exactly the IndicConformer entry plus Dolphin (order: Dolphin first).
         listOf("bn", "gu", "hi", "mr", "ta", "te").forEach { code ->
-            assertEquals("filter($code) must surface exactly the IndicConformer entry",
-                1, ExternalCatalog.filter(entries, code).size)
+            assertEquals("filter($code) must surface IndicConformer and Dolphin",
+                2, ExternalCatalog.filter(entries, code).size)
         }
         assertEquals(6, ExternalCatalog.filter(entries, "indicconformer").size)
+        // TASK-619: the moonshine light tier. By family name all three; by
+        // code: uk = omnilingual + orukeet + moonshine, vi = dolphin +
+        // zipformer + moonshine, es gains its very-light row alongside
+        // canary/kroko/orukeet.
+        val moonshine = ExternalCatalog.filter(entries, "moonshine")
+        assertEquals(3, moonshine.size)
+        assertEquals(setOf(ModelFamily.MOONSHINE), moonshine.map { it.family }.toSet())
+        assertEquals(3, ExternalCatalog.filter(entries, "uk").size)
+        assertEquals(3, ExternalCatalog.filter(entries, "vi").size)
+        assertEquals(4, ExternalCatalog.filter(entries, "es").size)
     }
 
     /** TASK-652 review: pin the six entry files like the omnilingual
@@ -217,8 +298,11 @@ class ExternalCatalogTest {
      *  weight since 2026-09-20 because nothing performs this check). */
     @Test
     fun `indicconformer entry files carry the expected shape and every index entry has its asset`() {
-        val indexNames = ExternalCatalog.parseIndex(
-            java.io.File(BUNDLED_INDEX_PATH).readText()).map { it.name }.toSet()
+        // ONE parse of the bundled index feeds both the name set and the
+        // entryUrl lookup below (review round 2: the previous shape read the
+        // file twice inside this test).
+        val parsedIndex = ExternalCatalog.parseIndex(java.io.File(BUNDLED_INDEX_PATH).readText())
+        val indexNames = parsedIndex.map { it.name }.toSet()
         for (code in listOf("bn", "gu", "hi", "mr", "ta", "te")) {
             val json = java.io.File("src/main/assets/external-catalog/indicconformer-$code.json").readText()
             val obj = org.json.JSONObject(json)
@@ -227,13 +311,14 @@ class ExternalCatalogTest {
             assertEquals(code, obj.getJSONArray("languages").getString(0))
             assertEquals(2, obj.getJSONArray("files").length())
         }
-        // every index entryUrl basename must be a committed asset
+        // every index entryUrl basename must be a committed asset (index
+        // parsed ONCE, not per entry: the loop below is per-name lookup)
         val assetDir = java.io.File("src/main/assets/external-catalog")
         val assets = assetDir.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+        val byName = parsedIndex.associateBy { it.name }
         indexNames.forEach { name ->
             val basename = java.io.File(
-                ExternalCatalog.parseIndex(java.io.File(BUNDLED_INDEX_PATH).readText())
-                    .first { it.name == name }.entryUrl).name
+                requireNotNull(byName[name]) { "index entry $name missing" }.entryUrl).name
             assertTrue("index entry $name references $basename but no such asset exists",
                 basename in assets)
         }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.antivocale.app.R
 import com.antivocale.app.data.ActiveModelRepository
+import com.antivocale.app.data.FakeExternalRecordsProvider
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalModelRecordsProvider
 import com.antivocale.app.data.FakePreferencesManager
@@ -74,6 +75,10 @@ class SettingsViewModelActiveModelTest {
             llmManager = mockk(relaxed = true),
             shareTargetManager = mockk(relaxed = true),
             shareShortcutManager = mockk(relaxed = true),
+            backendRegistry = staticRegistry(),
+            // TASK-490: these tests never pick an icon; a relaxed mock of
+            // the store keeps the construction honest without Robolectric.
+            shortcutIconStore = mockk<com.antivocale.app.data.ShortcutIconStore>(relaxed = true),
             // Enum returns are stubbed explicitly: a relaxed mock's enum answer
             // is version-dependent, and the ViewModel reads current() at init.
             launcherIconManager = mockk(relaxed = true) {
@@ -97,8 +102,14 @@ class SettingsViewModelActiveModelTest {
                 mockk<Context>(relaxed = true) {
                     every { getString(any()) } answers { "str:${args[0]}" }
                 },
-                staticRegistry(),
+                staticRegistry(), FakeExternalRecordsProvider(),
             ),
+            // TASK-670 simplify F2: the enrollment pipeline seam; these
+            // tests never enroll, a mock enroller and an empty real store
+            // keep the construction honest.
+            speakerEnroller = mockk<com.antivocale.app.transcription.diarization.SpeakerEnroller>(),
+            speakerIdentityStore = com.antivocale.app.transcription.diarization.SpeakerIdentityStore(
+                java.nio.file.Files.createTempDirectory("speaker-ids").toFile()),
         )
     }
 

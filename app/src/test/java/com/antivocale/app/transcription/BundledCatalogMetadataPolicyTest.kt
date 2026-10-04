@@ -12,19 +12,21 @@ import org.junit.Test
  * [SherpaBackend.loadModel] scans every entry whose flags do NOT set
  * skipMetadataCheck, demanding [SherpaBackend.requiredMetadataKeys]. That
  * resolver prefers flags.metaKeys and otherwise dispatches on modelType,
- * where an unknown modelType silently inherits the else default
- * (vocab_size). That silent inheritance is how qwen3 shipped broken for five
- * releases: the same wrong belief (every encoder carries vocab_size) wrote
- * both the guard and its test. No bundled entry may rely on it anymore:
+ * where an unknown modelType silently inherits the else default. That
+ * silent inheritance is how qwen3 shipped broken for five releases: the
+ * same wrong belief (every encoder carries vocab_size) wrote both the
+ * guard and its test. No bundled entry may rely on the inherited arm:
  * each entry must be covered by an EXPLICIT policy, either a non-empty
  * flags.metaKeys or a modelType named in the when arms of
  * [SherpaBackend.requiredTransducerMetadataKeys].
  *
- * The else arm itself is legitimate for EXTERNAL transducer imports
- * (a zipformer import with modelType "" must be allowed to fail the
- * vocab_size gate deliberately, with guidance, per the TASK-481 ground
- * truth); this test scopes the invariant to the bundled catalog, where
- * every modelType is known ahead of time and silence has no excuse.
+ * The else arm exists for EXTERNAL transducer imports. Since TASK-667 it
+ * demands NOTHING (device-found: plain zipformers carry no metadata their
+ * loader reads, and the inherited vocab_size demand rejected the
+ * catalog's own zipformer entries at import time); the wrong-family
+ * guard for the empty modelType is the file-shape plan. This test scopes
+ * the invariant to the bundled catalog, where every modelType is known
+ * ahead of time and silence has no excuse.
  */
 class BundledCatalogMetadataPolicyTest {
 
@@ -49,7 +51,7 @@ class BundledCatalogMetadataPolicyTest {
     )
 
     /** Where an entry's metadata policy comes from. */
-    private enum class Policy { EXPLICIT_META_KEYS, EXPLICIT_MODEL_TYPE, SKIPPED }
+    private enum class Policy { EXPLICIT_META_KEYS, EXPLICIT_MODEL_TYPE, EXPLICIT_EMPTY, SKIPPED }
 
     @Test
     fun `every bundled entry the load path checks declares an explicit metadata policy`() {
@@ -121,8 +123,11 @@ class BundledCatalogMetadataPolicyTest {
         // The else arm exists for EXTERNAL transducer imports (zipformer with
         // modelType "", TASK-481) and must never be reached by a bundled
         // entry: the invariant test above enforces that on the real catalog.
+        // TASK-667: it demands NOTHING; k2-fsa zipformer exports carry no
+        // encoder metadata (device-found: the catalog's own russian entry
+        // was rejected at import time by the vocab_size demand).
         assertEquals(
-            listOf("vocab_size"),
+            emptyList<String>(),
             SherpaBackend.requiredTransducerMetadataKeys(""),
         )
     }
@@ -138,7 +143,10 @@ class BundledCatalogMetadataPolicyTest {
             when {
                 entry.flags.skipMetadataCheck ->
                     if (entry.id in documentedSkips) Policy.SKIPPED else null
-                entry.flags.metaKeys.isNotEmpty() -> Policy.EXPLICIT_META_KEYS
+                // TASK-412: null = not declared (modelType default path);
+                // an explicit empty list = require nothing (its own policy).
+                entry.flags.metaKeys?.isNotEmpty() == true -> Policy.EXPLICIT_META_KEYS
+                entry.flags.metaKeys != null -> Policy.EXPLICIT_EMPTY
                 entry.modelType in explicitModelTypes -> Policy.EXPLICIT_MODEL_TYPE
                 else -> null
             }

@@ -60,7 +60,6 @@
     <string name="logs_empty">अभी कोई अनुरोध नहीं</string>
     <string name="request_text">टेक्स्ट अनुरोध</string>
     <string name="request_audio">ऑडियो अनुरोध</string>
-    <string name="logs_recent_requests">हाल की एंट्री (%1$d)</string>
     <string name="logs_clear">साफ़ करें</string>
     <string name="logs_delete_entry">लॉग मिटाएं</string>
     <string name="logs_delete_confirmation">यह इतिहास एंट्री मिटाएं?</string>
@@ -127,9 +126,9 @@
     <string name="parakeet_download_confirm_title">Parakeet TDT डाउनलोड करें?</string>
     <string name="parakeet_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। ट्रांसक्रिप्शन के लिए Parakeet, Gemma से तेज़ लेकिन कम सटीक है।</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 भाषाएं • अनुशंसित</string>
+    <string name="parakeet_smoothquant_description">~862MB • 25 भाषाएं • डिफ़ॉल्ट का विकल्प</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 भाषाएं • हल्का विकल्प</string>
+    <string name="parakeet_stock_description">~640MB • 25 भाषाएं • डिफ़ॉल्ट: डिवाइस पर मापी गई सर्वोत्तम गुणवत्ता</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -221,6 +220,7 @@
     <string name="copy_transcription">क्लिपबोर्ड पर कॉपी करें</string>
     <string name="copied_to_clipboard">क्लिपबोर्ड पर कॉपी हो गया</string>
     <string name="transcription_streamed_without_vad">मौन हटाए बिना</string>
+    <string name="warning_repetition_suspected">इस ट्रांस्क्रिप्ट में दोहराव लूप संभव है; पाठ जाँचें</string>
     <string name="audio_received_for_transcription">ट्रांसक्रिप्शन के लिए ऑडियो मिला</string>
     <string name="transcription_complete">ट्रांसक्रिप्शन पूरा हुआ</string>
     <plurals name="transcription_partial">
@@ -230,6 +230,7 @@
     <string name="transcription_partial_chip">अधूरा</string>
     <string name="transcription_failed">ट्रांसक्रिप्शन विफल</string>
     <string name="error_model_load">मॉडल फ़ाइल ख़राब या गलत फ़ॉर्मैट की हो सकती है। मॉडल टैब से इसे फिर से डाउनलोड करें।</string>
+    <string name="error_model_external_corrupt">आयातित मॉडल की फ़ाइलें दूषित हैं। इसे मॉडल टैब से हटाएँ और फिर से आयात करें।</string>
     <string name="error_model_corrupt_healed">मॉडल की कुछ फ़ाइलें दूषित थीं, इसलिए हटा दी गईं। मॉडल टैब खोलकर मॉडल फिर से डाउनलोड करें।</string>
     <string name="error_native">ट्रांसक्रिप्शन के दौरान एक अंदरूनी गड़बड़ी हुई। अगर यह बार-बार हो तो कोई दूसरा मॉडल आज़माएं।</string>
     <string name="error_not_initialized">कोई मॉडल लोड नहीं है। मॉडल टैब खोलकर एक मॉडल डाउनलोड करें या चुनें।</string>
@@ -257,6 +258,8 @@
     <string name="native_crash_go_to_model">मॉडल टैब पर जाएं</string>
     <string name="model_load_low_memory">इस मॉडल के लिए ज़रूरी मेमोरी काफ़ी नहीं है (%1$s उपलब्ध, लगभग %2$s चाहिए)। मेमोरी सुरक्षा सक्रिय है: दूसरे ऐप बंद करें, छोटा मॉडल इस्तेमाल करें, या फिर भी कोशिश करने के लिए इसे सेटिंग में बंद कर दें।</string>
     <string name="memory_margin_warning_title">इस फ़ोन की मेमोरी सीमा के पास मॉडल</string>
+    <string name="memory_kill_warning_title">सिस्टम ने मेमोरी खाली करने के लिए ऐप बंद कर दिया</string>
+    <string name="memory_kill_warning_body">अंतिम ट्रांसक्रिप्शन बीच में कट सकती है। छोटा मॉडल या छोटी ऑडियो फ़ाइल कम मेमोरी चाहती है।</string>
     <string name="memory_margin_warning_body">%1$s मॉडल इस फ़ोन की क्षमता के पास हो सकता है। ट्रांसक्रिप्शन फिर भी होगा; ऐसी लोडिंग को रोकने के लिए आप सेटिंग्स में मेमोरी सुरक्षा चालू कर सकते हैं।</string>
     <string name="transcribe_low_memory">इस मॉडल से ट्रांसक्राइब करने के लिए पर्याप्त खाली मेमोरी नहीं है (लगभग %1$s खाली, %2$s चाहिए)। मेमोरी सुरक्षा सक्रिय है: अन्य ऐप्स बंद करके पुनः प्रयास करें, या फिर भी कोशिश करने के लिए इसे सेटिंग में बंद कर दें।</string>
     <string name="external_model_quarantined_title">क्रैश के बाद बाहरी मॉडल अक्षम किया गया</string>
@@ -267,6 +270,29 @@
     <string name="external_automation_title">बाहरी ऑटोमेशन (Tasker)</string>
     <string name="external_automation_description">दूसरे ऐप्स को ऑटोमेशन API (जैसे Tasker) से ट्रांसक्रिप्शन शुरू करने देता है। डिफ़ॉल्ट रूप से बंद है।</string>
     <string name="external_automation_disabled">बाहरी ऑटोमेशन बंद है। इसे सेटिंग > अतिरिक्त सेटिंग > बाहरी ऑटोमेशन में चालू करें।</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">ऑटोमेशन गाइड</string>
+    <string name="automation_guide_description">ऐप को ब्रॉडकास्ट भेजकर Tasker या adb से ट्रांस्क्रिप्शन शुरू करें। सब कुछ डिवाइस पर ही रहता है।</string>
+    <string name="automation_guide_status_on">ऑटोमेशन चालू है: ऐप अनुरोध और प्रीलोड ब्रॉडकास्ट का जवाब देती है।</string>
+    <string name="automation_guide_status_off">ऑटोमेशन बंद है: ऊपर दिए गए बाहरी ऑटोमेशन स्विच को चालू करने तक हर ब्रॉडकास्ट अस्वीकार कर दिया जाता है।</string>
+    <string name="automation_guide_show_toggle">स्विच दिखाएँ</string>
+    <string name="automation_guide_body">दो ब्रॉडकास्ट: PROCESS_REQUEST टेक्स्ट प्रॉम्प्ट या ऐप के निजी फ़ोल्डर में तैयार ऑडियो फ़ाइल को ट्रांस्क्राइब करता है (sdcard पाथ पढ़े नहीं जा सकने की वजह से अस्वीकार होते हैं), और PRELOAD_MODEL मॉडल पहले से लोड कर देता है।</string>
+    <string name="automation_guide_copy">टेस्ट कमांड कॉपी करें</string>
+    <string name="automation_guide_open">पूरी गाइड</string>
+    <string name="automation_guide_no_browser">गाइड खोलने के लिए कोई ऐप नहीं मिली</string>
+    <string name="faq_section_title">अक्सर पूछे जाने वाले प्रश्न</string>
+    <string name="faq_full_link">GitHub पर पूरा FAQ पढ़ें</string>
+    <string name="faq_card_calls_title">क्या यह कॉल या मीटिंग ट्रांसक्राइब कर सकता है?</string>
+    <string name="faq_card_calls_body">नहीं। Android दूसरे ऐप्स की कॉल ऑडियो रिकॉर्ड करना रोकता है, और anti-vocale को केवल वही मिलता है जो आप शेयर करते हैं। मीटिंग के लिए ऑडियो रिकॉर्ड करके फ़ाइल शेयर करें।</string>
+    <string name="faq_card_models_title">कौन सा मॉडल इस्तेमाल करें?</string>
+    <string name="faq_card_models_body">Parakeet डिफ़ॉल्ट है: साफ़ वॉइस मैसेज पर तेज़ और सटीक। दूसरी भाषाओं के लिए मॉडल टैब से अपनी भाषा कवर करने वाला चुनें; बड़े मॉडल पुराने फ़ोन पर धीमे हैं।</string>
+    <string name="faq_card_queue_title">क्यू कैसे काम करती है?</string>
+    <string name="faq_card_queue_body">अनुरोध आने के क्रम में एक-एक करके चलते हैं; नोटिफिकेशन क्यू में स्थान दिखाता है।</string>
+    <string name="faq_card_results_title">परिणाम के विवरण का क्या मतलब है?</string>
+    <string name="faq_card_results_body">हर प्रविष्टि मॉडल, अवधि और प्रोसेसिंग समय रखती है। दोबारा, कॉपी, हटाने या रिपोर्ट के लिए लंबा दबाएँ।</string>
+    <string name="faq_card_trouble_title">कुछ गड़बड़ हो गई</string>
+    <string name="faq_card_trouble_body">परिणाम न आए तो फ़ोन निर्माता ने ऐप को बैकग्राउंड में फ़्रीज़ किया हो सकता है: ग़लती की नोटिफिकेशन में बैटरी सलाह देखें। असफल परिणाम रिपोर्ट प्रविष्टी रखता है।</string>
+    <string name="no_app_to_open_link">लिंक खोलने के लिए कोई ऐप नहीं मिला</string>
     <string name="remote_omnivoice_name">LAN ऑफ़लोड (OmniVoice)</string>
     <string name="remote_offload_title">LAN ऑफ़लोड (प्रायोगिक)</string>
     <string name="remote_offload_description">लंबी या भारी ट्रांसक्रिप्शन को अपने Wi-Fi नेटवर्क पर चलने वाले अपने OmniVoice सर्वर को भेजता है। सक्षम होने पर इसे Model टैब में चुनें।</string>
@@ -482,10 +508,11 @@
     <!-- Settings Tab - VAD -->
     <string name="punctuation_status">AI से फ़ॉर्मैट हो रहा है…</string>
     <string name="punctuation_mode_title">विराम चिह्न और फ़ॉर्मैटिंग</string>
-    <string name="punctuation_mode_description">बिना विराम चिह्न वाली ट्रांसक्रिप्शन को Gemma मॉडल से फिर से लिखता है। स्वतः केवल उन मॉडलों के लिए जो विराम चिह्न नहीं लगाते (Gemma डाउनलोड आवश्यक)।</string>
+    <string name="punctuation_mode_description">प्रतिलिपियों को Gemma मॉडल से पुनः स्वरूपित करता है। स्वचालित केवल बिना विराम चिह्न वाले मॉडलों पर चलता है; सदैव विराम चिह्न भी सामान्य करता है; सतर्क अनुच्छेद जोड़ता है और कभी शब्द नहीं बदलता (Gemma डाउनलोड आवश्यक)।</string>
     <string name="punctuation_mode_off">बंद</string>
     <string name="punctuation_mode_auto">स्वतः</string>
     <string name="punctuation_mode_always">हमेशा</string>
+    <string name="punctuation_mode_conservative">सतर्क (केवल विराम चिह्न और अनुच्छेद)</string>
     <string name="punctuation_prompt_title">विराम चिह्न प्रॉम्प्ट</string>
     <string name="punctuation_prompt_description">विराम चिह्न चरण के लिए निर्देश। अंतर्निहित प्रॉम्प्ट के लिए खाली छोड़ें।</string>
     <string name="punctuation_prompt_placeholder">अंतर्निहित प्रॉम्प्ट</string>
@@ -508,6 +535,11 @@
     <string name="vad_description">ट्रांसक्रिप्शन से पहले वॉइस मैसेज के ख़ामोश हिस्से हटाएं। प्रोसेसिंग समय घटता है और सटीकता बेहतर होती है।</string>
     <string name="progressive_title">प्रगतिशील डिस्प्ले</string>
     <string name="progressive_description">रिकॉर्डिंग खत्म होने का इंतज़ार किए बिना, ट्रांसक्रिप्शन के साथ-साथ टेक्स्ट दिखाएं।</string>
+    <string name="early_preview_title">शीघ्र पूर्वावलोकन</string>
+    <string name="early_preview_description">लंबी क्लिप डिकोड होते समय पहला अस्थायी टेक्स्ट दिखाता है। पहला पूरा सेगमेंट खत्म होने पर यह बदल दिया जाता है।</string>
+    <string name="early_preview_badge">पूर्वावलोकन</string>
+    <string name="early_preview_requires_progressive">प्रगतिशील डिस्प्ले आवश्यक है</string>
+    <string name="auto_save_failed">स्वतः सहेजना विफल (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">डिफ़ॉल्ट प्रॉम्प्ट</string>
@@ -632,6 +664,8 @@
     <string name="notification_channel_inference_description">बैकग्राउंड में ऑडियो ट्रांसक्रिप्शन प्रोसेसिंग</string>
     <string name="notification_channel_result">ट्रांसक्रिप्शन का नतीजा</string>
     <string name="notification_channel_result_description">तैयार टेक्स्ट और एक्शन</string>
+    <string name="notification_channel_interrupted_runs">बाधित ट्रांसक्रिप्शन</string>
+    <string name="notification_channel_interrupted_runs_description">अगली बार शुरू होने पर रीस्टार्ट से बाधित ट्रांसक्रिप्शन बंद होने पर दिखने वाला सारांश।</string>
     <string name="notification_cancelling">रद्द हो रहा है…</string>
 
     <!-- No-model notification -->
@@ -813,6 +847,17 @@
     <string name="benchmark_provider_label">प्रोवाइडर</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">ट्रांसक्रिप्शन बाधित हुआ</string>
+    <string name="interrupted_runs_title">बाधित ट्रांसक्रिप्शन</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d ट्रांसक्रिप्शन पूरा होने से पहले बाधित हुआ। विवरण के लिए इतिहास देखें।</item>
+        <item quantity="other">%1$d ट्रांसक्रिप्शन पूरा होने से पहले बाधित हुए। विवरण के लिए इतिहास देखें।</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d ट्रांसक्रिप्शन पूरा होने से पहले बाधित हुआ: ऐप की मेमोरी खत्म हो गई। छोटी फ़ाइल, छोटा मॉडल आज़माएँ या दूसरे ऐप बंद करें। विवरण के लिए इतिहास देखें।</item>
+        <item quantity="other">%1$d ट्रांसक्रिप्शन पूरा होने से पहले बाधित हुए: ऐप की मेमोरी खत्म हो गई। छोटी फ़ाइल, छोटा मॉडल आज़माएँ या दूसरे ऐप बंद करें। विवरण के लिए इतिहास देखें।</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">बाधित ट्रांसक्रिप्शन की सूचनाएँ</string>
+    <string name="interrupted_run_notifications_description">जब ऐप के रीस्टार्ट से बाधित ट्रांसक्रिप्शन अगली बार शुरू होने पर बंद किए जाते हैं तो सूचना दिखाएँ।</string>
     <string name="action_dismiss">खारिज करें</string>
 
     <!-- Model Info Overlay -->
@@ -918,11 +963,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">बहुभाषी CTC (1600+ भाषाएँ, प्रायोगिक)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">पैराफ़ॉर्मर (FunASR)</string>
     <string name="external_notice_single_pass">बहुत लंबा ऑडियो बड़े मॉडल से एक बार में प्रोसेस नहीं हो सकता। ऑडियो छोटा करें या छोटा मॉडल चुनें।</string>
     <string name="external_notice_family">अगर ट्रांसक्रिप्शन बिना गड़बड़ी के क्रैश हो, तो आर्किटेक्चर गलत हो सकता है: मॉडल मिटाकर दूसरा आर्किटेक्चर चुनकर फिर इंपोर्ट करें।</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">शेयर मेन्यू में मॉडल</string>
+    <string name="voice_note_identity_title">वॉइस नोट भेजने वाले की पहचान</string>
+    <string name="voice_note_identity_description">साझा गया वॉयेस नोट की इतिहास पंक्ति पर भेजने वाले का नाम लिखता है। फिलहाल सिर्फ WhatsApp। नाम तभी दिखता है जब नोट का नोटिफिकेशन इस ऑन होने पर आया हो, और तभी जब बताया गया समय ऑडियो से मेल खाता हो (कोई अंदाज़ा नाम नहीं)। यह ऑप्शन बंद करने के बाद भी नाम उस पंक्ति पर रहता है; प्रतीक्षा सूची केवल मेमरी में रहती है। नोटिफिकेशन एक्सेस चाहिए।</string>
+    <string name="voice_note_identity_grant_hint">सूचना एक्सेस बंद है। सिस्टम सेटिंग खोलने और इस ऐप के लिए इसे चालू करने के लिए टैप करें।</string>
     <string name="share_targets_description">हर डाउनलोड किया मॉडल सिस्टम मेन्यू में अलग विकल्प के रूप में दिखेगा। ऑडियो चुने गए मॉडल से प्रोसेस होगा।</string>
     <string name="advanced_sharing_toggle">डाउनलोड किए मॉडल दिखाएं</string>
     <string name="share_targets_models_info">हर डाउनलोड किया मॉडल शेयर मेन्यू में अलग एंट्री के रूप में दिखेगा। मॉडल मिटाने पर वह मेन्यू से हट जाएगा।</string>
@@ -1007,6 +1056,9 @@
     <string name="battery_exemption_title">बैकग्राउंड में चलने की अनुमति दें</string>
     <string name="battery_exemption_description">सिस्टम ने बैकग्राउंड में रिकग्निशन रोक दी। ट्रांसक्रिप्शन न रुके, इसके लिए ऐप को बैकग्राउंड में चलने की अनुमति दें।</string>
     <string name="battery_exemption_action">सेटिंग खोलें</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">ट्रांस्क्रिप्शन निलंबित</string>
+    <string name="suspension_notification_text">सिस्टम ने ट्रांस्क्रिप्शन के दौरान ऐप को %1$s के लिए निलंबित कर दिया, इसलिए वह पूरी नहीं हुई।</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Hugging Face URL से आयात करें</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1044,7 +1096,6 @@
         <item quantity="other">%1$d परिणाम</item>
     </plurals>
     <string name="settings_search_no_results">कोई मेल खाती सेटिंग्स नहीं</string>
-    <string name="settings_search_clear">खोज साफ़ करें</string>
         <string name="partial_transcript_label">आंशिक ट्रांसक्रिप्ट</string>
     
     <string name="decoded_of_total">%2$s में से %1$s डिकोड हुआ</string>
@@ -1072,6 +1123,23 @@
     <string name="speaker_labels_status">वक्ताओं की पहचान हो रही है…</string>
     <string name="speaker_labels_title">वक्ताओं की पहचान करें</string>
     <string name="speaker_labels_description">प्रत्येक वाक्य में वक्ता का लेबल जोड़ता है। पहले उपयोग पर लगभग~47 MB मॉडल डाउनलोड होते हैं; प्रोसेसिंग समय बढ़ता है।</string>
+    <string name="speaker_id_title">वक्ता पहचान</string>
+    <string name="speaker_id_description">आपकी ट्रांसक्रिप्शन की आवाज़ों की तुलना आपके रिकॉर्ड किए गए सैंपल से करता है, और मिलान करने वाले नाम को स्पीकर लेबल पर लगाता है। सैंपल और वॉयसप्रिंट सिर्फ़ इसी फ़ोन पर रहते हैं और कभी बाहर नहीं जाते।</string>
+    <string name="speaker_id_empty">अभी कोई नामांकित नहीं है।</string>
+    <string name="speaker_id_add">आवाज़ जोड़ें</string>
+    <string name="speaker_id_sample_seconds">%1$d s नमूना</string>
+    <string name="speaker_id_replay">नमूना चलाएँ</string>
+    <string name="speaker_id_delete">आवाज़ मिटाएँ</string>
+    <string name="speaker_id_name_title">इस आवाज़ को नाम दें</string>
+    <string name="speaker_id_name_label">नाम</string>
+    <string name="speaker_id_name_confirm">सहेजें</string>
+    <string name="speaker_id_name_cancel">रद्द करें</string>
+    <string name="speaker_id_error_too_short">क्लिप बहुत छोटा है: उस व्यक्ति की आवाज़ के कम से कम 3 सेकंड चुनें।</string>
+    <string name="speaker_id_error_too_long">क्लिप बहुत लंबा है: इसे 30 सेकंड से कम रखें।</string>
+    <string name="speaker_id_error_decode">वह ऑडियो क्लिप नहीं पढ़ा जा सका।</string>
+    <string name="speaker_id_error_extract">उस क्लिप से वॉयसप्रिंट नहीं निकाला जा सका।</string>
+    <string name="speaker_id_error_save">पहचान सहेजा नहीं जा सकी। फ्री स्टोरेज जाँचें और फिर कोशिश करें।</string>
+    <string name="speaker_id_error_model">वक्ता मॉडल डाउनलोड विफल। कनेक्शन जाँचें और फिर से कोशिश करें।</string>
     <string name="transcription_not_refined">परिशोधित नहीं (तुरंत पूर्वावलोकन)</string>
     <string name="transcription_refined_from">%1$s से परिशोधित</string>
     <string name="refinement_title">दो-चरण ट्रांसक्रिप्शन</string>
@@ -1090,7 +1158,38 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">model + tokens फ़ाइलें चाहिए; बहुभाषी (zh/en बेस)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">पंक्ति छोड़ी गई</item>
-    <item quantity="other">पंक्तियाँ छोड़ी गईं</item>
+    <item quantity="one">%1$d पंक्ति छोड़ी गई</item>
+    <item quantity="other">%1$d पंक्तियाँ छोड़ी गईं</item>
   </plurals>
+    <string name="speaker_settings_title">वक्ता पहचान</string>
+    <string name="speaker_settings_summary">स्पीकर लेबल और नामित पहचान</string>
+    <string name="performance_settings_title">प्रदर्शन और मेमोरी</string>
+    <string name="performance_settings_summary">थ्रेड, प्रोवाइडर, मेमोरी सुरक्षा और डायग्नोस्टिक्स</string>
+    <string name="automation_settings_title">स्वचालन और ऑफलोड</string>
+    <string name="automation_settings_summary">टास्कर रिसीवर, ब्रॉडकास्ट गाइड और LAN ऑफलोड</string>
+    <string name="settings_group_appearance">रूप और अनुभव</string>
+    <string name="settings_group_history">इतिहास</string>
+    <string name="settings_group_decoding">डिकोडिंग और पूर्वावलोकन</string>
+    <string name="settings_group_gemma">टेक्स्ट प्रोसेसिंग (Gemma)</string>
+    <string name="settings_group_output">आउटपुट</string>
+    <string name="settings_group_integrations">इंटीग्रेशन</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">शेयर शॉर्टकट आइकॉन</string>
+    <string name="share_shortcut_icons_description">हर शेयर शॉर्टकट के लिए कोई कस्टम चित्र चुनें, या जनरेट किए गए आइकॉन पर लौटें</string>
+    <string name="shortcut_icon_choose">चित्र चुनें</string>
+    <string name="shortcut_icon_reset">रीसेट</string>
+    <string name="shortcut_icon_custom">कस्टम चित्र</string>
+    <string name="shortcut_icon_saved">शॉर्टकट आइकॉन सहेजा गया</string>
+    <string name="shortcut_icon_error">चित्र लोड नहीं हो सका</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">इतिहास</string>
+    <string name="shortcut_history_long">इतिहास खोलें</string>
+    <string name="shortcut_models_short">मॉडल</string>
+    <string name="shortcut_models_long">मॉडल खोलें</string>
+    <string name="model_switched_title">मॉडल बदल गया</string>
+    <string name="model_switched_message">सक्रिय मॉडल: %1$s</string>
+    <string name="model_switch_failed">बदला नहीं जा सका: मॉडल डिवाइस पर नहीं है</string>
+    <string name="model_shortcut_switch_label">%1$s पर स्विच करें</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">इस प्रतिलिपि में विराम चिह्न, बड़े अक्षर और अनुच्छेद विभाजन जोड़ें। अनुवाद न करें, सारांश न दें, और कोई शब्द न जोड़ें, न हटाएं, न उसका क्रम बदलें और न ठीक करें: शब्दों का क्रम ठीक वैसा ही रहना चाहिए जैसा लिखा गया है। केवल प्रारूपित प्रतिलिपि ही दें।</string>
 </resources>

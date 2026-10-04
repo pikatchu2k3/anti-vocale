@@ -98,6 +98,26 @@ object LocaleManager {
     }
 
     /**
+     * The PHONE locale itself ([phoneLanguage]'s full form, TASK-629: the
+     * settings search's locale set reads it so a query in the user's
+     * language matches even under a pinned per-app language).
+     */
+    fun phoneLocale(context: Context): Locale? = phoneLocalesList(context).firstOrNull()
+
+    /**
+     * The SYSTEM locale list, app-override-aware (see [phoneLanguage]):
+     * the device finding 2026-10-02 - a phone can carry en-IT primary
+     * with it-IT second, so the first entry alone misses the user's
+     * other language entirely. Blank-language entries dropped.
+     */
+    fun phoneLocalesList(context: Context): List<Locale> = try {
+        val list = LocaleManagerCompat.getSystemLocales(context)
+        (0 until list.size()).mapNotNull { list[it] }.filter { it.language.isNotBlank() }
+    } catch (e: RuntimeException) {
+        emptyList()
+    }
+
+    /**
      * Updates the context with the current locale for Compose content.
      * This is needed for apps using ComponentActivity instead of AppCompatActivity.
      */

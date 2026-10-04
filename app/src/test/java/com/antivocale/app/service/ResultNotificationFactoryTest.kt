@@ -2,9 +2,11 @@ package com.antivocale.app.service
 
 import android.app.Notification
 import android.content.Context
+import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
 import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.receiver.NotificationActionReceiver
+import com.antivocale.app.receiver.TaskerRequestReceiver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -162,6 +164,20 @@ class ResultNotificationFactoryTest {
     }
 
     @Test
+    fun `an auto-save failure rides the subText, after the repetition warning (TASK-722)`() {
+        val n = factory.build(
+            spec("ciao come stai").copy(saveFailureReason = "create_refused"), prefs)
+        assertEquals("Auto-save failed (create_refused)", n.subTextCompat())
+        // TASK-583 order contract: when both facts are present the repetition
+        // warning leads, the save failure follows.
+        val both = factory.build(
+            spec(longText(3), page = 1).copy(
+                repetitionSuspected = true, saveFailureReason = "not_writable"), prefs)
+        val sub = requireNotNull(both.subTextCompat())
+        assertTrue(sub.indexOf("Repetition") < sub.indexOf("Auto-save failed"))
+    }
+
+    @Test
     fun `paged subtext shows page counter`() {
         val n = factory.build(spec(longText(3), page = 1), prefs)
         assertEquals("Page 2 of 3", n.subTextCompat())
@@ -246,5 +262,54 @@ class ResultNotificationFactoryTest {
         assertEquals(
             "ciao",
             saved.getStringExtra(com.antivocale.app.receiver.NotificationActionReceiver.EXTRA_TRANSCRIPTION_TEXT))
+    }
+
+    /**
+     * TASK-684 (GH #109): the suspension outcome notification. Retry and the
+     * battery deep link, inside the three-button shade cap; the re-run
+     * broadcast carries the full re-enqueue payload.
+     */
+    @Test
+    fun `suspension notification carries retry and battery actions with the rerun payload`() {
+        val n = factory.suspensionNotification(
+            text = "The system suspended the app for 5m 0s while it was transcribing, so it did not finish.",
+            rerunTaskId = "task-9",
+            filePath = "/shared_audio/long.wav",
+            prompt = "",
+            sourcePackage = "org.telegram.messenger")
+
+        assertEquals(listOf("Retry", "Open setting"), n.titles())
+        val rerun = Shadows.shadowOf(n.actions!!.first { it.title == "Retry" }.actionIntent).savedIntent
+        assertEquals(NotificationActionReceiver.ACTION_RERUN_SUSPENDED, rerun.action)
+        assertEquals("/shared_audio/long.wav", rerun.getStringExtra(TaskerRequestReceiver.EXTRA_FILE_PATH))
+        assertEquals("task-9", rerun.getStringExtra(NotificationActionReceiver.EXTRA_TASK_ID))
+        // The battery action is the same system dialog the Settings card opens.
+        val battery = Shadows.shadowOf(n.actions!!.first { it.title == "Open setting" }.actionIntent).savedIntent
+        assertEquals(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, battery.action)
+    }
+
+    /**
+     * TASK-684: the generic interrupted-runs summary. Quiet by design: its
+     * own IMPORTANCE_DEFAULT channel (the suspended class is HIGH on the
+     * result channel), no actions, the count in BOTH arms' bodies.
+     */
+    @Test
+    fun `interrupted runs summary is a quiet count notification without actions`() {
+        val n = factory.interruptedRunsNotification(count = 2, oom = false)
+        assertEquals("Interrupted transcriptions",
+            n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertTrue(n.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("2"))
+        assertNull("no actions: nothing is proven re-runnable", n.actions)
+        // The compat builder copies setPriority into the (deprecated but
+        // populated) platform field; on O+ the channel carries importance.
+        assertEquals(NotificationCompat.PRIORITY_DEFAULT, n.priority)
+        assertEquals(com.antivocale.app.util.AppNotificationChannel.INTERRUPTED_RUNS.id, n.channelId)
+
+        // The OOM arm keeps the count and the History pointer, swapping in
+        // the memory advice.
+        val oom = factory.interruptedRunsNotification(count = 2, oom = true)
+        val oomText = oom.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertTrue(oomText.contains("2"))
+        assertTrue(oomText.contains("out of memory"))
     }
 }

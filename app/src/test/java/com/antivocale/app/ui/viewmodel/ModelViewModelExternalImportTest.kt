@@ -3,6 +3,7 @@ package com.antivocale.app.ui.viewmodel
 import android.content.Context
 import android.net.Uri
 import com.antivocale.app.data.ActiveModelRepository
+import com.antivocale.app.data.FakeExternalRecordsProvider
 import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalModelSource
@@ -120,9 +121,10 @@ class ModelViewModelExternalImportTest {
                 "str:${args[0]}:$formatArgs"
             }
         }
+        val sharedDemoter = com.antivocale.app.transcription.SilentModelDemoter(fakePrefs)
         viewModel = ModelViewModel(
             preferencesManager = fakePrefs,
-            activeModelRepository = ActiveModelRepository(fakePrefs, mockContext, staticRegistry()),
+            activeModelRepository = ActiveModelRepository(fakePrefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
             backendManager = mockk(relaxed = true),
             llmManager = mockk(relaxed = true),
@@ -136,7 +138,13 @@ class ModelViewModelExternalImportTest {
             externalCatalogRepository = io.mockk.mockk(relaxed = true),
             applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
             // TASK-675: real demoter over the same preferences.
-            silentModelDemoter = com.antivocale.app.transcription.SilentModelDemoter(fakePrefs),
+            silentModelDemoter = sharedDemoter,
+            modelActivator = com.antivocale.app.transcription.ModelActivator(
+                fakePrefs,
+                sharedDemoter,
+                externalModelStore = com.antivocale.app.data.ExternalModelStore(fakePrefs),
+                backendRegistry = staticRegistry(),
+                ),
         )
 
     }

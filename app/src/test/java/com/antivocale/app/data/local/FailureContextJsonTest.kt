@@ -14,6 +14,8 @@ class FailureContextJsonTest {
         appVersion = "1.13.0-SNAPSHOT",
         processedChunks = 12,
         failedChunks = 3,
+        // TASK-664: the ladder count must survive the column round trip.
+        retriedChunks = 2,
         metadataSeconds = 4620.0,
         decodedSeconds = 1380.0,
     )
@@ -29,7 +31,7 @@ class FailureContextJsonTest {
         val rendered = FailureContextJson.render(full)!!
         assertEquals(
             "PipelineFailure backend=external:abc123 provider=cpu " +
-                "v1.13.0-SNAPSHOT chunks=12 (failed 3) total=4620.0s decoded=1380.0s",
+                "v1.13.0-SNAPSHOT chunks=12 (failed 3) retried=2 total=4620.0s decoded=1380.0s",
             rendered)
     }
 
@@ -52,5 +54,20 @@ class FailureContextJsonTest {
         assertNull(back.processedChunks)
         // Absent optionals do not appear in the rendering.
         assertEquals("OutOfMemoryError backend=whisper", FailureContextJson.render(back))
+    }
+
+    @Test
+    fun `suspension context round trips and renders the lower bound`() {
+        // TASK-684: the freezer-suspension row's typed marker.
+        val ctx = FailureContext(errorClass = "SystemSuspended", suspendedMs = 300_000L)
+        val back = FailureContextJson.fromJson(FailureContextJson.toJson(ctx))!!
+        assertEquals(ctx, back)
+        assertEquals("SystemSuspended suspended>=300s", FailureContextJson.render(back))
+    }
+
+    @Test
+    fun `old rows without suspendedMs read as null`() {
+        val json = """{"errorClass":"PipelineFailure"}"""
+        assertNull(FailureContextJson.fromJson(json)!!.suspendedMs)
     }
 }

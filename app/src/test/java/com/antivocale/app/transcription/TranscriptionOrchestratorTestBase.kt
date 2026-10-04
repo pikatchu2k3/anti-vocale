@@ -14,6 +14,7 @@ import com.antivocale.app.service.TranscriptionListener
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Before
+import java.util.concurrent.atomic.AtomicBoolean
 
 abstract class TranscriptionOrchestratorTestBase {
 
@@ -92,6 +93,13 @@ abstract class TranscriptionOrchestratorTestBase {
             // TASK-679: the real recorder over the same mocks, so the
             // breadcrumb tests drive the shipped capture path.
             OomBreadcrumbRecorder(preferencesManager, backendManager, llmManager, staticRegistry()),
+            // TASK-670 (GH #83): the real voiceprint store over a throwaway
+            // dir; the naming pass never runs in these tests (the flag stays
+            // off on the relaxed mock), an empty store is the floor.
+            com.antivocale.app.transcription.diarization.SpeakerIdentityStore(
+                java.io.File.createTempFile("speaker-ids", null).let { file ->
+                    file.delete(); file.mkdirs(); file
+                }),
         )
 
         // Default the opt-in memory protection to off in tests so it does not interfere with
@@ -113,6 +121,11 @@ abstract class TranscriptionOrchestratorTestBase {
         // preference, which resolvedLanguagePin reports as "auto". Tests that pin
         // a language re-stub this after baseSetUp and win.
         every { preferencesManager.transcriptionLanguage } returns flowOf("")
+        // TASK-186: the early-preview read sits on the audio path next to
+        // progressiveTranscription; default OFF keeps every existing test on
+        // the identity behavior (an unstubbed relaxed-mock Flow explodes on
+        // first(), the modelPath trap above).
+        every { preferencesManager.earlyPreviewEnabled } returns flowOf(false)
     }
 
     protected fun stubWhisperBackend(): TranscriptionBackend =
@@ -127,6 +140,54 @@ abstract class TranscriptionOrchestratorTestBase {
             every { backendManager.hasActiveBackend() } returns true
             every { backendManager.getActiveBackend() } returns backend
         }
+
+    /**
+     * TASK-682: the shared gigaam whole-file funnel fixture (extracted from
+     * the near-verbatim pair in RepetitionCollapseTest + PunctuationPassTest:
+     * the stub-BOTH-transcribe-methods gotcha now lives in ONE place).
+     */
+    protected fun setUpGigaamWholeFileFixture(gigaamBackend: TranscriptionBackend) {
+        every { backendManager.hasActiveBackend() } returns true
+        every { backendManager.getActiveBackend() } returns gigaamBackend
+        every { preferencesManager.transcriptionBackend } returns flowOf("gigaam")
+        every { preferencesManager.vadEnabled } returns flowOf(false)
+        every { preferencesManager.sherpaModelPath("gigaam") } returns flowOf("/models/gigaam")
+    }
+
+    /**
+     * The whole-file single-chunk stub: the path calls
+     * transcribeAudioStreaming (the interface default forwards to
+     * transcribeAudio, but on a mock the relaxed stub would fabricate
+     * Result<Object>: stub BOTH).
+     */
+    protected fun stubWholeFileDecode(
+        backend: TranscriptionBackend,
+        text: String,
+        segments: List<TimedSegment> = emptyList(),
+    ) {
+        stubPreprocessing(listOf(FloatArray(3) { it.toFloat() }), totalDurationSeconds = 5.0)
+        coEvery { backend.transcribeAudio(any(), any(), any()) } returns
+            Result.success(TranscriptionResult(text = text, segments = segments))
+        coEvery { backend.transcribeAudioStreaming(any(), any(), any(), any()) } returns
+            Result.success(TranscriptionResult(text = text, segments = segments))
+    }
+
+    /** The backend swap flips which backend getActiveBackend answers with. */
+    protected fun stubBackendSwapToLlm(
+        gigaamBackend: TranscriptionBackend,
+        llmBackend: TranscriptionBackend,
+    ) {
+        val swapped = AtomicBoolean(false)
+        every { backendManager.getActiveBackend() } answers {
+            if (swapped.get()) llmBackend else gigaamBackend
+        }
+        coEvery {
+            backendManager.setActiveBackend(eq(LlmTranscriptionBackend.BACKEND_ID), any(), any())
+        } coAnswers {
+            swapped.set(true)
+            Result.success(Unit)
+        }
+    }
 
     protected fun stubDefaultWhisperPreferences() {
         every { preferencesManager.transcriptionBackend } returns flowOf("whisper")
@@ -166,5 +227,25 @@ abstract class TranscriptionOrchestratorTestBase {
             chunkCount = chunks.size,
             isVadSegmented = isVadSegmented
         )
+    }
+
+    /**
+     * TASK-664: the content-keyed decode stub. The answer is keyed on the
+     * FEED's size and first sample (the chunk's content), never on call
+     * order, because the empty-chunk ladder adds re-feed calls whose feeds
+     * are never chunk-shaped; an order-keyed stub misroutes once it runs.
+     * Covers the streaming variant too (the single-chunk whole-file arm).
+     */
+    protected fun TranscriptionBackend.stubContentKeyedDecodes(
+        answer: (feedSize: Int, firstSample: Float) -> Result<TranscriptionResult>,
+    ) {
+        coEvery { transcribeAudio(any(), any(), any()) } answers {
+            val feed = firstArg<FloatArray>()
+            answer(feed.size, feed[0])
+        }
+        coEvery { transcribeAudioStreaming(any(), any(), any(), any()) } answers {
+            val feed = firstArg<FloatArray>()
+            answer(feed.size, feed[0])
+        }
     }
 }

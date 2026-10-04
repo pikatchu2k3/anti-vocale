@@ -1,8 +1,6 @@
 package com.antivocale.app.util
 
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -188,9 +186,26 @@ object FeedbackHelper {
     fun isCallable(context: Context, intent: Intent): Boolean =
         intent.resolveActivity(context.packageManager) != null
 
+    fun openUrlOrToast(context: Context, url: String) {
+        // TASK-693/CR5: startActivity + catch (no resolveActivity: it needs a
+        // <queries> entry for browsers we do not declare; the try/catch
+        // pattern works with whatever the platform resolves).
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: android.content.ActivityNotFoundException) {
+            com.antivocale.app.util.ToastCompat.show(context, com.antivocale.app.R.string.no_app_to_open_link)
+        }
+    }
+
     /**
      * Launches the mail app, or falls back to copying the address to the
      * clipboard with a toast. Returns true when the mail intent was started.
+     */
+    /**
+     * TASK-693: the ONE open-URL posture. Every ACTION_VIEW site rides this
+     * (the 275 altitude pass counted three failure postures for the identical
+     * launch): no activity resolves the intent = one localized toast, never a
+     * crash and never a silent dead tap.
      */
     fun sendOrCopy(context: Context, subject: String, body: String): Boolean {
         val intent = createEmailIntent(subject, body)
@@ -208,14 +223,16 @@ object FeedbackHelper {
     }
 
     private fun copyAddressToClipboard(context: Context) {
-        val clipboard =
-            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("email", FEEDBACK_ADDRESS))
-        Toast.makeText(
+        // TASK-688: shared write; the "email" label is this site's own. The
+        // toast moves to ToastCompat (review F5: the raw makeText preserved
+        // the gesture-bar overlap ToastCompat exists to fix, not a feature;
+        // same string, same LENGTH_LONG, plus the offset).
+        ClipboardWriter.copy(context, "email", FEEDBACK_ADDRESS)
+        ToastCompat.show(
             context,
             context.getString(R.string.settings_feedback_address_copied, FEEDBACK_ADDRESS),
             Toast.LENGTH_LONG
-        ).show()
+        )
     }
 
     /** Gathers the diagnostics from the running app; the model fields come from the ViewModel.

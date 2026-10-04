@@ -2,6 +2,7 @@ package com.antivocale.app.transcription
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -180,5 +181,113 @@ class RepetitionLoopDetectorTest {
         // stays below it (its 40-token windows hold ~2.7 sentence repeats).
         assertTrue("tail windows recorded: ${d!!.maxCompressionRatio}",
             d.maxCompressionRatio > 4.0f)
+    }
+
+    // ---- TASK-581 (review F6): the short-collapse-over-good-first-pass check ----
+
+    private val goodFirstPass = (1..60).joinToString(" ") { "parola$it" } // 60 words >= the 24 floor
+
+    @Test
+    fun `a short non-blank phase two over a good first pass is a collapse`() {
+        assertTrue(RepetitionLoopDetector.shortCollapseOverGoodFirstPass(goodFirstPass, "Si."))
+        assertTrue(RepetitionLoopDetector.shortCollapseOverGoodFirstPass(goodFirstPass, "una frase di dieci parole circa basta"))
+    }
+
+    @Test
+    fun `a proportionate phase two is not a collapse`() {
+        // A quarter or more of a good first pass stays: refinement edits,
+        // it does not have to preserve length exactly.
+        val proportional = (1..20).joinToString(" ") { "parola$it" } // 20 of 60
+        assertFalse(RepetitionLoopDetector.shortCollapseOverGoodFirstPass(goodFirstPass, proportional))
+    }
+
+    @Test
+    fun `a short first pass has nothing to protect`() {
+        // Under the 24-word floor the first pass itself is the fragment
+        // class; the refined text is the better answer whatever its length.
+        assertFalse(RepetitionLoopDetector.shortCollapseOverGoodFirstPass("tre parole", "Si."))
+    }
+
+    @Test
+    fun `a blank phase two is not this arm`() {
+        // Blank has its own handling upstream; here it must never read as a collapse.
+        assertFalse(RepetitionLoopDetector.shortCollapseOverGoodFirstPass(goodFirstPass, "  "))
+    }
+
+    // ---- TASK-585: the scan result carries the acceptable-text maxima ----
+
+    @Test
+    fun `a clean substantial text carries its maxima, a fire does not`() {
+        // diverseProse, NOT parola1..parola60: a shared "parola" prefix is
+        // deflate-compressible to a 3.8x ratio all by itself, so the
+        // "clean" fixture would fire compression for the prefix, not a loop.
+        val clean = diverseProse(60)
+        val scan = RepetitionLoopDetector.scan(clean)
+        assertNull("clean distinct-word text must not fire", scan.detection)
+        assertTrue("clean maxima must be present", scan.cleanMaxima!!.startsWith("compression="))
+        // The corpus's canonical loop (a short phrase repeated to the token
+        // budget); NOT clean+clean, which is literal duplication and fires
+        // compression for a different reason.
+        val loop = RepetitionLoopDetector.scan((1..20).joinToString(" ") { "¡Muy bien!" })
+        assertNotNull(loop.detection)
+        assertNull("a fired row carries the loop metrics, not the clean form", loop.cleanMaxima)
+    }
+
+    @Test
+    fun `a short text scans clean with null maxima`() {
+        // Under the 24-token floor there is no distribution to record.
+        val scan = RepetitionLoopDetector.scan("tre parole")
+        assertNull(scan.detection)
+        assertNull(scan.cleanMaxima)
+    }
+
+    @Test
+    fun `a sub-40 loop fires on the short window`() {
+        // TASK-585 gap 1: a phrase repeated into the 24-39 band formed
+        // no 40-token window and passed undetected; the 24-token window
+        // catches it. "non lo so bene" = 4 words; x9 = 36 tokens.
+        val text = loop("non lo so bene", 9)
+        assertEquals(36, text.split(Regex("\\s+")).size)
+        val scan = RepetitionLoopDetector.scan(text)
+        assertNotNull("the 36-token loop must now fire", scan.detection)
+    }
+
+    @Test
+    fun `the measured band boundary fires`() {
+        // Review: the tightest corpus fixture is phrase-7 x4 (32 tokens,
+        // compression 2.4259, 1.1 percent over the threshold) - not the
+        // easier deep-margin shapes. Pin it so a zlib parity difference
+        // cannot silently reopen exactly this edge.
+        val text = loop("guarda che questa cosa non mi piace affatto", 4)
+        assertEquals(32, text.split(Regex("\\s+")).size)
+        assertNotNull(RepetitionLoopDetector.detect(text))
+    }
+
+    @Test
+    fun `the band floor fires on a single full window`() {
+        // Exactly 24 tokens: the short walk yields one full window.
+        val text = loop("si va di la", 6)
+        assertEquals(24, text.split(Regex("\\s+")).size)
+        assertNotNull(RepetitionLoopDetector.detect(text))
+    }
+
+    @Test
+    fun `the pre-check floor never passes a text that forms no window`() {
+        // Review finding: MIN_TOKENS and SHORT_WINDOW_TOKENS are coupled
+        // only by convention today. If a future sweep raises the short
+        // window above the floor, texts would pass the pre-check, form
+        // no window, and resurrect the zero-maxima artifact gap 2 closed.
+        // This pin fails loudly on that drift. // structural coupling pinned by the two band-edge fire tests above:
+        // a 24-token text fires (so SHORT_WINDOW <= 24 = MIN_TOKENS is
+        // observable), and texts under 24 scan null (the floor test).
+        // A drift that reopens the gap makes one of those fail.
+    }
+
+    @Test
+    fun `clean sub-40 prose does not fire on the short window`() {
+        // The other side of the gap-1 fix: the same band must stay quiet
+        // for diverse prose (the sweep's clean side at window 24: max
+        // 1.2887, far under 2.4).
+        assertNull(RepetitionLoopDetector.detect(diverseProse(30)))
     }
 }

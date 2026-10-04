@@ -517,12 +517,29 @@ class ExternalModelImporter(
         }
         support.validateImportedModel(metadataValue)
 
+        // TASK-720: streaming flag vs the actual encoder graph (family-routed;
+        // plain zipformers). The wrong combination aborts the process at first
+        // decode, so it dies HERE instead. No second tail read: this modelType
+        // maps to no required keys, so the metadata scan above short-circuited
+        // without reading; this probe is the only 2 MiB read of the file.
+        ModelFamilySupport.forFamily(family)
+            .streamingFlagMismatch(metadataFile, streaming)
+            ?.let { throw IllegalArgumentException(it) }
+
         // TASK-304: cheap header/magic integrity at registration, before the
         // record persists: a wrong or truncated file becomes an import-time
         // error in milliseconds (the same gate the catalog download path
         // already runs) instead of a slow native-load failure later.
         val integrityFindings = DownloadedModelIntegrity.validate(targetDir)
         if (integrityFindings.isNotEmpty()) {
+            // TASK-482 review: a READ failure (listFiles null, transient IO)
+            // must NOT run the import-cleanup delete on a healthy copy; only
+            // content findings abort the import. Unreadable surfaces as a
+            // retryable error and the copy stays for the next attempt.
+            if (integrityFindings.any { it.unreadable }) {
+                throw TransientReadFailureException(
+                    "integrity check could not read the copied files: " + integrityFindings.details())
+            }
             throw IllegalArgumentException("integrity check failed: " + integrityFindings.details())
         }
 
@@ -597,10 +614,18 @@ class ExternalModelImporter(
         return targetDir
     }
 
-    /** Runs [block]; on failure removes [targetDir] so no half-imported dir survives. */
+    /**
+     * Runs [block]; on failure removes [targetDir] so no half-imported dir
+     * survives. TASK-482 review: a TRANSIENT read failure must not delete a
+     * healthy multi-GB copy, so the unreadable signal (IllegalStateException
+     * from the integrity gate) passes through WITHOUT the cleanup delete;
+     * the copy stays for a clean retry.
+     */
     private suspend fun <R> importCleaningUpOnFailure(targetDir: File, block: suspend () -> R): R =
         try {
             block()
+        } catch (e: TransientReadFailureException) {
+            throw e
         } catch (e: Exception) {
             targetDir.deleteRecursively()
             throw e
@@ -666,3 +691,12 @@ internal class SidecarReferenceScanner {
     /** All referenced sidecar names seen so far, in first-seen order. */
     fun names(): Set<String> = found
 }
+
+/**
+ * TASK-482 review: the TRANSIENT-read signal from the import-time integrity
+ * gate. A dedicated type (not IllegalStateException, which any check() can
+ * throw): only this passes through [importCleaningUpOnFailure] without the
+ * delete, keeping the no-heal-on-IO-hiccup contract independent of who else
+ * throws ISE inside the block.
+ */
+class TransientReadFailureException(message: String) : IllegalStateException(message)

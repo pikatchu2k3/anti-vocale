@@ -43,8 +43,12 @@ class ReservedNotificationIdContractTest {
         val base = ResultNotificationFactory.RESULT_NOTIFICATION_ID_BASE
         assertTrue(InferenceService.NOTIFICATION_ID < base)
         assertTrue(CrashQuarantineCheck.NOTIFICATION_ID < base)
+        assertTrue(SuspendedRunRecovery.NOTIFICATION_ID < base)
+        assertTrue(SuspendedRunRecovery.INTERRUPTED_NOTIFICATION_ID < base)
         assertTrue(TranscriptionOrchestrator.MEMORY_MARGIN_WARNING_ID < base)
+        assertTrue(com.antivocale.app.util.MemoryKillStartupCheck.NOTIFICATION_ID < base)
         assertTrue(SubtitleChoiceTimeoutWorker.NOTIFICATION_ID < base)
+        assertTrue(com.antivocale.app.receiver.ModelShortcutActivity.SWITCH_NOTIFICATION_ID < base)
         assertTrue(ExtractionService.NOTIFICATION_ID_BASE + ExtractionService.NOTIFICATION_ID_RANGE - 1 < base)
         assertTrue(ShareReceiverActivity.CHOICE_ID_BAND_BASE + ShareReceiverActivity.CHOICE_ID_BAND_RANGE - 1 < base)
         assertTrue(ShareReceiverActivity.ERROR_ID_BAND_BASE + ShareReceiverActivity.ERROR_ID_BAND_RANGE - 1 < base)
@@ -63,6 +67,10 @@ class ReservedNotificationIdContractTest {
             "inference-foreground" to (InferenceService.NOTIFICATION_ID..InferenceService.NOTIFICATION_ID),
             "crash-quarantine-fixed" to (CrashQuarantineCheck.NOTIFICATION_ID..CrashQuarantineCheck.NOTIFICATION_ID),
             "memory-margin-warning-fixed" to (TranscriptionOrchestrator.MEMORY_MARGIN_WARNING_ID..TranscriptionOrchestrator.MEMORY_MARGIN_WARNING_ID),
+            // TASK-426: the previous-process memory-kill advisory, one above
+            // the margin warning, same documented-headroom rule.
+            "memory-kill-advisory-fixed" to (com.antivocale.app.util.MemoryKillStartupCheck.NOTIFICATION_ID..
+                com.antivocale.app.util.MemoryKillStartupCheck.NOTIFICATION_ID),
             "worker-foreground" to (SubtitleChoiceTimeoutWorker.NOTIFICATION_ID..SubtitleChoiceTimeoutWorker.NOTIFICATION_ID),
             "download-band" to (ExtractionService.NOTIFICATION_ID_BASE until
                 ExtractionService.NOTIFICATION_ID_BASE + ExtractionService.NOTIFICATION_ID_RANGE),
@@ -77,6 +85,14 @@ class ReservedNotificationIdContractTest {
             // future band allocation from colliding while the test passes.
             "history-error" to (com.antivocale.app.ui.viewmodel.LogsViewModel.HISTORY_ERROR_NOTIFICATION_ID..
                 com.antivocale.app.ui.viewmodel.LogsViewModel.HISTORY_ERROR_NOTIFICATION_ID),
+            // TASK-684: the freezer-suspension outcome notification, same
+            // documented-headroom rule.
+            "suspension-recovery-fixed" to (SuspendedRunRecovery.NOTIFICATION_ID..
+                SuspendedRunRecovery.NOTIFICATION_ID),
+            // TASK-684: the generic interrupted-runs summary, one above the
+            // suspension id, same documented-headroom rule.
+            "interrupted-runs-fixed" to (SuspendedRunRecovery.INTERRUPTED_NOTIFICATION_ID..
+                SuspendedRunRecovery.INTERRUPTED_NOTIFICATION_ID),
         )
         for (i in intervals.indices) for (j in i + 1 until intervals.size) {
             val (nameA, a) = intervals[i]

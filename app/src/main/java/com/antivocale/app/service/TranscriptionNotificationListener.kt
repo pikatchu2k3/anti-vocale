@@ -2,8 +2,6 @@ package com.antivocale.app.service
 
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -17,8 +15,8 @@ import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.TimedSegment
-import com.antivocale.app.ui.SettingsFocusRow
 import com.antivocale.app.util.AppNotificationChannel
+import com.antivocale.app.util.ClipboardWriter
 import com.antivocale.app.util.SubtitleFormatter
 import com.antivocale.app.util.TranscriptSignature
 import com.antivocale.app.util.TranscriptFileSaver
@@ -60,6 +58,7 @@ class TranscriptionNotificationListener(
         appContext.getSystemService(NotificationManager::class.java)
     private val resultNotificationFactory = ResultNotificationFactory(appContext)
 
+
     init {
         // Ensure the result channel exists (idempotent). The service also creates it in
         // onCreate; the Worker may run before the service was ever started.
@@ -97,6 +96,12 @@ class TranscriptionNotificationListener(
         // No-op: interim progressive results are not surfaced by the fallback worker.
     }
 
+    override fun onPreviewResult(chunkText: String) {
+        // No-op: like the interim results above, the fallback worker does
+        // not surface preview text on its own notification; the interim row
+        // (updateInterimResult) is this path's preview surface.
+    }
+
     override fun onSuccess(
         taskId: String,
         resultText: String,
@@ -109,7 +114,8 @@ class TranscriptionNotificationListener(
         failedChunkCount: Int,
         streamedWithoutVad: Boolean,
         segments: List<TimedSegment>,
-        refinementOutcome: String?
+        refinementOutcome: String?,
+        repetitionSuspected: Boolean
     ) {
         // The worker has no Tasker reply channel; only the service sends ACTION_TASKER_REPLY.
         // For share requests, mirror the service: auto-copy (if enabled) + post the result.
@@ -118,8 +124,8 @@ class TranscriptionNotificationListener(
                 // TASK-598 review F3: same derivation as the notification Copy action.
                 val annotatedText = SubtitleFormatter.annotatedOrStored(resultText, segments)
                 autoCopyIfEnabled(annotatedText, sourcePackage)
-                saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
-                showResultNotification(annotatedText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, streamedWithoutVad = streamedWithoutVad, segments = segments)
+                val saveFailure = saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
+                showResultNotification(annotatedText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, streamedWithoutVad = streamedWithoutVad, repetitionSuspected = repetitionSuspected, segments = segments, saveFailure = saveFailure)
             }
         }
     }
@@ -153,17 +159,18 @@ class TranscriptionNotificationListener(
         } ?: false
 
         if (globalAutoCopy || perAppAutoCopy) {
-            val clipboardManager = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             // TASK-647: the clipboard is an exit surface on this route too
             // (code review F2: this twin of InferenceService.autoCopyIfEnabled
             // must stay in sync with it, signature included).
             val sig = TranscriptSignature.effectiveSpec(
                 preferencesManager, appContext.getString(R.string.signature_default_text))
-            val clip = ClipData.newPlainText(
+            // TASK-688: the write itself is the shared ClipboardWriter; the
+            // signature above stays here (its single owner).
+            ClipboardWriter.copy(
+                appContext,
                 appContext.getString(R.string.clipboard_label_transcription),
                 TranscriptSignature.apply(transcriptionText, sig.text, sig.position)
             )
-            clipboardManager.setPrimaryClip(clip)
             Log.i(TAG, "Auto-copied transcription (${transcriptionText.length} chars), source=$sourcePackage, global=$globalAutoCopy, perApp=$perAppAutoCopy")
             Handler(Looper.getMainLooper()).post {
                 com.antivocale.app.util.ToastCompat.show(appContext, R.string.copied_to_clipboard)
@@ -176,13 +183,15 @@ class TranscriptionNotificationListener(
     // in sync (the format resolution itself lives in TranscriptFileSaver.saveAuto,
     // the single owner of the export fail-safe).
 
+    /** @return the auto-save failure reason for the result notification
+     *  subtext, or null when saved/not configured (TASK-722, service twin). */
     private suspend fun saveTranscriptToFileIfEnabled(
         text: String,
         sourcePackage: String?,
         segments: List<TimedSegment>,
         failedChunkCount: Int
-    ) {
-        val name = withContext(Dispatchers.IO) {
+    ): String? {
+        val result = withContext(Dispatchers.IO) {
             TranscriptFileSaver.saveAuto(
                 appContext,
                 preferencesManager.outputFolderUri.first(),
@@ -192,12 +201,11 @@ class TranscriptionNotificationListener(
                     preferencesManager, appContext.getString(R.string.signature_default_text)).let { it.text },
                 signaturePosition = TranscriptSignature.effectiveSpec(
                     preferencesManager, appContext.getString(R.string.signature_default_text)).position,
-            
             )
         }
-        if (name != null) {
-            Log.i(TAG, "Saved transcript to output folder: $name")
-        }
+        // TASK-722: the failure reason rides the result notification; the
+        // saver already logged the concrete failing step.
+        return result.failureOrNull()
     }
 
     // ---- Notifications (ported from InferenceService) ----
@@ -211,7 +219,9 @@ class TranscriptionNotificationListener(
         isPartial: Boolean = false,
         failedChunkCount: Int = 0,
         streamedWithoutVad: Boolean = false,
+        repetitionSuspected: Boolean = false,
         segments: List<TimedSegment>,
+        saveFailure: String? = null,
     ) {
         // TASK-598 F5: mirrors InferenceService.showResultNotification (keep
         // the two paths in sync): the notification's whole text derives the
@@ -243,6 +253,8 @@ class TranscriptionNotificationListener(
             failedChunkCount = failedChunkCount,
             notificationId = id,
             streamedWithoutVad = streamedWithoutVad,
+            repetitionSuspected = repetitionSuspected,
+            saveFailureReason = saveFailure,
             firstPostedAt = System.currentTimeMillis()
         )
         val notification = resultNotificationFactory.build(spec, prefs)
@@ -260,60 +272,13 @@ class TranscriptionNotificationListener(
     }
 
     private fun showNoModelNotification() {
-        val openPendingIntent = buildLaunchPendingIntent(navigateToModelTab = true)
-        val notification = NotificationCompat.Builder(appContext, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
-            .setContentTitle(appContext.getString(R.string.notification_no_model_title))
-            .setContentText(appContext.getString(R.string.notification_no_model_message))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openPendingIntent)
-            .setAutoCancel(true)
-            .addAction(
-                android.R.drawable.ic_menu_set_as,
-                appContext.getString(R.string.notification_no_model_action),
-                openPendingIntent
-            )
-            .build()
+        // TASK-328: composition lives in ResultNotificationFactory.
+        val notification = resultNotificationFactory.noModelNotification()
         val id = ResultNotificationFactory.nextNotificationId()
         notificationManager.notify(id, notification)
         Log.i(TAG, "Worker showed no-model notification (id=$id)")
     }
 
-    private fun buildLaunchPendingIntent(
-        navigateToModelTab: Boolean = false,
-        highlightTaskId: String? = null,
-        navigateToSettingsRow: SettingsFocusRow? = null
-    ): PendingIntent {
-        val requestCode = when {
-            highlightTaskId != null ->
-                RC_HASH_BASE + highlightTaskId.hashCode().let { if (it < 0) it.inv() else it }
-            navigateToSettingsRow != null -> RC_LAUNCH_SETTINGS_ROW
-            navigateToModelTab -> RC_LAUNCH_MODEL_TAB
-            else -> RC_LAUNCH_DEFAULT
-        }
-        val openIntent = Intent(appContext, MainActivity::class.java).apply {
-            // In-app deep links (highlight, settings row) hand the extra to the
-            // live activity (onNewIntent) instead of clearing its task.
-            if (highlightTaskId != null || navigateToSettingsRow != null) {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            } else {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            }
-            when {
-                highlightTaskId != null ->
-                    putExtra(MainActivity.EXTRA_HIGHLIGHT_TASK_ID, highlightTaskId)
-                navigateToSettingsRow != null ->
-                    putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, navigateToSettingsRow.name)
-            }
-            if (navigateToModelTab) {
-                putExtra(MainActivity.EXTRA_NAVIGATE_TO_MODEL_TAB, true)
-            }
-        }
-        return PendingIntent.getActivity(
-            appContext, requestCode, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
 
     companion object {
         private const val TAG = "TranscriptionNotificationListener"

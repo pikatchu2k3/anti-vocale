@@ -73,6 +73,8 @@ class ModelFamilySupportTest {
         assertTrue(ModelFamilySupport.isValidModelType(ModelFamily.CTC, "zipformer_ctc"))
         // TASK-635: Meta omnilingual CTC (dedicated sherpa config field).
         assertTrue(ModelFamilySupport.isValidModelType(ModelFamily.CTC, "omnilingual_ctc"))
+        // TASK-667: FunASR paraformer joins the CTC family's modelType set.
+        assertTrue(ModelFamilySupport.isValidModelType(ModelFamily.CTC, "paraformer"))
         assertFalse(ModelFamilySupport.isValidModelType(ModelFamily.CTC, ""))
         assertFalse(ModelFamilySupport.isValidModelType(ModelFamily.CTC, "nemo_transducer"))
 
@@ -247,7 +249,9 @@ class ModelFamilySupportTest {
         val support = ModelFamilySupport.forFamily(ModelFamily.TRANSDUCER)
         assertEquals("encoder.int8.onnx", support.metadataFileRole())
         assertEquals(listOf("vocab_size", "subsampling_factor", "model_type"), support.metadataKeys("nemo_transducer"))
-        assertEquals(listOf("vocab_size"), support.metadataKeys(""))
+        // TASK-667 (device-found): plain zipformers carry no encoder metadata
+        // and their loader reads none; "" demands nothing.
+        assertEquals(emptyList<String>(), support.metadataKeys(""))
     }
 
     @Test
@@ -548,6 +552,18 @@ class ModelFamilySupportTest {
         assertEquals("", config.modelType)
     }
 
+    @Test
+    fun `ctc paraformer model config builds OfflineParaformerModelConfig`() {
+        // TASK-667: the vocaphone paraformer-zh-small export (model+tokens,
+        // CTC file shape) routes through the dedicated sherpa config field;
+        // desktop-decoded clean zh through the identical from_paraformer
+        // config shape on the pinned 1.13.8.
+        val config = ModelFamilySupport.forFamily(ModelFamily.CTC)
+            .buildModelConfig(record(ModelFamily.CTC, modelType = "paraformer"), numThreads = 2, provider = "cpu")
+        assertEquals("/models/external/test-abc123/encoder.int8.onnx", config.paraformer.model)
+        assertEquals("paraformer", config.modelType)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `ctc buildModelConfig rejects unknown modelType`() {
         ModelFamilySupport.forFamily(ModelFamily.CTC)
@@ -643,7 +659,8 @@ class ModelFamilySupportTest {
         // 9.2s EMPTY boundary because the decode path pads every chunk with
         // 1s of silence (rationale on the cap site and RESULTS.md).
         assertEquals(8, ExternalSherpaBackend.familyChunkCapSeconds(ModelFamily.MOONSHINE))
-        assertEquals(30, ExternalSherpaBackend.familyChunkCapSeconds(ModelFamily.WHISPER))
+        // TASK-718: 29, under sherpa's 29.5s whisper decode cap (30 dropped ~0.48s/window).
+        assertEquals(29, ExternalSherpaBackend.familyChunkCapSeconds(ModelFamily.WHISPER))
         assertEquals(10, ExternalSherpaBackend.familyChunkCapSeconds(ModelFamily.CANARY))
         assertNull(ExternalSherpaBackend.familyChunkCapSeconds(ModelFamily.TRANSDUCER))
     }

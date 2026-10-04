@@ -60,7 +60,6 @@
     <string name="logs_empty">No requests yet</string>
     <string name="request_text">Text Request</string>
     <string name="request_audio">Audio Request</string>
-    <string name="logs_recent_requests">Recent Entries (%1$d)</string>
     <string name="logs_clear">Clear</string>
     <string name="logs_delete_entry">Delete log</string>
     <string name="logs_delete_confirmation">Delete this history entry?</string>
@@ -110,7 +109,7 @@
         <item quantity="other">%1$d matches</item>
     </plurals>
     <string name="settings_search_no_results">No matching settings</string>
-    <string name="settings_search_clear">Clear search</string>    <string name="settings_replay_tour">Replay welcome tour</string>
+    <string name="settings_replay_tour">Replay welcome tour</string>
     <string name="tour_done">Got it</string>
     <string name="tour_skip">Skip</string>
     <string name="tour_next">Next</string>
@@ -152,9 +151,9 @@
     <string name="parakeet_download_confirm_title">Download Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">This will download ~%1$dMB. Parakeet is faster but less accurate than Gemma for transcription.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 languages • Recommended</string>
+    <string name="parakeet_smoothquant_description">~862MB • 25 languages • Alternative to the default</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 languages • Lighter fallback</string>
+    <string name="parakeet_stock_description">~640MB • 25 languages • The default: best device-measured quality</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -246,6 +245,7 @@
     <string name="copy_transcription">Copy to Clipboard</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="transcription_streamed_without_vad">Without silence stripping</string>
+    <string name="warning_repetition_suspected">Possible repetition loop in this transcript; check the text</string>
     <string name="audio_received_for_transcription">Audio received for transcription</string>
     <string name="transcription_complete">Transcription complete</string>
     <plurals name="transcription_partial">
@@ -255,6 +255,7 @@
     <string name="transcription_partial_chip">Incomplete</string>
     <string name="transcription_failed">Transcription failed</string>
     <string name="error_model_load">The model file may be corrupt or the wrong format. Try re-downloading it from the Model tab.</string>
+    <string name="error_model_external_corrupt">The files of the imported model are corrupt. Delete it from the Models tab and import it again.</string>
     <string name="error_model_corrupt_healed">Some model files were corrupt, so the app removed them. Open the Models tab and download the model again.</string>
     <string name="error_native">An internal error occurred during transcription. If this persists, try a different model.</string>
     <string name="error_not_initialized">No model is loaded. Open the Model tab to download or select one.</string>
@@ -282,6 +283,8 @@
     <string name="native_crash_go_to_model">Go to Model tab</string>
     <string name="model_load_low_memory">Not enough free memory for this model (%1$s available, about %2$s needed). Memory protection is active: close other apps, use a smaller model, or turn it off in Settings to try anyway.</string>
     <string name="memory_margin_warning_title">Model near this phone\'s memory limit</string>
+    <string name="memory_kill_warning_title">The system closed the app to free memory</string>
+    <string name="memory_kill_warning_body">The last transcription may have been cut short. A smaller model or a shorter audio file needs less memory.</string>
     <string name="memory_margin_warning_body">The model %1$s may be close to what this phone can sustain. The transcription still goes ahead; you can enable memory protection in Settings to block these loads instead.</string>
     <string name="transcribe_low_memory">Not enough free memory to transcribe with this model (about %1$s free, %2$s needed). Memory protection is active: close other apps and try again, or turn it off in Settings to try anyway.</string>
     <string name="external_model_quarantined_title">External model disabled after a crash</string>
@@ -292,6 +295,21 @@
     <string name="external_automation_title">External automation (Tasker)</string>
     <string name="external_automation_description">Lets other apps start transcriptions through the automation API (e.g. Tasker). Off by default.</string>
     <string name="external_automation_disabled">External automation is disabled. Enable it in Settings > Advanced > External automation.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). The
+         Tasker profile XML export was evaluated and rejected for v1: the
+         arg-level .prf.xml schema is undocumented and version-drifted, and
+         a minimal WhatsApp profile cannot work without root because
+         PROCESS_REQUEST rejects paths outside the app staging dir. -->
+    <string name="automation_guide_title">Automation guide</string>
+    <string name="automation_guide_description">Start transcriptions from Tasker or adb by sending a broadcast to the app. Everything stays on-device.</string>
+    <string name="automation_guide_status_on">Automation is on: the app answers request and preload broadcasts.</string>
+    <string name="automation_guide_status_off">Automation is off: every broadcast is rejected until the External automation toggle above is turned on.</string>
+    <string name="automation_guide_show_toggle">Show the toggle</string>
+    <string name="automation_guide_body">Two broadcasts: PROCESS_REQUEST transcribes a text prompt or an audio file staged in the app\'s private folder (sdcard paths are rejected as unreadable), and PRELOAD_MODEL warms the model in advance.</string>
+    <string name="automation_guide_copy">Copy test command</string>
+    <string name="automation_guide_open">Full guide</string>
+    <string name="automation_guide_no_browser">No app found to open the guide</string>
+    <string name="no_app_to_open_link">No app found to open the link</string>
     <!-- TASK-681: LAN offload (the user's own OmniVoice server). The
          disclosure string is the privacy contract: it must keep saying
          exactly where audio goes and that the feature is off by default. -->
@@ -422,6 +440,18 @@
     <string name="settings_feedback_license_value">Apache 2.0</string>
     <string name="settings_feedback_version_title">Version</string>
     <string name="settings_feedback_privacy_note">Nothing is sent without your action; your mail app sends this email.</string>
+    <string name="faq_section_title">Frequently asked questions</string>
+    <string name="faq_full_link">Read the full FAQ on GitHub</string>
+    <string name="faq_card_calls_title">Can it transcribe calls or meetings?</string>
+    <string name="faq_card_calls_body">No. Android blocks recording the call audio of other apps, and anti-vocale only receives what you share to it. For meetings, record the audio with any recorder, then share the file.</string>
+    <string name="faq_card_models_title">Which model should I use?</string>
+    <string name="faq_card_models_body">Parakeet is the default: fast and accurate on clean voice messages. For other languages pick a model that covers yours from the Models tab; bigger models are slower on older phones.</string>
+    <string name="faq_card_queue_title">How does the queue work?</string>
+    <string name="faq_card_queue_body">Requests run one at a time in order of arrival. Share another voice note while one is processing and it waits its turn; the notification shows the queue position.</string>
+    <string name="faq_card_results_title">What do the result details mean?</string>
+    <string name="faq_card_results_body">Each entry keeps the model used, duration, and processing time. Long-press an entry to retry, copy, delete, or report a bad result by email.</string>
+    <string name="faq_card_trouble_title">Something went wrong</string>
+    <string name="faq_card_trouble_body">If a result never arrives, the phone maker may have frozen the app in the background: check the battery-settings advice in the error notification. A failed result keeps a report entry with everything needed to diagnose it.</string>
     <string name="settings_feedback_address_copied">No mail app found. Address copied to clipboard: %1$s</string>
     <string name="settings_feedback_body_version">App version</string>
     <string name="settings_feedback_body_android">Android</string>
@@ -524,10 +554,12 @@
     <!-- Settings Tab - Punctuation (TASK-276) -->
     <string name="punctuation_status">Formatting with AI…</string>
     <string name="punctuation_mode_title">Punctuation and Formatting</string>
-    <string name="punctuation_mode_description">Rewrite unpunctuated transcripts with the Gemma model. Automatic runs only for models that do not punctuate (needs Gemma downloaded).</string>
+    <string name="punctuation_mode_description">Rewrite transcripts with the Gemma model. Automatic runs only for models that do not punctuate; Always also normalizes punctuation; Conservative adds paragraph breaks and never changes the words (needs Gemma downloaded).</string>
     <string name="punctuation_mode_off">Off</string>
     <string name="punctuation_mode_auto">Automatic</string>
     <string name="punctuation_mode_always">Always</string>
+    <!-- TASK-666: the bounded-cleanup mode of the cleanup contract. -->
+    <string name="punctuation_mode_conservative">Conservative (punctuation and paragraphs only)</string>
     <string name="punctuation_prompt_title">Punctuation Prompt</string>
     <string name="punctuation_prompt_description">Instruction for the punctuation pass. Leave empty to use the built-in prompt.</string>
     <string name="punctuation_prompt_placeholder">Built-in prompt</string>
@@ -541,6 +573,8 @@
     <string name="signature_position_append">After the transcript</string>
     <string name="summary_prompt_description">Override the AI summary instruction. Blank uses the built-in two-to-three-sentence prompt.</string>
     <string name="punctuation_default_prompt">Add punctuation and capitalization to this transcript. Keep every word exactly as written; do not fix, translate, add, or remove anything. Output only the corrected transcript.</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">Add punctuation, capitalization and paragraph breaks to this transcript. Do not translate, do not summarize, and do not add, remove, reorder or correct any word: the word sequence must stay exactly as written. Output only the formatted transcript.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">Summarize Long Transcriptions</string>
     <string name="summarize_description">Add a short AI summary to long transcriptions with the Gemma model (needs Gemma downloaded).</string>
@@ -550,6 +584,11 @@
     <string name="vad_description">Remove silent portions from voice messages before transcription. Reduces processing time and improves accuracy.</string>
     <string name="progressive_title">Progressive Display</string>
     <string name="progressive_description">Show text as transcription progresses instead of waiting for the recording to finish.</string>
+    <string name="early_preview_title">Early Preview</string>
+    <string name="early_preview_description">Show a rough first text while a long clip is still decoding. It is replaced when the full first segment finishes.</string>
+    <string name="early_preview_badge">Preview</string>
+    <string name="early_preview_requires_progressive">Requires Progressive Display</string>
+    <string name="auto_save_failed">Auto-save failed (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Default Prompt</string>
@@ -674,6 +713,8 @@
     <string name="notification_channel_inference_description">Background audio transcription processing</string>
     <string name="notification_channel_result">Transcription Result</string>
     <string name="notification_channel_result_description">Finished text and actions</string>
+    <string name="notification_channel_interrupted_runs">Interrupted transcriptions</string>
+    <string name="notification_channel_interrupted_runs_description">The summary posted when runs interrupted by a restart are closed at the next start.</string>
     <string name="notification_cancelling">Cancelling…</string>
 
     <!-- No-model notification -->
@@ -859,6 +900,17 @@
     <string name="benchmark_provider_label">Provider</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">Transcription was interrupted</string>
+    <string name="interrupted_runs_title">Interrupted transcriptions</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d transcription was interrupted before finishing. Check History for details.</item>
+        <item quantity="other">%1$d transcriptions were interrupted before finishing. Check History for details.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d transcription was interrupted before finishing: the app ran out of memory. Try a shorter file, a smaller model, or close other apps. Check History for details.</item>
+        <item quantity="other">%1$d transcriptions were interrupted before finishing: the app ran out of memory. Try a shorter file, a smaller model, or close other apps. Check History for details.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">Interrupted run notifications</string>
+    <string name="interrupted_run_notifications_description">Show a notification when runs interrupted by an app restart are closed at the next start.</string>
     <string name="action_dismiss">Dismiss</string>
 
     <!-- Model Info Overlay -->
@@ -972,11 +1024,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">Omnilingual CTC (1600+ languages, experimental)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">Paraformer (FunASR)</string>
     <string name="external_notice_single_pass">Very long audio may not be processed by large models in one pass. Trim the audio or choose a smaller model.</string>
     <string name="external_notice_family">If transcription crashes with no error, the architecture may be wrong: delete and re-import the model with a different architecture selected.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Models in Share Menu</string>
+    <string name="voice_note_identity_title">Voice note sender recognition</string>
+    <string name="voice_note_identity_description">Labels the History row of a shared voice note with the sender\'s name. WhatsApp only for now. The name appears only if the note\'s notification arrived while this was on, and only when its reported length matches the audio (no guessed names). The name stays on that row even after you turn this off; the waiting list lives in memory only. Requires notification access.</string>
+    <string name="voice_note_identity_grant_hint">Notification access is off. Tap to open the system setting and enable it for this app.</string>
     <string name="share_targets_description">Each downloaded model appears as a separate option in the system menu. Audio is processed by the selected model.</string>
     <string name="advanced_sharing_toggle">Show downloaded models</string>
     <string name="share_targets_models_info">Each downloaded model will appear as an item in the share menu. Deleting a model removes it from the menu.</string>
@@ -1018,6 +1074,9 @@
     <string name="battery_exemption_title">Allow Background Operation</string>
     <string name="battery_exemption_description">The system stopped recognition while the app was in the background. Allow Anti-Vocale to run in the background so recognition is not interrupted.</string>
     <string name="battery_exemption_action">Open setting</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">Transcription suspended</string>
+    <string name="suspension_notification_text">The system suspended the app for %1$s while it was transcribing, so it did not finish.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Import from Hugging Face URL</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1084,6 +1143,25 @@
     <string name="speaker_labels_status">Identifying speakers…</string>
     <string name="speaker_labels_title">Identify speakers</string>
     <string name="speaker_labels_description">Adds a speaker label to each sentence. Downloads ~47 MB of speaker models on first use; adds processing time.</string>
+    <!-- TASK-670 (GH #83): speaker identities. Voiceprints are biometric-adjacent:
+         the wording states plainly that they never leave the phone. -->
+    <string name="speaker_id_title">Speaker identities</string>
+    <string name="speaker_id_description">Compares the voices in your transcriptions with samples you record, and names the speaker labels with the matching name. Samples and voiceprints stay on this phone and never leave it.</string>
+    <string name="speaker_id_empty">No one enrolled yet.</string>
+    <string name="speaker_id_add">Add a voice</string>
+    <string name="speaker_id_sample_seconds">%1$d s sample</string>
+    <string name="speaker_id_replay">Play sample</string>
+    <string name="speaker_id_delete">Delete voice</string>
+    <string name="speaker_id_name_title">Name this voice</string>
+    <string name="speaker_id_name_label">Name</string>
+    <string name="speaker_id_name_confirm">Save</string>
+    <string name="speaker_id_name_cancel">Cancel</string>
+    <string name="speaker_id_error_too_short">Clip too short: pick at least 3 s of that person\'s voice.</string>
+    <string name="speaker_id_error_too_long">Clip too long: keep it under 30 s.</string>
+    <string name="speaker_id_error_decode">Could not read that audio clip.</string>
+    <string name="speaker_id_error_extract">Could not extract a voiceprint from that clip.</string>
+    <string name="speaker_id_error_save">Could not save the identity. Check free storage and try again.</string>
+    <string name="speaker_id_error_model">Speaker model download failed. Check the connection and try again.</string>
     <string name="transcription_not_refined">Not refined (instant preview)</string>
     <string name="transcription_refined_from">Refined from %1$s</string>
     <string name="refinement_title">Two-pass transcription</string>
@@ -1096,7 +1174,36 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">Expects model + tokens files; multi-language (zh/en base)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">cue skipped</item>
-    <item quantity="other">cues skipped</item>
+    <item quantity="one">%1$d cue skipped</item>
+    <item quantity="other">%1$d cues skipped</item>
   </plurals>
+    <string name="speaker_settings_title">Diarization</string>
+    <string name="speaker_settings_summary">Speaker labels and named identities</string>
+    <string name="performance_settings_title">Performance and memory</string>
+    <string name="performance_settings_summary">Threads, provider, memory protection and diagnostics</string>
+    <string name="automation_settings_title">Automation and offload</string>
+    <string name="automation_settings_summary">Tasker receivers, the broadcast guide and LAN offload</string>
+    <string name="settings_group_appearance">Look and feel</string>
+    <string name="settings_group_history">History</string>
+    <string name="settings_group_decoding">Decoding and preview</string>
+    <string name="settings_group_gemma">Text processing (Gemma)</string>
+    <string name="settings_group_output">Output</string>
+    <string name="settings_group_integrations">Integrations</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">Share shortcut icons</string>
+    <string name="share_shortcut_icons_description">Choose a custom image for each share shortcut, or revert to the generated icon</string>
+    <string name="shortcut_icon_choose">Choose image</string>
+    <string name="shortcut_icon_reset">Reset</string>
+    <string name="shortcut_icon_custom">Custom image</string>
+    <string name="shortcut_icon_saved">Shortcut icon saved</string>
+    <string name="shortcut_icon_error">Could not load the image</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">History</string>
+    <string name="shortcut_history_long">Open History</string>
+    <string name="shortcut_models_short">Models</string>
+    <string name="shortcut_models_long">Open Models</string>
+    <string name="model_switched_title">Model switched</string>
+    <string name="model_switched_message">Active model: %1$s</string>
+    <string name="model_switch_failed">Could not switch: the model is not on the device</string>
+    <string name="model_shortcut_switch_label">Switch to %1$s</string>
 </resources>

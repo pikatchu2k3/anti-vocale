@@ -4,8 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ModelFamily
-import com.antivocale.app.data.download.DownloadedModelIntegrity
-import com.antivocale.app.data.download.details
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
@@ -52,7 +50,10 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
          * path can never drift from the loaded engine's behavior.
          */
         fun familyChunkCapSeconds(family: ModelFamily): Int? = when (family) {
-            ModelFamily.WHISPER -> 30
+            // TASK-718: 29, under sherpa's whisper decode cap (2950 frames =
+            // 29.5s); a 30s window silently drops its final ~0.48s, and this
+            // path appends a 1s pad per chunk on top (the 31s case).
+            ModelFamily.WHISPER -> 29
             ModelFamily.CANARY -> 10
             // Moonshine (GH #89): the whisper-sized window guess was WRONG for
             // the 2026-02-27 v2 .ort exports. Measured on the eval harness
@@ -72,6 +73,27 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
             else -> null
         }
 
+        /** TASK-719: option consumed, "true"/"1" enable (the sensevoice.itn
+         *  convention for boolean options). */
+        fun isLowercaseOutput(record: ExternalModelRecord): Boolean =
+            record.options[ModelFamilySupport.OPTION_LOWERCASE_OUTPUT]
+                ?.let { it == "true" || it == "1" } == true
+
+        /**
+         * Locale.ROOT deliberately: lowercase() with the default locale is
+         * wrong under Turkish/Azerbaijani locales (dotless-i), and the flag
+         * describes MODEL output, never the user's locale.
+         */
+        fun applyTextCase(text: String, lowercase: Boolean): String =
+            if (lowercase) text.lowercase(java.util.Locale.ROOT) else text
+
+        /** The token channel of the SAME transform (review round: tokens are a
+         *  second output surface; the cue pipeline and empty-chunk recovery
+         *  rebuild text from them, and SentenceCueBuilder.alignToText demands
+         *  exact char equality, so text and tokens must share one case). */
+        fun casedTokens(tokens: Array<String>, lowercase: Boolean): Array<String> =
+            if (!lowercase) tokens else Array(tokens.size) { applyTextCase(tokens[it], true) }
+
         fun familyForcesVadAlignedChunking(family: ModelFamily): Boolean =
             family == ModelFamily.CANARY
     }
@@ -81,6 +103,14 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
 
     @Volatile private var configuredFamily: ModelFamily? = null
 
+    /** TASK-719: the record's text.lowercase option (models trained on
+     *  uppercase labels, e.g. the Vietnamese zipformer, otherwise ship
+     *  shouting-case transcripts). Read once at init; applied at the result
+     *  boundary so every downstream surface (History, exports,
+     *  notifications, auto-copy) sees the lowered text with no per-site
+     *  edits. */
+    @Volatile private var lowercaseOutput: Boolean = false
+
     /** The loaded external record's family, for memory-policy dispatch (TASK-475). */
     val memoryFamily: ModelFamily? get() = configuredFamily
 
@@ -88,6 +118,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
     @androidx.annotation.VisibleForTesting
     fun configureForTest(record: ExternalModelRecord) {
         configuredFamily = record.family
+        lowercaseOutput = isLowercaseOutput(record)
     }
 
     override val displayName: String get() = "External model"
@@ -133,6 +164,12 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         onIdleUnload = { runCatching { unload() } },
     )
     private val onAutoUnloadCallback = java.util.concurrent.atomic.AtomicReference<(() -> Unit)?>(null)
+
+    /** TASK-462: the language the warm engine was configured with ("" when
+     *  detection), for the residency check a preference change triggers. */
+    override fun getConfiguredLanguage(): String = configuredLanguage
+
+    private var configuredLanguage: String = ""
 
     override suspend fun initialize(context: Context, config: BackendConfig): Result<Unit> {
         val externalConfig = config as? BackendConfig.ExternalConfig
@@ -185,25 +222,57 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                     "family validation failed for ${record.backendId}: ${e.message ?: "no detail provided"}", e))
             }
 
-            // TASK-304: cheap header/magic gate before the native recognizer
-            // is constructed: files corrupted AFTER import (partial
-            // re-download, disk issues) fail here in milliseconds with the
-            // specific finding instead of inside OfflineRecognizer
-            // construction. ~10 8-byte reads per load.
-            // runCatching: an IOException (file vanished mid-load) must degrade
-            // to a ModelLoadError, not escape the sealed Result contract.
-            val integrityFindings = runCatching { DownloadedModelIntegrity.validate(dir) }
-                .getOrElse { e ->
-                    return@withContext Result.failure(TranscriptionException.ModelLoadError(
-                        "integrity check could not read the model files: ${e.message}"))
-                }
-            if (integrityFindings.isNotEmpty()) {
-                val detail = integrityFindings.details()
-                Log.e(TAG, "Integrity gate failed for ${record.backendId}: $detail")
+            // TASK-304/482: the ONE shared load gate before the native
+            // recognizer is constructed: structural header/magic/size checks
+            // for every file (milliseconds, ~10 8-byte reads) plus the
+            // import-time SHA pins (server pin or trust-on-first-use). The
+            // structural half alone cannot see corruption AFTER import that
+            // keeps a valid ONNX first byte (rewritten graph,
+            // truncated-then-refilled); the pin catches it before the native
+            // loader aborts (the GH #88 death class, on the import path).
+            // The verdict is typed ExternalModelCorruptFiles: there is no
+            // catalog re-download for an import, so the orchestrator's
+            // CorruptModelFiles heal must not fire (delete + re-import from
+            // the Models tab is the external heal). ACCEPTED COST: the first
+            // load of each process hashes the whole import (1-2 s/GB,
+            // matching the built-in path's TASK-479 behavior); re-initializes
+            // then cost nothing (verdicts cached per path, stats and pin). A
+            // persisted marker sidecar was weighed and rejected: it widens
+            // the stale-verdict window across boots and lives in dirs the
+            // completeness layer and orphan cleaner watch.
+            val integrityFailures = ModelDirIntegrity.verify(
+                dir, record.files.mapValues { it.value.sha256 })
+            // TASK-482 review: a READ failure is not corruption - the same
+            // split the built-in path uses (ModelDirIntegrity.split), so a
+            // transient IO error must not tell the user to re-import a
+            // healthy model, and the two backends cannot diverge on the
+            // readability semantics.
+            val gateVerdict = ModelDirIntegrity.split(integrityFailures)
+            if (gateVerdict.unreadable.isNotEmpty()) {
+                Log.e(TAG, "External model files unreadable for ${record.backendId}: " +
+                    gateVerdict.unreadable.joinToString { "${it.file.name} (${it.reason})" })
                 return@withContext Result.failure(TranscriptionException.ModelLoadError(
-                    "integrity check failed: $detail. The model files may be corrupt; try re-importing them."))
+                    "could not read the model files: " +
+                        gateVerdict.unreadable.joinToString { "${it.file.name} (${it.reason})" }))
+            }
+            val corrupt = gateVerdict.corrupt
+            if (corrupt.isNotEmpty()) {
+                Log.e(TAG, "Integrity gate failed for ${record.backendId}: " +
+                    corrupt.joinToString { "${it.file.name} (${it.reason})" })
+                // The reasons ride the detail (what the logcat/Tasker surfaces
+                // print from error.message); the localized re-import advice
+                // lives in the orchestrator's message mapping.
+                return@withContext Result.failure(TranscriptionException.ExternalModelCorruptFiles(
+                    "corrupted model files (re-import from the Models tab): " +
+                        corrupt.joinToString { "${it.file.name} (${it.reason})" }))
             }
 
+            // TASK-720 load-time echo of the importer's streaming-flag check:
+            // records persisted before the check still get the mismatch named
+            // instead of the native abort.
+            ModelFamilySupport.forFamily(record.family)
+                .streamingFlagMismatch(File(record.dir, SherpaBackend.CANONICAL_ENCODER), record.streaming)
+                ?.let { return@withContext Result.failure(TranscriptionException.ModelLoadError(it)) }
             // TASK-368: streaming records build the OnlineRecognizer instead. The
             // family restriction was already enforced at import (entry-JSON choke
             // point); this is the defensive second gate before the native load.
@@ -235,13 +304,29 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                     modelDir = record.dir
                     configuredId = record.backendId
                     configuredFamily = record.family
+                    // Streaming externals do not condition on language: the
+                    // residency answer is "auto" (review: leaving the
+                    // previous model's pin here reloaded the engine forever).
+                    configuredLanguage = "auto"
+                    lowercaseOutput = isLowercaseOutput(record)
                     isInitialized = true
                     keepAlive.start()
                     Log.i(TAG, "External backend initialized (streaming): $configuredId")
                     return@withContext Result.success(Unit)
                 }
 
-                val modelConfig = support.buildModelConfig(record, externalConfig.numThreads, externalConfig.provider)
+                val modelConfig = support.buildModelConfig(
+                    record, externalConfig.numThreads, externalConfig.provider,
+                    languageOverride = externalConfig.languageOverride)
+                // Review: the SAME "auto" normalization the built-in applies,
+                // so the residency check compares like with like (a raw record
+                // default like canary's "en" against an "auto" expectation
+                // would re-initialize the engine on EVERY request).
+                configuredLanguage = (
+                    modelConfig.whisper?.language
+                        ?: modelConfig.senseVoice?.language
+                        ?: modelConfig.canary?.srcLang
+                        ?: "").ifBlank { "auto" }
 
                 val recognizerConfig = OfflineRecognizerConfig(
                     modelConfig = modelConfig,
@@ -256,6 +341,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 modelDir = record.dir
                 configuredId = record.backendId
                 configuredFamily = record.family
+                lowercaseOutput = isLowercaseOutput(record)
                 isInitialized = true
                 keepAlive.start()
 
@@ -289,7 +375,11 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
             // deterministically, not left to GC finalization (NemotronStreamingBackend pattern).
             var stream: OfflineStream? = null
             try {
-                // Append 1s of silence to improve final token accuracy (Parakeet pattern).
+                // 1s tail pad, kept deliberately: the pad's effect is
+                // quantization-dependent (parakeet stock-int8 pays 2.5pp for
+                // it, smoothquant GAINS 0.9pp; TASK-715 + 717 A/B), so no
+                // class-wide law removes it for arbitrary external exports.
+                // Per-model measurement decides, when one exists.
                 val silencePad = FloatArray(sampleRate)
                 val padded = samples + silencePad
 
@@ -298,7 +388,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 rec.decode(stream)
 
                 val result = rec.getResult(stream)
-                val transcription = result.text
+                val transcription = applyTextCase(result.text, lowercaseOutput)
                 val detectedLang = TranscriptionResult.normalizedDetectedLanguage(result.lang)
 
                 if (transcription.isBlank()) {
@@ -311,7 +401,8 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                         text = transcription,
                         confidence = confidence,
                         detectedLanguage = detectedLang,
-                        tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, result.durations),
+                        tokens = TimedTokens.fromRecognizer(
+                            casedTokens(result.tokens, lowercaseOutput), result.timestamps, result.durations),
                     ))
                 }
             } catch (e: Exception) {
@@ -342,19 +433,20 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         try {
             stream = rec.createStream()
             stream.acceptWaveform(samples, sampleRate)
-            stream.acceptWaveform(FloatArray(sampleRate), sampleRate) // tail pad, no per-chunk copy
+            stream.acceptWaveform(FloatArray(sampleRate), sampleRate) // streaming flush pad (TASK-715: the streaming verdict was the opposite; without it trailing words are lost)
             while (rec.isReady(stream)) rec.decode(stream)
             stream.inputFinished()
             while (rec.isReady(stream)) rec.decode(stream)
             val result = rec.getResult(stream)
-            val transcription = result.text
+            val transcription = applyTextCase(result.text, lowercaseOutput)
             if (transcription.isBlank()) {
                 return Result.failure(TranscriptionException.NoTranscriptionProduced())
             }
             return Result.success(TranscriptionResult(
                 text = transcription,
                 confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate),
-                tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, FloatArray(0)),
+                tokens = TimedTokens.fromRecognizer(
+                    casedTokens(result.tokens, lowercaseOutput), result.timestamps, FloatArray(0)),
             ))
         } catch (e: Exception) {
             Log.e(TAG, "External streaming transcription failed", e)
@@ -380,10 +472,12 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         recognizer = null
         onlineRecognizer?.release()
         onlineRecognizer = null
+        configuredLanguage = ""
         modelDir = null
         isInitialized = false
         configuredId = PLACEHOLDER_ID
         configuredFamily = null
+        lowercaseOutput = false
         onAutoUnloadCallback.get()?.invoke()
     }
 

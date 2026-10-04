@@ -116,22 +116,38 @@ class BackendRegistryTest {
     }
 
     @Test
-    fun `share aliases are the ShareReceiverActivity ALIAS values and are unique`() {
+    fun `share aliases are the manifest activity-alias values and are unique`() {
         // The OmniVoice backend carries the blank sentinel (TASK-681: no
         // share target, the blank alias is a valid value for it), so it joins
         // the set without a manifest literal.
-        val expectedAliases = setOf(
-            "com.antivocale.app.ShareParakeet",
-            "com.antivocale.app.ShareWhisper",
-            "com.antivocale.app.ShareQwen3",
-            "com.antivocale.app.ShareNemotron",
-            "com.antivocale.app.ShareGigaam",
-            "com.antivocale.app.ShareGemma",
-            "",
-        )
         val aliases = registry.backends.map { it.shareAlias }
-        assertEquals(expectedAliases, aliases.toSet())
         assertEquals(aliases.size, aliases.toSet().size)
+        // TASK-464: the expected set is DERIVED FROM THE MANIFEST on disk
+        // (LauncherIconManifestTest's pattern), not a second hand-drawn
+        // literal list: a manifest alias rename must fail HERE, not at
+        // runtime alias resolution.
+        val manifestAliases = readManifestShareAliases()
+        val expected = manifestAliases + ""
+        assertEquals(
+            "registry share aliases must equal the manifest activity-alias set",
+            expected, aliases.toSet())
+    }
+
+    /** The manifest's activity-alias android:name values, read from disk. */
+    private fun readManifestShareAliases(): Set<String> {
+        val manifest = sequenceOf(File("src/main/AndroidManifest.xml"), File("app/src/main/AndroidManifest.xml"))
+            .firstOrNull { it.exists() }
+            ?: throw IllegalStateException("AndroidManifest.xml not found from ${File(".").absolutePath}")
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        val builder = factory.newDocumentBuilder()
+        val nodes = builder.parse(manifest).getElementsByTagName("activity-alias")
+        return (0 until nodes.length)
+            .map { nodes.item(it) as org.w3c.dom.Element }
+            .mapNotNull { it.getAttribute("android:name").takeIf { name -> name.isNotBlank() } }
+            .map { name -> if (name.startsWith(".")) "com.antivocale.app" + name else name }
+            .filter { name -> name.startsWith("com.antivocale.app.Share") }
+            .filterNot { name -> name.endsWith(".ShareExternal") }
+            .toSet()
     }
 
     @Test
@@ -361,4 +377,34 @@ class BackendRegistryTest {
                 descriptor.punctuatesOutput)
         }
     }
+    /**
+     * TASK-552: the static shortcuts' wire literals, pinned from disk (the
+     * same shape as the manifest-alias pin above): the Models extra must be
+     * the SAME name MainActivity reads, and both entries must target
+     * MainActivity explicitly (a drifted literal navigates nowhere,
+     * silently).
+     */
+    @Test
+    fun `static shortcuts pin the model-tab extra name and the MainActivity target`() {
+        val xml = sequenceOf(File("src/main/res/xml/static_shortcuts.xml"), File("app/src/main/res/xml/static_shortcuts.xml"))
+            .firstOrNull { it.exists() }
+            ?: throw IllegalStateException("static_shortcuts.xml not found from " + File(".").absolutePath)
+        val builder = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+        val nodes = builder.parse(xml).getElementsByTagName("shortcut")
+        val byId = (0 until nodes.length)
+            .map { nodes.item(it) as org.w3c.dom.Element }
+            .associateBy { it.getAttribute("android:shortcutId") }
+        assertEquals(2, byId.size)
+
+        val history = byId.getValue("history")
+        val historyIntent = history.getElementsByTagName("intent").item(0) as org.w3c.dom.Element
+        assertEquals("com.antivocale.app.MainActivity", historyIntent.getAttribute("android:targetClass"))
+
+        val models = byId.getValue("models")
+        val modelsIntent = models.getElementsByTagName("intent").item(0) as org.w3c.dom.Element
+        assertEquals("com.antivocale.app.MainActivity", modelsIntent.getAttribute("android:targetClass"))
+        val extra = models.getElementsByTagName("extra").item(0) as org.w3c.dom.Element
+        assertEquals("navigate_to_model_tab", extra.getAttribute("android:name"))
+    }
 }
+

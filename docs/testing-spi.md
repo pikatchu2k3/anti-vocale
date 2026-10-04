@@ -18,7 +18,7 @@ This SPI is deliberately separate from the production exported receivers (`PROCE
 
 ```text
 Action: com.antivocale.app.TEST_SPI   (string extras, one op per broadcast)
-  op     get | set | records | import | notify_memory_error | help   (missing or unknown op answers with help)
+  op     nav | get | set | records | identity_cache | import | notify_memory_error | clipboard | notifications | help   (missing or unknown op answers with help; nav is receiver-side, TASK-486)
   key    one of the set keys below    (op=set)
   value  the new value                (op=set)
   entry  catalog entry id             (op=set, only for key=sherpa_path)
@@ -29,13 +29,25 @@ memory-failure error notification through the same ResultNotificationFactory
 builder both error surfaces use, so the Open-setting action can be exercised
 on device without engineering a real out-of-memory failure.
 
+`clipboard` (no extras) answers with the primary clip's label and text, so a
+device trial verifies a copy exactly instead of pasting into a field as a
+proxy. Android 10+ lets only the focused app read the clipboard: the app must
+be foreground when the broadcast lands; after a notification-action copy,
+`am start` the app first and then read. A read without focus is denied
+silently and looks like `text: null` with a `note` naming the two possible
+causes; treat that as not verified, not as a failed copy. Long clips are
+capped at 64K chars (`textTruncated: true`).
+
 | Op | Extras | Response |
 |---|---|---|
-| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `subtitleChoiceTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `memoryProtection`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `showTechnicalDetails`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `transcriptExportFormat`, `externalCatalogUrl`, `measuredModelMemory` (TASK-575: read-only key=runs join of the measured load footprints), `demotedBackends` (TASK-675: read-only JSON array of backend ids demoted for silent decodes; a manual re-selection clears an entry), `textScalePreference`, `refinementEnabled`, `speakerLabelsEnabled` |
+| `get` | none | JSON object: `vadEnabled`, `progressiveEnabled`, `punctuationMode`, `punctuationPrompt`, `keepAliveTimeoutMinutes`, `subtitleChoiceTimeoutMinutes`, `threadCount`, `inferenceProvider`, `transcriptionLanguage`, `transcriptionBackend`, `activeModelPath` (saved path of the current backend: the record's `dir` for `external:` ids, the generic preference for `llm`, the keyed sherpa preference for catalog ids), `paths` mapping every catalog id plus `llm` to its saved path (or `null`), plus the remaining user preferences: `summarizeEnabled`, `summaryPrompt`, `autoCopyEnabled`, `memoryProtection`, `compactResultActions`, `advancedSharingEnabled`, `showRetranscribeButton`, `groupLogsByConversation`, `showTechnicalDetails`, `vadAdvisoryDismissed`, `swipeActionMode`, `themePreference`, `themeMode`, `defaultPrompt`, `outputFolderUri` (or `null`), `transcriptExportFormat`, `externalCatalogUrl`, `measuredModelMemory` (TASK-575: read-only key=runs join of the measured load footprints), `demotedBackends` (TASK-675: read-only JSON array of backend ids demoted for silent decodes; a manual re-selection clears an entry), `textScalePreference`, `refinementEnabled`, `speakerLabelsEnabled`, `modelFilterLanguage` (TASK-685: the Models-filter favorite, or `null` when untouched) |
 | `set` | `key`, `value`, plus `entry` for `sherpa_path` | confirmation JSON echoing `key`/`value` (`entry` too when used), or an error object with `error` and the full `supportedKeys` list |
 | `nav` | `dest` | JSON ack echoing the destination, or an error naming the valid tokens. Starts the app and routes to the destination: `tab:history`, `tab:models`, `tab:settings`, `settings:<section>` (transcription, appearance, advanced, feedback: expands and scrolls), `settings:<subpage>` (icon_picker, prompt, per_app, export), `models:import` (opens the community-catalog import dialog). One broadcast replaces the swipe-and-dump slog through Settings (TASK-486). |
-| `import` | `url`, `family` (optional), `model_type` (optional) | JSON with the imported `record` (same shape as `records` elements, plus the derived `backendId`); runs the same url-classifying import the dialog uses (catalog-entry JSON or HuggingFace repo url). Added for the TASK-550 device pass so imports need no UI driving. `family` (TASK-618) optionally overrides the import family by ModelFamily name (URL imports are detect-then-tell: the chooser belongs to the dialog UI, the headless equivalent is this extra); unknown names are rejected without importing. `model_type` carries the CTC subtype the dialog's selector owns (`nemo_ctc`/`zipformer_ctc`/`omnilingual_ctc`; family=CTC cannot succeed without it) |
+| `import` | `url`, `family` (optional), `model_type` (optional) | JSON with the imported `record` (same shape as `records` elements, plus the derived `backendId`); runs the same url-classifying import the dialog uses (catalog-entry JSON or HuggingFace repo url). Added for the TASK-550 device pass so imports need no UI driving. `family` (TASK-618) optionally overrides the import family by ModelFamily name (URL imports are detect-then-tell: the chooser belongs to the dialog UI, the headless equivalent is this extra); unknown names are rejected without importing. `model_type` carries the CTC subtype the dialog's selector owns (`nemo_ctc`/`zipformer_ctc`/`omnilingual_ctc`/`paraformer`; family=CTC cannot succeed without it) |
 | `records` | none | JSON array of the imported external models; each element is the record's persisted JSON plus the derived `backendId`. All records are listed, including dangling ones whose directory no longer exists, because dangling state is precisely what a debugging session needs to see |
+| `notify_memory_error` | none | JSON `{"op":"notify_memory_error","posted":<notificationId>}`; posts the production memory-failure notification (TASK-625 trial tool, see the paragraph above) |
+| `clipboard` | none | JSON `{"op":"clipboard","label":<string or null>,"text":<string or null>}` reading the primary clip (see the paragraph above) |
+| `notifications` | none | JSON `{"op":"notifications","count":N,"items":[{id,channel,actions,title,text}]}` listing THIS app's active notifications (read content here, reserve the shade for visual checks) |
 | `help` | none | the op list, the set keys, the usage line, and the `PROCESS_REQUEST` pointer |
 
 Set keys and value formats:
@@ -45,11 +57,15 @@ Set keys and value formats:
 | `vad` | `saveVadEnabled` | `true` or `false` (strict; anything else is an error) |
 | `refinement_enabled` | `saveRefinementEnabled` | `true` or `false` (GH #43 two-pass toggle) |
 | `speaker_labels_enabled` | `saveSpeakerLabelsEnabled` | `true` or `false` (GH #83 speaker labeling toggle) |
-| `punctuation` | `savePunctuationMode` | `off`, `auto`, `always` (the settings dropdown's exact set; anything else is rejected) |
+| `speaker_id_enabled` | `saveSpeakerIdEnabled` | `true` or `false` (TASK-670 named speaker labels; default off, the privacy gate) |
+| `voice_note_identity_enabled` | `saveVoiceNoteIdentityEnabled` | `true` or `false` (TASK-735 voice-note identity listener gate; default off) |
+| `punctuation` | `savePunctuationMode` | `off`, `auto`, `always`, `conservative` (TASK-666; the dropdown offers off/always/conservative, SPI also accepts the legacy auto; anything else is rejected) |
 | `punctuation_prompt` | `savePunctuationPrompt` | free text, 500-char cap; blank = the localized built-in prompt |
 | `keep_alive` | `saveKeepAliveTimeout` | positive integer (minutes); 0/negative rejected (would silently fall back to the default) |
 | `subtitle_timeout` | `saveSubtitleChoiceTimeoutMinutes` | positive integer (minutes); TASK-515: the subtitles-or-transcribe choice timeout |
 | `progressive` | `saveProgressiveTranscription` | `true` or `false` (strict); gates the interim chunk notifications and the chunk nav (added after the 2026-09-04 session burned six UI taps on this toggle) |
+| `early_preview` | `saveEarlyPreviewEnabled` | `true` or `false` (strict); TASK-186 early preview of the first pipeline chunk's head (default off) |
+| `interrupted_run_notifications` | `saveInterruptedRunNotifications` | `true` or `false`; TASK-684 the generic-interrupted summary notification (default on; the suspended class always notifies) |
 | `threads` | `saveThreadCount` | integer (for example `4`) |
 | `provider` | `saveInferenceProvider` | `auto`, `nnapi`, `cpu` (the settings dropdown's exact set; anything else is rejected because the app would silently run it as CPU) |
 | `backend` | `saveTranscriptionBackend` | a catalog id (`sherpa-onnx`, `whisper`, `qwen3-asr`, `nemotron-streaming`, `gigaam`), `llm`, or `external:<record id>`; unknown ids are rejected without writing |
@@ -76,6 +92,7 @@ Set keys and value formats:
 | `vad_advisory` | `saveVadAdvisoryDismissed` | `true` or `false` (strict); polarity is inverted: `true` = dismissed |
 | `transcript_export_format` | `saveTranscriptExportFormat` | `TXT`, `TXT_TIMED`, `SRT`, or `VTT` (GH #92; the settings dropdown's exact set, anything else rejected) |
 | `language` | `saveTranscriptionLanguage` | BCP-47 tag, `system`, or `auto`; written as given, no validation (the Settings picker normally constrains this to the catalog's languages) |
+| `model_filter_language` | `saveModelFilterLanguage` | ISO 639-1 code (the Models-tab filter dropdown's entries), or blank to record an explicit clear; TASK-685: the first-run seed target, and the untouched (`null`) state is reachable only by a fresh DataStore (the seed's own scene) |
 | `model_path` | `saveModelPath` | path (llm backend's model file) |
 | `sherpa_path` | `saveSherpaModelPath(entry, path)` | path, with `entry=<catalog id>` naming which backend's keyed preference is written |
 | `summarize` | `saveSummarizeEnabled` | `true` or `false` (strict); the opt-in summary pass over long transcripts (added after the 2026-09-08 memory-measurement session found the SPI could not reach it) |

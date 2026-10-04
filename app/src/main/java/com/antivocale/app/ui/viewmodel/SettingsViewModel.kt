@@ -2,6 +2,7 @@ package com.antivocale.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,6 +21,8 @@ import com.antivocale.app.data.ModelDiscovery
 import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.data.ActiveModelRepository
 import com.antivocale.app.data.PerAppPreferencesManager
+import com.antivocale.app.data.ShortcutIconStore
+import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
@@ -27,10 +30,16 @@ import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.InferenceProvider
+import com.antivocale.app.transcription.Language
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.manager.LlmManager
 import com.antivocale.app.transcription.TranscriptionBackendManager
+import com.antivocale.app.transcription.diarization.PendingSpeakerEnrollment
+import com.antivocale.app.transcription.diarization.SpeakerEnrollError
+import com.antivocale.app.transcription.diarization.SpeakerEnroller
+import com.antivocale.app.transcription.diarization.SpeakerIdentity
+import com.antivocale.app.transcription.diarization.SpeakerIdentityStore
 import com.antivocale.app.ui.appearance.LauncherIconManager
 import com.antivocale.app.ui.appearance.LauncherIconVariant
 import com.antivocale.app.ui.theme.ThemeMode
@@ -54,6 +63,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 /**
@@ -79,6 +89,8 @@ class SettingsViewModel @Inject constructor(
     private val llmManager: LlmManager,
     private val shareTargetManager: ShareTargetManager,
     private val shareShortcutManager: ShareShortcutManager,
+    private val backendRegistry: BackendRegistry,
+    private val shortcutIconStore: ShortcutIconStore,
     private val activeModelRepository: ActiveModelRepository,
     private val launcherIconManager: LauncherIconManager,
     // TASK-681: the LAN-offload connection probe runs through the real
@@ -86,7 +98,11 @@ class SettingsViewModel @Inject constructor(
     private val remoteOmnivoiceBackend: com.antivocale.app.transcription.RemoteOmnivoiceBackend,
     // TASK-679: the resident-models memory panel reads through the same
     // recorder that writes the post-OOM breadcrumb.
-    private val oomBreadcrumbRecorder: com.antivocale.app.transcription.OomBreadcrumbRecorder
+    private val oomBreadcrumbRecorder: com.antivocale.app.transcription.OomBreadcrumbRecorder,
+    // TASK-670 (GH #83): the speaker-identity enrollment seam (TASK-670
+    // simplify F2: the pipeline itself lives in SpeakerEnroller).
+    private val speakerEnroller: SpeakerEnroller,
+    private val speakerIdentityStore: SpeakerIdentityStore,
 ) : AndroidViewModel(application) {
 
     companion object {
@@ -103,6 +119,25 @@ class SettingsViewModel @Inject constructor(
      * never run without a Gemma hide behind this flag instead of silently
      * no-oping (TASK-507).
      */
+
+    // TASK-509: ONE warmed preference read at construction (was three
+    // independent runBlocking first() seeds: each a main-thread DataStore read
+    // at ViewModel construction, normally instant via the AppModule cache but
+    // N mutex waits pre-warm-up). A single read serves every seed below.
+    private val warmedPrefs: WarmedPrefs = runBlocking {
+            WarmedPrefs(
+                modelConfigured = !preferencesManager.modelPath.first().isNullOrBlank(),
+                punctuationPrompt = preferencesManager.punctuationPrompt.first(),
+                summaryPrompt = preferencesManager.summaryPrompt.first(),
+        )
+    }
+
+    private data class WarmedPrefs(
+        val modelConfigured: Boolean,
+        val punctuationPrompt: String,
+        val summaryPrompt: String,
+    )
+
     val gemmaConfigured: StateFlow<Boolean> = preferencesManager.modelPath
         .map { !it.isNullOrBlank() }
         .stateIn(
@@ -111,7 +146,7 @@ class SettingsViewModel @Inject constructor(
             // Seeded synchronously from the preference cache (the TASK-485
             // idiom, see currentPunctuationPrompt): a plain false would flash
             // the Gemma rows out for a frame on first Settings open.
-            initialValue = runBlocking { !preferencesManager.modelPath.first().isNullOrBlank() }
+            initialValue = warmedPrefs.modelConfigured
         )
 
     // Keep-alive timeout options in minutes
@@ -216,6 +251,22 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION
         )
 
+    // TASK-186: early preview of the pipeline's first chunk (default off).
+    val earlyPreviewEnabled: StateFlow<Boolean> = preferencesManager.earlyPreviewEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_EARLY_PREVIEW
+        )
+
+    /** TASK-684 (GH #109): the generic-interrupted summary notification toggle. */
+    val interruptedRunNotifications: StateFlow<Boolean> = preferencesManager.interruptedRunNotifications
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS
+        )
+
     // Inference thread count
     val threadCount: StateFlow<Int> = preferencesManager.threadCount
         .stateIn(
@@ -269,7 +320,10 @@ class SettingsViewModel @Inject constructor(
     // ships. At that point normalize the stored value at read time, and
     // return the option the same day.
     val punctuationModeOptions: List<String> =
-        listOf(PunctuationPolicy.PREF_OFF, PunctuationPolicy.PREF_ALWAYS)
+        // TASK-666: derived from the preference vocabulary so a future mode
+        // ships selectable the day MODE_PREFS gains it (AUTO stays hidden:
+        // see the legacy note above).
+        PunctuationPolicy.MODE_PREFS.filter { it != PunctuationPolicy.PREF_AUTO }
     val currentPunctuationMode: StateFlow<String> = preferencesManager.punctuationMode
         .stateIn(
             scope = viewModelScope,
@@ -284,7 +338,7 @@ class SettingsViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = runBlocking { preferencesManager.punctuationPrompt.first() }
+            initialValue = warmedPrefs.punctuationPrompt
         )
 
     /** TASK-483: the summary-pass prompt override; blank = the built-in. */
@@ -292,7 +346,7 @@ class SettingsViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = runBlocking { preferencesManager.summaryPrompt.first() }
+            initialValue = warmedPrefs.summaryPrompt
         )
 
     // TASK-491: welcome-tour state; NOT version-keyed (an update never
@@ -304,8 +358,33 @@ class SettingsViewModel @Inject constructor(
             initialValue = true // fail-closed: never flash the tour on a warm start
         )
 
-    fun setOnboardingCompleted() {
-        viewModelScope.launch { preferencesManager.saveOnboardingCompleted(true) }
+    /**
+     * TASK-491's tour-completion moment, now also the TASK-685 (GH #112)
+     * first-run favorite seed. The interface language becomes the initial
+     * Models-filter favorite when the filter offers it, and only when that
+     * preference is still untouched (null): a replayed tour (Settings row)
+     * and a user-cleared suggestion ("") are both non-null and stay
+     * untouched. The seed writes BEFORE the completion flag: a crash between
+     * the two re-arms the tour, and the re-completion's guard sees the
+     * already-seeded value and skips, so the write is one-shot per install.
+     * The decode-language preference is never written here (TASK-457
+     * no-pin: the untouched path keeps model-side detection).
+     */
+    fun setOnboardingCompleted(
+        interfaceLanguage: String? = LocaleManager.effectiveLocale().language,
+    ) {
+        viewModelScope.launch {
+            // Review R2: the FIRST completion always writes the seed OUTCOME
+            // (the covered language, or "" when the filter offers none), so
+            // null means strictly "tour never completed". The replay hole
+            // closes (a replayed tour after a locale switch cannot silently
+            // filter) and the guard becomes immune to default-value drift.
+            if (preferencesManager.modelFilterLanguage.first() == null) {
+                preferencesManager.saveModelFilterLanguage(
+                    Language.onboardingFavoriteSeed(interfaceLanguage) ?: "")
+            }
+            preferencesManager.saveOnboardingCompleted(true)
+        }
     }
 
     fun replayOnboardingTour() {
@@ -331,10 +410,40 @@ class SettingsViewModel @Inject constructor(
     private val _speakerLabelsEnabled = MutableStateFlow(false)
     val speakerLabelsEnabled: StateFlow<Boolean> = _speakerLabelsEnabled.asStateFlow()
 
+    // TASK-670 (GH #83): named speaker identities. The whole feature is
+    // behind the default-off speakerIdEnabled privacy gate; while it is off
+    // the card and this state have no surface.
+    private val _speakerIdEnabled = MutableStateFlow(PreferencesManager.DEFAULT_SPEAKER_ID_ENABLED)
+    val speakerIdEnabled: StateFlow<Boolean> = _speakerIdEnabled.asStateFlow()
+
+    private val _speakerIdentities = MutableStateFlow<List<SpeakerIdentity>>(emptyList())
+    val speakerIdentities: StateFlow<List<SpeakerIdentity>> = _speakerIdentities.asStateFlow()
+
+    private val _speakerEnrollPending = MutableStateFlow<PendingSpeakerEnrollment?>(null)
+    val speakerEnrollPending: StateFlow<PendingSpeakerEnrollment?> = _speakerEnrollPending.asStateFlow()
+
+    private val _speakerEnrollError = MutableStateFlow<SpeakerEnrollError?>(null)
+    val speakerEnrollError: StateFlow<SpeakerEnrollError?> = _speakerEnrollError.asStateFlow()
+
+    private val _speakerEnrollBusy = MutableStateFlow(false)
+    val speakerEnrollBusy: StateFlow<Boolean> = _speakerEnrollBusy.asStateFlow()
+
     // TASK-336: background-kill detection (cold-start sweep marker rows) for the
     // battery-exemption card. Only re-offered after a NEW interruption.
     private val _backgroundKills = MutableStateFlow(0)
     val backgroundKills: StateFlow<Int> = _backgroundKills.asStateFlow()
+
+    /**
+     * TASK-493: the kill-vulnerable device class (low-RAM), for the
+     * PROACTIVE battery-exemption offer. Read once; the device class is
+     * fixed for the install's lifetime.
+     */
+    val proactiveBatteryExemption: Boolean by lazy {
+        com.antivocale.app.util.proactiveBatteryExemptionOffer(
+            com.antivocale.app.audio.MemoryReadings.isLowRamDevice(getApplication()),
+            com.antivocale.app.audio.MemoryReadings.totalRamBytes(getApplication()),
+        )
+    }
 
     fun refreshBackgroundKills() {
         viewModelScope.launch {
@@ -378,7 +487,9 @@ class SettingsViewModel @Inject constructor(
     fun saveAdvancedSharingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveAdvancedSharingEnabled(enabled)
-            shareTargetManager.setAdvancedSharingEnabled(enabled)
+            // TASK-738 review: the suspend form stays so the alias state has
+            // landed before the shortcut refresh below re-derives the set.
+            shareTargetManager.setAdvancedSharingEnabledNow(enabled)
             // Shortcuts launch the alias components this toggle just enabled or
             // disabled; their eligibility shares the same predicate, so they
             // re-derive here too (TASK-393).
@@ -420,9 +531,24 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED
         )
 
+    /** TASK-735: the voice-note identity listener's app-level gate. */
+    val voiceNoteIdentityEnabled: StateFlow<Boolean> = preferencesManager.voiceNoteIdentityEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED
+        )
+
     fun saveExternalAutomationEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveExternalAutomationEnabled(enabled)
+        }
+    }
+
+    /** TASK-735: see [voiceNoteIdentityEnabled]. */
+    fun saveVoiceNoteIdentityEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveVoiceNoteIdentityEnabled(enabled)
         }
     }
 
@@ -635,6 +761,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesManager.speakerLabelsEnabled.collect { _speakerLabelsEnabled.value = it }
         }
+        // TASK-670: the named-labels privacy gate + the enrolled list.
+        // Review R5: the store is read ONLY when the gate turns true (the
+        // invariant "flag off means nothing touches the voiceprint data"
+        // must hold in code, not just in the card's visibility).
+        viewModelScope.launch {
+            preferencesManager.speakerIdEnabled.collect {
+                _speakerIdEnabled.value = it
+                if (it) refreshSpeakerIdentities()
+            }
+        }
         // TASK-603 F6: availability has TWO inputs, and both are collected:
         // the backend selection (a switch) and the streaming entry's saved
         // path (a bare install writes no backend value, and the backend flow
@@ -812,6 +948,24 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * TASK-186: saves the early-preview preference.
+     */
+    fun saveEarlyPreviewEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveEarlyPreviewEnabled(enabled)
+        }
+    }
+
+    /**
+     * TASK-684: saves the interrupted-run notification preference.
+     */
+    fun saveInterruptedRunNotifications(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveInterruptedRunNotifications(enabled)
+        }
+    }
+
+    /**
      * Saves the transcription language preference.
      */
     fun saveTranscriptionLanguage(language: String) {
@@ -859,6 +1013,74 @@ class SettingsViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save speaker-labels toggle", e)
             }
+        }
+    }
+
+    /**
+     * TASK-670 (GH #83): the file pick's entry. The pipeline (the R4
+     * metadata pre-check, the decode, the bounds, the model download, the
+     * embed) lives in [SpeakerEnroller] since the simplify F2 extraction;
+     * this side keeps the busy/error/pending flows and forwards.
+     */
+    fun enrollSpeakerSample(uri: Uri) {
+        _speakerEnrollError.value = null
+        _speakerEnrollBusy.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                when (val outcome = speakerEnroller.enroll(uri)) {
+                    is SpeakerEnroller.EnrollOutcome.Pending ->
+                        _speakerEnrollPending.value = outcome.sample
+                    is SpeakerEnroller.EnrollOutcome.Failed ->
+                        _speakerEnrollError.value = outcome.error
+                }
+            } finally {
+                _speakerEnrollBusy.value = false
+            }
+        }
+    }
+
+    /**
+     * TASK-670 (GH #83): names and persists the parked sample (voiceprint +
+     * WAV) through the [SpeakerEnroller] seam (simplify F2).
+     */
+    fun confirmSpeakerEnrollment(name: String) {
+        val pending = _speakerEnrollPending.value ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = speakerEnroller.confirm(pending, trimmed)
+            _speakerEnrollPending.value = null
+            when (outcome) {
+                is SpeakerEnroller.ConfirmOutcome.Saved -> refreshSpeakerIdentities()
+                is SpeakerEnroller.ConfirmOutcome.Failed ->
+                    _speakerEnrollError.value = outcome.error
+            }
+        }
+    }
+
+    /** TASK-670: discards the parked sample; nothing was stored yet. */
+    fun cancelSpeakerEnrollment() {
+        _speakerEnrollPending.value = null
+    }
+
+    /** TASK-670: per-person removal (the privacy decision's delete path). */
+    fun deleteSpeakerIdentity(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            speakerIdentityStore.delete(id)
+            refreshSpeakerIdentities()
+        }
+    }
+
+    fun clearSpeakerEnrollError() {
+        _speakerEnrollError.value = null
+    }
+
+    /** TASK-670: the enrollment clip for the row's replay button. */
+    fun speakerSampleFile(id: String): File? = speakerIdentityStore.sampleFile(id)
+
+    private fun refreshSpeakerIdentities() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _speakerIdentities.value = speakerIdentityStore.list()
         }
     }
 
@@ -1213,22 +1435,67 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // TASK-552 review: the DiscoveredModel selectModel is DELETED, not
+    // migrated to ModelActivator: it had no callers (the Settings-tab model
+    // list it served is long gone) and its body carried the GH #23 bug class
+    // (persisting the LLM path while activating the default sherpa backend).
+    // ---- TASK-490: user-chosen share-shortcut icons ----
+
+    /** One share-capable backend row of the icon-pick card. */
+    data class ShareIconBackend(
+        val backendId: String,
+        val label: String,
+        val hasCustomIcon: Boolean,
+    )
+
+    private val _shareIconBackends = MutableStateFlow<List<ShareIconBackend>>(emptyList())
+    val shareIconBackends: StateFlow<List<ShareIconBackend>> = _shareIconBackends.asStateFlow()
+
     /**
-     * Selects a model and saves it to preferences.
+     * Re-derives the card rows: every share-capable backend (registry order,
+     * blank-alias targets skipped: those have no shortcut to icon) plus
+     * whether a pick is currently stored. Labels ride the registry's ONE
+     * display-name derivation (variant-aware: the card says "Whisper Small"
+     * where the shortcut does), and the whole derivation (path read + per-row
+     * file stat) runs on IO.
      */
-    fun selectModel(model: DiscoveredModel) {
+    suspend fun refreshShareIconBackends() = withContext(Dispatchers.IO) {
+        val context = getApplication<Application>()
+        _shareIconBackends.value = backendRegistry.backends
+            .filter { it.shareAlias.isNotBlank() }
+            .map { d ->
+                val path = d.modelPathFlow(preferencesManager).first()
+                val label = com.antivocale.app.transcription.variantAwareDisplayName(context, d, path)
+                    .ifBlank { d.backendId }
+                ShareIconBackend(
+                    backendId = d.backendId,
+                    label = label,
+                    hasCustomIcon = shortcutIconStore.iconFile(d.backendId) != null,
+                )
+            }
+    }
+
+    /**
+     * Copies the gallery pick app-side (TASK-490 AC3: never a URI grant) and
+     * republishes the shortcut set: a pick that never reaches the launcher
+     * is a no-op (review: the pick flow itself must trigger refresh, like
+     * the sharing toggle and the icon-variant switcher do).
+     */
+    fun onShortcutIconPicked(backendId: String, uri: Uri, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            preferencesManager.saveModelPath(model.path)
-            // Switch to LLM backend when selecting an LLM model
-            preferencesManager.saveTranscriptionBackend(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
-            // Refresh the list to update current selection
-            scanAvailableModels()
-            // Update current model display
-            _uiState.update { it.copy(
-                currentModelPath = model.path,
-                currentModelName = model.name
-            )}
+            val saved = shortcutIconStore.save(backendId, uri)
+            refreshShareIconBackends()
+            shareShortcutManager.refresh()
+            onDone(saved)
+        }
+    }
+
+    /** Reverts to the generated family icon and republishes. */
+    fun clearShortcutIcon(backendId: String) {
+        viewModelScope.launch {
+            shortcutIconStore.clear(backendId)
+            refreshShareIconBackends()
+            shareShortcutManager.refresh()
         }
     }
 }
-

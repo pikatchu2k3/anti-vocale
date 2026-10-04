@@ -64,8 +64,15 @@ In `app/build.gradle.kts`:
 - `versionName = "X.Y.Z"`.
 - The per-ABI mapping in `androidComponents.onVariants` derives `base*10 + abiCode`
   (1=armeabi-v7a, 2=arm64-v8a, 4=x86_64). No hardcoding; a version bump does not
-  require editing the mapping. But update the `?: N` fallback literal so a fresh
-  sync still resolves the base code.
+  require editing the mapping: the derivation reads `defaultConfig.versionCode`
+  itself and fails the build when it is unset (TASK-683.2 removed the `?: N`
+  fallback literal, which sat at 44 from the v1.13.0 bump while the base moved
+  to 45 then 46: it kept the preflight check red through two shipped releases,
+  and any consumer resolving the base from it would have emitted the live
+  v1.13.0 codes).
+- The `versionCode = N` literal form is load-bearing: scripts/new-fdroid-version.py,
+  scripts/check-fdroid-release.sh, scripts/release-preflight.sh, and
+  scripts/check-release-version.py all parse it from this file.
 
 Proof: `./gradlew :app:assembleFdroidDebug` succeeds; the per-ABI APKs report the
 expected versionCodes in their filenames.
@@ -263,7 +270,14 @@ run.
 set, and creates the tag, the release, and every asset with ONE `gh release
 create`. That single command is the moment the version becomes public; from it
 on, the recipe's `binary:` URLs all resolve, so the checkupdates bot cannot hit
-a partial release whatever its schedule.
+a partial release whatever its schedule. (Window that remains: GitHub
+publishes the release before the asset uploads finish, and the 2026-09-23
+v1.13.1 bot MR proved fdroid CAN build inside that window: its verifier got a
+404 on `app-fdroid-armeabi-v7a-release.apk` and the MR went red with the
+binary still landing minutes later. If a bot MR comes red with
+"Downloading Binaries ... failed", HEAD-check the three `binary:` URLs first:
+they resolve once uploads settle, and the fix is asking fdroid for a re-run,
+not touching the recipe.)
 
 ```
 scripts/release-create.sh vX.Y.Z --run-id <id> --commit $SHA --notes-file <github-body.md>
@@ -440,6 +454,15 @@ Proof: Play Console shows the new release in review/published.
 
 ## Preflight and verify gates (TASK-335, added after v1.10.0)
 
+Toolchain expectation for the F-Droid build servers (TASK-710, AGP 9 bump):
+the recipe (metadata/com.antivocale.app.yml) is UNCHANGED and pins NO JDK
+line at all - the buildserver image's own JDK is what runs the build.
+fdroidserver resolves the build to the repo wrapper (gradlew-fdroid ->
+our gradlew), which downloads Gradle 9.8.0; that Gradle needs a JDK 17+
+on the image to start (AGP 9.4.1 floor). If a buildserver run ever fails
+at Gradle startup, check the image JDK, not the recipe. The wrapper, not
+the recipe, is the Gradle version carrier.
+
 One command before the pre-tag dispatch and again before publishing:
 
 ```bash
@@ -456,9 +479,11 @@ MANDATORY, not advisory (2026-09-26 lesson): both of that day's release
 failures were preflight-detectable, and preflight had not been run (the
 fallback-literal check was failing on the tree through two shipped releases).
 A FAIL blocks the dispatch or the publish, no exceptions; the script's exit
-code is the verdict. Until the entrypoints chain it themselves (TASK-683.1),
-running it is a manual hard step: no dispatch without a green preflight in
-the same sitting. Note the notes-extraction check legitimately fails on
+code is the verdict. The entrypoints chain it (TASK-683.1, commit f6c232ed):
+release-create.sh runs it as guard 0 and release-fdroid-references.sh prepare
+as phase 0, both refusing on a nonzero exit; a manual run in the same sitting
+remains the hard step only for dispatches issued outside those two scripts.
+Note the notes-extraction check legitimately fails on
 post-release main (the tree is at the next-version SNAPSHOT with no notes
 section yet); at bump time it must be green.
 
@@ -475,7 +500,7 @@ scripts/device-model-matrix.sh --audio <short real speech clip>
 ```
 
 The preflight encodes every failure mode of the v1.10.0 release day:
-version-code derivation and the `?: N` fallback literal; Play release notes
+version-code derivation; Play release notes
 within the 500-char limit (the extractor fails the build on over-length since
 74aa4f2); fastlane changelogs present and within 500 chars (F-Droid limit);
 the sherpa AAR on disk matching the fetch-script version and upstream size;
@@ -487,6 +512,13 @@ F-Droid APK with a different native stack than every other artifact). Since
 in the reference workflow's NDK preinstall map (that day the 1.11.0 blocks
 moved to r28c while the workflow preinstalled only r27c: fdroidserver cannot
 download NDKs in that container, and the reference build died ~40 min in).
+Since 2026-09-28 it also fails on a reintroduced per-ABI `?: N` fallback
+literal and on a missing requireNotNull guard on the base code (TASK-683.2).
+The NDK pin's authoritative form is the recipe's `ndk:` fields
+(https://f-droid.org/docs/Build_Metadata_Reference/#build_ndk); the
+r-string to sdkmanager-revision lookup is the android/ndk wiki
+(https://github.com/android/ndk/wiki: r27c = 27.2.12479018, the exact
+pair the !46215 job logs printed). TASK-609.
 
 ## Dispatch semantics and hard rules (v1.10.0 + 1.10.0-final lessons)
 
@@ -526,12 +558,13 @@ download NDKs in that container, and the reference build died ~40 min in).
   release-event run executed sanity with needs [test, build] and went green
   at 17:14 while the ~3h signing job was still running; until the cut
   procedure cherry-picks workflow-gate commits onto the release branch
-  (TASK-683.5), assume a side-branch cut runs the OLD gates. KNOWN LIMITATION
-  until TASK-683.3 lands: sanity does NOT assert the Build or Publish job
-  results; on 2026-09-26 it showed green beside a failed Publish
-  (run 36262228446) and beside a failed Build with Publish skipped
-  (run 36257611232). Green sanity means "the checks sanity runs passed",
-  never "every job passed": read the run's job list before promoting.
+  (TASK-683.5), assume a side-branch cut runs the OLD gates. The Build and
+  Publish result assertions shipped on main (TASK-683.3, commit f6c232ed):
+  a workflow containing that commit fails loudly beside a failed Build or
+  Publish, and workflows frozen before it (the side-branch caveat above)
+  still lack them. Green sanity always means "the checks sanity runs
+  passed", never "every job passed": read the run's job list before
+  promoting.
 
 ## Play Console manual checklist (per release)
 

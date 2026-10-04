@@ -60,7 +60,6 @@
     <string name="logs_empty">Noch keine Anfragen</string>
     <string name="request_text">Textanfrage</string>
     <string name="request_audio">Audioanfrage</string>
-    <string name="logs_recent_requests">Letzte Einträge (%1$d)</string>
     <string name="logs_clear">Leeren</string>
     <string name="logs_delete_entry">Eintrag löschen</string>
     <string name="logs_delete_confirmation">Diesen Eintrag löschen?</string>
@@ -128,9 +127,9 @@
     <string name="parakeet_download_confirm_title">Parakeet TDT herunterladen?</string>
     <string name="parakeet_download_confirm_message">Dies lädt etwa %1$d MB herunter. Parakeet ist schneller, aber bei Transkriptionen weniger genau als Gemma.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862 MB • 25 Sprachen • Empfohlen</string>
+    <string name="parakeet_smoothquant_description">~862 MB • 25 Sprachen • Alternative zum Standard</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640 MB • 25 Sprachen • Leichterer Fallback</string>
+    <string name="parakeet_stock_description">~640 MB • 25 Sprachen • Standard: beste gemessene Gerätequalität</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -222,6 +221,7 @@
     <string name="copy_transcription">In die Zwischenablage kopieren</string>
     <string name="copied_to_clipboard">In die Zwischenablage kopiert</string>
     <string name="transcription_streamed_without_vad">Ohne Stille-Entfernung</string>
+    <string name="warning_repetition_suspected">Möglicher Wiederholungsloop in dieser Transkription; bitte Text prüfen</string>
     <string name="audio_received_for_transcription">Audio zur Transkription empfangen</string>
     <string name="transcription_complete">Transkription abgeschlossen</string>
     <plurals name="transcription_partial">
@@ -231,6 +231,7 @@
     <string name="transcription_partial_chip">Unvollständig</string>
     <string name="transcription_failed">Transkription fehlgeschlagen</string>
     <string name="error_model_load">Die Modelldatei ist möglicherweise beschädigt oder hat das falsche Format. Lade sie im Tab \"Modell\" erneut herunter.</string>
+    <string name="error_model_external_corrupt">Die Dateien des importierten Modells sind beschädigt. Lösche es im Tab Modelle und importiere es erneut.</string>
     <string name="error_model_corrupt_healed">Einige Modelldateien waren beschädigt und wurden entfernt. Öffne den Tab Modelle und lade das Modell erneut herunter.</string>
     <string name="error_native">Beim Transkribieren ist ein interner Fehler aufgetreten. Falls das öfter passiert, versuche ein anderes Modell.</string>
     <string name="error_not_initialized">Kein Modell geladen. Öffne den Tab \"Modell\", um eines herunterzuladen oder auszuwählen.</string>
@@ -258,6 +259,8 @@
     <string name="native_crash_go_to_model">Zum Tab \"Modell\" gehen</string>
     <string name="model_load_low_memory">Nicht genug freier Speicher für dieses Modell (%1$s verfügbar, etwa %2$s benötigt). Speicherschutz ist aktiv: Schließe andere Apps, verwende ein kleineres Modell oder deaktiviere ihn in den Einstellungen, um es trotzdem zu versuchen.</string>
     <string name="memory_margin_warning_title">Modell nahe am Speicherlimit dieses Telefons</string>
+    <string name="memory_kill_warning_title">Das System hat die App geschlossen, um Speicher freizugeben</string>
+    <string name="memory_kill_warning_body">Die letzte Transkription wurde möglicherweise abgebrochen. Ein kleineres Modell oder eine kürzere Audiodatei braucht weniger Speicher.</string>
     <string name="memory_margin_warning_body">Das Modell %1$s liegt möglicherweise an der Grenze dessen, was dieses Telefon tragen kann. Die Transkription läuft trotzdem; du kannst in den Einstellungen den Speicherschutz aktivieren, um solche Ladevorgänge zu blockieren.</string>
     <string name="transcribe_low_memory">Nicht genug freier Speicher, um mit diesem Modell zu transkribieren (etwa %1$s frei, %2$s benötigt). Speicherschutz ist aktiv: Schließe andere Apps und versuche es erneut oder deaktiviere ihn in den Einstellungen, um es trotzdem zu versuchen.</string>
     <string name="external_model_quarantined_title">Externes Modell nach Absturz deaktiviert</string>
@@ -268,6 +271,29 @@
     <string name="external_automation_title">Externe Automatisierung (Tasker)</string>
     <string name="external_automation_description">Ermöglicht anderen Apps, über die Automatisierungs-API Transkriptionen zu starten (z. B. Tasker). Standardmäßig aus.</string>
     <string name="external_automation_disabled">Externe Automatisierung ist deaktiviert. Aktivieren Sie sie unter Einstellungen > Erweitert > Externe Automatisierung.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">Automatisierungs-Anleitung</string>
+    <string name="automation_guide_description">Transkriptionen über Tasker oder adb starten, indem Sie einen Broadcast an die App senden. Alles bleibt auf dem Gerät.</string>
+    <string name="automation_guide_status_on">Die Automatisierung ist aktiv: die App beantwortet Anfrage- und Vorlade-Broadcasts.</string>
+    <string name="automation_guide_status_off">Die Automatisierung ist aus: jeder Broadcast wird abgelehnt, bis der Schalter für externe Automatisierung oben eingeschaltet ist.</string>
+    <string name="automation_guide_show_toggle">Schalter anzeigen</string>
+    <string name="automation_guide_body">Zwei Broadcasts: PROCESS_REQUEST transkribiert einen Textprompt oder eine Audiodatei, die im privaten Ordner der App bereitliegt (sdcard-Pfade werden als unlesbar abgelehnt), und PRELOAD_MODEL lädt das Modell vorab.</string>
+    <string name="automation_guide_copy">Testbefehl kopieren</string>
+    <string name="automation_guide_open">Vollständige Anleitung</string>
+    <string name="automation_guide_no_browser">Keine App zum Öffnen der Anleitung gefunden</string>
+    <string name="faq_section_title">Häufige Fragen</string>
+    <string name="faq_full_link">Das vollständige FAQ auf GitHub lesen</string>
+    <string name="faq_card_calls_title">Kann es Anrufe oder Meetings transkribieren?</string>
+    <string name="faq_card_calls_body">Nein. Android blockiert die Aufnahme des Anruf-Audios anderer Apps, und anti-vocale erhält nur das, was du teilst. Nimm für Meetings den Ton mit einem Recorder auf und teile die Datei.</string>
+    <string name="faq_card_models_title">Welches Modell soll ich nehmen?</string>
+    <string name="faq_card_models_body">Parakeet ist der Standard: schnell und genau bei sauberen Sprachnachrichten. Für andere Sprachen wähle in der Modell-Registerkarte ein Modell, das deine abdeckt; größere Modelle sind auf älteren Handys langsamer.</string>
+    <string name="faq_card_queue_title">Wie funktioniert die Warteschlange?</string>
+    <string name="faq_card_queue_body">Anfragen laufen einzeln in Ankunftsreihenfolge. Teilst eine weitere Sprachnachricht, während eine läuft, wartet sie; die Benachrichtigung zeigt die Position.</string>
+    <string name="faq_card_results_title">Was bedeuten die Ergebnisdetails?</string>
+    <string name="faq_card_results_body">Jeder Eintrag behält Modell, Dauer und Bearbeitungszeit. Eintrag lange drücken zum Wiederholen, Kopieren, Löschen oder Melden.</string>
+    <string name="faq_card_trouble_title">Etwas ist schiefgelaufen</string>
+    <string name="faq_card_trouble_body">Kommt kein Ergebnis, hat der Hersteller die App im Hintergrund eingefroren: folge dem Akku-Hinweis in der Fehlerbenachrichtigung. Ein fehlgeschlagene Ergebnis behält einen Report-Eintrag mit allen Diagnosedaten.</string>
+    <string name="no_app_to_open_link">Keine App zum Öffnen des Links gefunden</string>
     <string name="remote_omnivoice_name">LAN-Auslagerung (OmniVoice)</string>
     <string name="remote_offload_title">LAN-Auslagerung (experimentell)</string>
     <string name="remote_offload_description">Lagert lange oder schwere Transkriptionen an Ihren eigenen OmniVoice-Server in Ihrem WLAN aus. Wenn aktiviert, wählen Sie ihn im Modell-Tab aus.</string>
@@ -483,10 +509,11 @@
     <!-- Settings Tab - VAD -->
     <string name="punctuation_status">Formatierung mit KI…</string>
     <string name="punctuation_mode_title">Zeichensetzung und Formatierung</string>
-    <string name="punctuation_mode_description">Schreibt Transkripte ohne Zeichensetzung mit dem Gemma-Modell neu. Automatisch nur für Modelle ohne Zeichensetzung (erfordert das heruntergeladene Gemma).</string>
+    <string name="punctuation_mode_description">Transkripte mit dem Gemma-Modell neu formatieren. Automatisch läuft nur für Modelle ohne Zeichensetzung; Immer normalisiert auch die Zeichensetzung; Konservativ fügt Absätze hinzu und ändert nie die Wörter (Gemma muss heruntergeladen sein).</string>
     <string name="punctuation_mode_off">Aus</string>
     <string name="punctuation_mode_auto">Automatisch</string>
     <string name="punctuation_mode_always">Immer</string>
+    <string name="punctuation_mode_conservative">Konservativ (nur Zeichensetzung und Absätze)</string>
     <string name="punctuation_prompt_title">Zeichensetzungs-Prompt</string>
     <string name="punctuation_prompt_description">Anweisung für den Zeichensetzungsschritt. Leer lassen, um den eingebauten Prompt zu verwenden.</string>
     <string name="punctuation_prompt_placeholder">Eingebauter Prompt</string>
@@ -509,6 +536,11 @@
     <string name="vad_description">Entfernt stille Abschnitte aus Sprachnachrichten vor der Transkription. Reduziert die Verarbeitungszeit und verbessert die Genauigkeit.</string>
     <string name="progressive_title">Progressive Anzeige</string>
     <string name="progressive_description">Zeigt den Text schon während der Transkription an, statt auf das Ende der Aufnahme zu warten.</string>
+    <string name="early_preview_title">Frühe Vorschau</string>
+    <string name="early_preview_description">Zeigt schon einen ersten groben Text, während eine lange Aufnahme noch dekodiert wird. Er wird ersetzt, sobald das erste vollständige Segment fertig ist.</string>
+    <string name="early_preview_badge">Vorschau</string>
+    <string name="early_preview_requires_progressive">Benötigt die progressive Anzeige</string>
+    <string name="auto_save_failed">Automatisches Speichern fehlgeschlagen (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Standard-Prompt</string>
@@ -633,6 +665,8 @@
     <string name="notification_channel_inference_description">Audio-Transkription im Hintergrund</string>
     <string name="notification_channel_result">Transkriptionsergebnis</string>
     <string name="notification_channel_result_description">Fertiger Text und Aktionen</string>
+    <string name="notification_channel_interrupted_runs">Unterbrochene Transkriptionen</string>
+    <string name="notification_channel_interrupted_runs_description">Die Zusammenfassung beim nächsten Start, wenn durch einen Neustart unterbrochene Transkriptionen geschlossen werden.</string>
     <string name="notification_cancelling">Wird abgebrochen…</string>
 
     <!-- No-model notification -->
@@ -814,6 +848,17 @@
     <string name="benchmark_provider_label">Anbieter</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">Transkription wurde unterbrochen</string>
+    <string name="interrupted_runs_title">Unterbrochene Transkriptionen</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d Transkription wurde vor dem Abschluss unterbrochen. Details im Verlauf.</item>
+        <item quantity="other">%1$d Transkriptionen wurden vor dem Abschluss unterbrochen. Details im Verlauf.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d Transkription wurde vor dem Abschluss unterbrochen: der App ging der Speicher aus. Versuche es mit einer kürzeren Datei, einem kleineren Modell, oder schließe andere Apps. Details im Verlauf.</item>
+        <item quantity="other">%1$d Transkriptionen wurden vor dem Abschluss unterbrochen: der App ging der Speicher aus. Versuche es mit einer kürzeren Datei, einem kleineren Modell, oder schließe andere Apps. Details im Verlauf.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">Benachrichtigungen für unterbrochene Transkriptionen</string>
+    <string name="interrupted_run_notifications_description">Zeigt eine Benachrichtigung, wenn durch einen App-Neustart unterbrochene Transkriptionen beim nächsten Start geschlossen werden.</string>
     <string name="action_dismiss">Ausblenden</string>
 
     <!-- Model Info Overlay -->
@@ -919,11 +964,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">Omnilinguales CTC (1600+ Sprachen, experimentell)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">Paraformer (FunASR)</string>
     <string name="external_notice_single_pass">Sehr lange Audioaufnahmen können große Modelle in einem Durchlauf überfordern. Kürze das Audio oder wähle ein kleineres Modell.</string>
     <string name="external_notice_family">Wenn die Transkription ohne Fehlermeldung abstürzt, kann die Architektur falsch sein: Lösche das Modell und importiere es mit einer anderen Architektur erneut.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Modelle im Teilen-Menü</string>
+    <string name="voice_note_identity_title">Erkennung des Absenders von Sprachnachrichten</string>
+    <string name="voice_note_identity_description">Trägt den Namen des Absenders in die Verlaufszeile einer geteilten Sprachnachricht ein. Zurzeit nur WhatsApp. Der Name erscheint nur, wenn die Benachrichtigung der Nachricht eintraf, während dies aktiviert war, und nur wenn die gemeldete Länge zum Audio passt (keine geratenen Namen). Der Name bleibt auf der Zeile, auch nachdem du dies ausschaltest; die Warteliste liegt nur im Speicher. Benötigt Benachrichtigungszugriff.</string>
+    <string name="voice_note_identity_grant_hint">Benachrichtigungszugriff ist aus. Tippe, um die Systemeinstellung zu öffnen und ihn für diese App zu aktivieren.</string>
     <string name="share_targets_description">Jedes heruntergeladene Modell erscheint als eigener Eintrag im Systemmenü. Das Audio verarbeitet das ausgewählte Modell.</string>
     <string name="advanced_sharing_toggle">Heruntergeladene Modelle anzeigen</string>
     <string name="share_targets_models_info">Jedes heruntergeladene Modell erscheint als Eintrag im Teilen-Menü. Beim Löschen wird das Modell aus dem Menü entfernt.</string>
@@ -1008,6 +1057,9 @@
     <string name="battery_exemption_title">Hintergrundbetrieb erlauben</string>
     <string name="battery_exemption_description">Das System hat die Erkennung im Hintergrund gestoppt. Erlaube der App den Hintergrundbetrieb, damit Transkriptionen nicht abgebrochen werden.</string>
     <string name="battery_exemption_action">Einstellung \u00f6ffnen</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">Transkription ausgesetzt</string>
+    <string name="suspension_notification_text">Das System hat die App während der Transkription für %1$s ausgesetzt, deshalb wurde sie nicht abgeschlossen.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Über Hugging-Face-URL importieren</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1045,7 +1097,6 @@
         <item quantity="other">%1$d Treffer</item>
     </plurals>
     <string name="settings_search_no_results">Keine passenden Einstellungen</string>
-    <string name="settings_search_clear">Suche löschen</string>
         <string name="partial_transcript_label">Teilweises Transkript</string>
     
     <string name="decoded_of_total">%1$s von %2$s dekodiert</string>
@@ -1073,6 +1124,23 @@
     <string name="speaker_labels_status">Sprecher werden identifiziert…</string>
     <string name="speaker_labels_title">Sprecher erkennen</string>
     <string name="speaker_labels_description">Versieht jeden Satz mit einer Sprecherkennung. Lädt beim ersten Einsatz ca.~47 MB an Modellen herunter; erhöht die Verarbeitungszeit.</string>
+    <string name="speaker_id_title">Sprecher-Identitäten</string>
+    <string name="speaker_id_description">Vergleicht die Stimmen in deinen Transkriptionen mit Proben, die du aufnimmst, und setzt den passenden Namen auf die Sprecher-Schilder. Proben und Stimmabdrücke bleiben ausschließlich auf diesem Telefon und verlassen es nie.</string>
+    <string name="speaker_id_empty">Noch niemand hinterlegt.</string>
+    <string name="speaker_id_add">Stimme hinzufügen</string>
+    <string name="speaker_id_sample_seconds">%1$d s Probe</string>
+    <string name="speaker_id_replay">Probe abspielen</string>
+    <string name="speaker_id_delete">Stimme löschen</string>
+    <string name="speaker_id_name_title">Diese Stimme benennen</string>
+    <string name="speaker_id_name_label">Name</string>
+    <string name="speaker_id_name_confirm">Speichern</string>
+    <string name="speaker_id_name_cancel">Abbrechen</string>
+    <string name="speaker_id_error_too_short">Clip zu kurz: wähle mindestens 3 s der Stimme dieser Person.</string>
+    <string name="speaker_id_error_too_long">Clip zu lang: halte ihn unter 30 s.</string>
+    <string name="speaker_id_error_decode">Dieser Audioclip ließ sich nicht lesen.</string>
+    <string name="speaker_id_error_extract">Aus diesem Clip ließ sich kein Stimmabdruck erstellen.</string>
+    <string name="speaker_id_error_save">Identität konnte nicht gespeichert werden. Prüfe den freien Speicher und versuche es erneut.</string>
+    <string name="speaker_id_error_model">Download des Sprechermodells fehlgeschlagen. Prüfe die Verbindung und versuche es erneut.</string>
     <string name="transcription_not_refined">Nicht verfeinert (Sofortvorschau)</string>
     <string name="transcription_refined_from">Verfeinert von %1$s</string>
     <string name="refinement_title">Zweistufige Transkription</string>
@@ -1091,7 +1159,38 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">Erwartet model + tokens Dateien; mehrsprachig (zh/en base)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">Zeile übersprungen</item>
-    <item quantity="other">Zeilen übersprungen</item>
+    <item quantity="one">%1$d Zeile übersprungen</item>
+    <item quantity="other">%1$d Zeilen übersprungen</item>
   </plurals>
+    <string name="speaker_settings_title">Diarisierung</string>
+    <string name="speaker_settings_summary">Sprecherlabels und benannte Identitäten</string>
+    <string name="performance_settings_title">Leistung und Speicher</string>
+    <string name="performance_settings_summary">Threads, Anbieter, Speicherschutz und Diagnose</string>
+    <string name="automation_settings_title">Automatisierung und Auslagerung</string>
+    <string name="automation_settings_summary">Tasker-Empfänger, Broadcast-Anleitung und LAN-Auslagerung</string>
+    <string name="settings_group_appearance">Erscheinungsbild</string>
+    <string name="settings_group_history">Verlauf</string>
+    <string name="settings_group_decoding">Dekodierung und Vorschau</string>
+    <string name="settings_group_gemma">Textverarbeitung (Gemma)</string>
+    <string name="settings_group_output">Ausgabe</string>
+    <string name="settings_group_integrations">Integrationen</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">Symbole für Teilen-Verknüpfungen</string>
+    <string name="share_shortcut_icons_description">Wähle ein eigenes Bild für jede Teilen-Verknüpfung oder kehre zum generierten Symbol zurück</string>
+    <string name="shortcut_icon_choose">Bild wählen</string>
+    <string name="shortcut_icon_reset">Zurücksetzen</string>
+    <string name="shortcut_icon_custom">Eigenes Bild</string>
+    <string name="shortcut_icon_saved">Verknüpfungssymbol gespeichert</string>
+    <string name="shortcut_icon_error">Bild konnte nicht geladen werden</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">Verlauf</string>
+    <string name="shortcut_history_long">Verlauf öffnen</string>
+    <string name="shortcut_models_short">Modelle</string>
+    <string name="shortcut_models_long">Modelle öffnen</string>
+    <string name="model_switched_title">Modell gewechselt</string>
+    <string name="model_switched_message">Aktives Modell: %1$s</string>
+    <string name="model_switch_failed">Wechsel nicht möglich: das Modell ist nicht auf dem Gerät</string>
+    <string name="model_shortcut_switch_label">Wechseln zu %1$s</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">Füge dieser Transkription Zeichensetzung, Großschreibung und Absatzumbrüche hinzu. Übersetze nicht, fasse nicht zusammen und füge kein Wort hinzu, entferne, ordne oder korrigiere keines: die Wortfolge muss genau wie geschrieben bleiben. Gib nur die formatierte Transkription aus.</string>
 </resources>

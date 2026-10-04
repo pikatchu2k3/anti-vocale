@@ -42,8 +42,7 @@ class SherpaOnnxModelDownloader<V>(
 
         for (fileName in files) {
             val file = File(modelDir, fileName)
-            val fileSidecar = ResumeDownloadHelper.sizeSidecar(file)
-            val storedSize = fileSidecar.takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull()
+            val storedSize = ResumeDownloadHelper.sidecarBytes(file)
 
             if (file.exists() && file.length() > 0) {
                 hasPartialFiles = true
@@ -125,8 +124,7 @@ class SherpaOnnxModelDownloader<V>(
         val filesToDownload = mutableListOf<String>()
         for (fileName in files) {
             val targetFile = File(modelDir, fileName)
-            val sidecar = ResumeDownloadHelper.sizeSidecar(targetFile)
-            val storedTotal = sidecar.takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull()
+            val storedTotal = ResumeDownloadHelper.sidecarBytes(targetFile)
             if (targetFile.exists() && storedTotal != null && targetFile.length() >= storedTotal) {
                 Log.i(config.tag, "File already complete, skipping: $fileName")
                 perFileBytes[fileName] = targetFile.length()
@@ -236,13 +234,27 @@ class SherpaOnnxModelDownloader<V>(
         // TASK-305: structural validation for variants WITHOUT sha256 pins (most of
         // the catalog): truncated/corrupt files die here with an actionable message
         // instead of surfacing as an opaque native model-format error later.
+        // TASK-482 review: a READ failure (listFiles null, EIO on FUSE) must
+        // NOT delete the directory: that would destroy a fully downloaded
+        // multi-hundred-MB model over a transient hiccup. Only content
+        // findings delete; an unreadable dir stays for the next attempt.
         val integrityFindings = DownloadedModelIntegrity.validate(modelDir)
         if (integrityFindings.isNotEmpty()) {
-            val errorMsg = "Downloaded model is incomplete or corrupt: " +
-                integrityFindings.details()
+            val unreadable = integrityFindings.any { it.unreadable }
+            // TASK-482 review: the unreadable arm is NOT corruption and the
+            // dir is deliberately kept; the message must say what happened
+            // (the importer's twin path words it the same way).
+            val errorMsg = if (unreadable)
+                "Integrity check could not read the downloaded files (nothing was deleted; a retry may succeed): " +
+                    integrityFindings.details()
+            else
+                "Downloaded model is incomplete or corrupt: " +
+                    integrityFindings.details()
             Log.e(config.tag, errorMsg)
             onStateChange(DownloadState.Error(errorMsg))
-            modelDir.deleteRecursively()
+            if (!unreadable) {
+                modelDir.deleteRecursively()
+            }
             return@withContext Result.failure(Exception(errorMsg))
         }
 

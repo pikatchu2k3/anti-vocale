@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineMoonshineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineNemoEncDecCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
+import com.k2fsa.sherpa.onnx.OfflineParaformerModelConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
@@ -141,6 +142,14 @@ sealed interface ModelFamilySupport {
     val family: ModelFamily
 
     /**
+     * TASK-462: whether this family's engine conditions on a language pin
+     * (Whisper forced decoding, SenseVoice, Canary). Drives the external
+     * picker's offered set and the override gate; transducer/moonshine
+     * auto-detect and stay false.
+     */
+    val languageCapable: Boolean get() = false
+
+    /**
      * Mel-band count the recognizer's FeatureConfig must carry. Every family
      * ships 80 except CANARY (128: the encoder's feat_dim metadata; feeding 80
      * bands either fails the native load or decodes garbage). Single definition
@@ -180,7 +189,15 @@ sealed interface ModelFamilySupport {
     fun metadataKeys(modelType: String): List<String>
 
     /** Builds the sherpa [OfflineModelConfig] for [record] (engine-side). */
-    fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig
+    fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        // Defaulted HERE only: overrides repeat the plain param (Kotlin
+        // forbids default values in overrides); every existing caller keeps
+        // compiling and ExternalSherpaBackend passes the resolved pin.
+        languageOverride: String = "",
+    ): OfflineModelConfig
 
     /**
      * Optional metadata key (on the file named by [metadataFileRole]) whose VALUE
@@ -190,6 +207,16 @@ sealed interface ModelFamilySupport {
      * [validateImportedModel].
      */
     fun valueMetadataKey(): String? = null
+
+    /**
+     * TASK-720: family-routed streaming-flag validation, fired at the same
+     * two seams as [validateImportedModel] (import registration and the
+     * first native load). Returns the rejection message when the record's
+     * declared streaming flag contradicts the encoder graph, null when the
+     * family has no opinion (default) or the graph is undeterminable
+     * (fail open).
+     */
+    fun streamingFlagMismatch(encoderFile: java.io.File, declaredStreaming: Boolean): String? = null
 
     /**
      * Family-specific value-aware validation of the [valueMetadataKey] value,
@@ -217,11 +244,14 @@ sealed interface ModelFamilySupport {
                 "original vocab_size/subsampling_factor metadata (Parakeet, GigaAM, k2-fsa " +
                 "offline zipformers); exports with 'streaming' in the name are not supported"
 
-        /** Error raised when CTC is imported without an explicit modelType (single definition). */
-        const val CTC_MODEL_TYPE_REQUIRED =
-            "CTC family requires an explicit modelType: nemo_ctc, zipformer_ctc or omnilingual_ctc"
+        /** Error raised when CTC is imported without an explicit modelType (single
+         *  definition, DERIVED from [validModelTypes] so the list can never drift
+         *  from the validation it names). */
+        val CTC_MODEL_TYPE_REQUIRED =
+            "CTC family requires an explicit modelType: " +
+                validModelTypes(ModelFamily.CTC).joinToString(", ")
 
-        /** The two sherpa CTC config subtypes (single definition for the
+        /** The sherpa CTC config subtypes (single definition for the
          *  engine mapping above, the import UI defaults, and the family
          *  chooser; a mismatched pair dies at native load, so every site
          *  must spell these identically). */
@@ -231,12 +261,21 @@ sealed interface ModelFamilySupport {
         /** TASK-635: Meta omnilingual CTC (sherpa OfflineOmnilingualAsrCtcModelConfig). */
         const val CTC_TYPE_OMNILINGUAL = "omnilingual_ctc"
 
+        /** TASK-667: FunASR Paraformer (sherpa OfflineParaformerModelConfig; the
+         *  file shape is CTC's model+tokens, so the CTC family routes it). */
+        const val CTC_TYPE_PARAFORMER = "paraformer"
+
         /** Record option keys, single definition for the supports and the import UI. */
         const val OPTION_WHISPER_LANGUAGE = "whisper.language"
         const val OPTION_WHISPER_TASK = "whisper.task"
         const val OPTION_SENSEVOICE_LANGUAGE = "sensevoice.language"
         const val OPTION_SENSEVOICE_ITN = "sensevoice.itn"
         const val OPTION_CANARY_LANGUAGE = "canary.language"
+
+        /** TASK-719: result-boundary text case (uppercase-trained exports,
+         *  e.g. the Vietnamese zipformer). Consumed by the backend, not the
+         *  engine config: it transforms the decoded text, not the decode. */
+        const val OPTION_LOWERCASE_OUTPUT = "text.lowercase"
 
         /**
          * The family's default record modelType when the caller passes none: null means
@@ -254,7 +293,7 @@ sealed interface ModelFamilySupport {
          *  ONE table both [isValidModelType] and error messages derive from. */
         fun validModelTypes(family: ModelFamily): List<String> = when (family) {
             ModelFamily.TRANSDUCER -> listOf("", "nemo_transducer", "conformer_transducer")
-            ModelFamily.CTC -> listOf("nemo_ctc", "zipformer_ctc", CTC_TYPE_OMNILINGUAL)
+            ModelFamily.CTC -> listOf(CTC_TYPE_NEMO, CTC_TYPE_ZIPFORMER, CTC_TYPE_OMNILINGUAL, CTC_TYPE_PARAFORMER)
             ModelFamily.WHISPER, ModelFamily.SENSE_VOICE, ModelFamily.CANARY,
             ModelFamily.MOONSHINE, ModelFamily.DOLPHIN -> listOf("")
         }
@@ -289,11 +328,22 @@ sealed interface ModelFamilySupport {
  */
 object TransducerSupport : ModelFamilySupport {
 
+    /** TASK-720: the streaming flag contradicted the encoder graph (the flag
+     *  routes to OnlineRecognizer, the graph is the other generation; the
+     *  mismatched load aborts the process at first decode). */
+    internal const val STREAMING_FLAG_MISMATCH =
+        "the entry's streaming flag contradicts the encoder graph " +
+            "(streaming exports carry decode_chunk_len metadata and comment 'streaming zipformer2'; " +
+            "offline ones say 'non-streaming zipformer2'): fix the flag or pick the matching export, " +
+            "the mismatched combination would crash at first transcription"
+
     private const val EXPORT_GUIDANCE =
-        "Known-good manual transducer imports are NeMo-style OFFLINE exports carrying " +
-            "their original vocab_size and subsampling_factor metadata (Parakeet, GigaAM). " +
-            "k2-fsa zipformer releases do not carry that metadata, streaming or not, and " +
-            "streaming NeMo exports need the catalog's streaming entry, not the offline importer."
+        "NeMo-style OFFLINE exports (Parakeet, GigaAM) must carry their original " +
+            "vocab_size and subsampling_factor metadata. k2-fsa offline zipformers " +
+            "import without metadata through the catalog entries (modelType empty); " +
+            "a MANUAL import of one needs the NeMo subtype deselected and still cannot " +
+            "be pre-validated, so prefer the catalog entry. Anything 'streaming' in " +
+            "the name needs the catalog's streaming entry, never the offline importer."
 
     override val family: ModelFamily = ModelFamily.TRANSDUCER
 
@@ -334,14 +384,25 @@ object TransducerSupport : ModelFamilySupport {
 
     override fun valueMetadataKey(): String = "vocab_size"
 
+    override fun streamingFlagMismatch(encoderFile: java.io.File, declaredStreaming: Boolean): String? {
+        // Plain zipformers only (modelType ""); NeMo exports are covered by
+        // the metadata key gate, qwen3 by its own loader contract.
+        val graphStreaming = SherpaBackend.zipformerGraphIsStreaming(encoderFile) ?: return null
+        return if (graphStreaming != declaredStreaming) STREAMING_FLAG_MISMATCH else null
+    }
+
+
     /**
-     * TASK-481 ground truth (encoder metadata dumps, eval/models): NeMo-style
-     * OFFLINE exports (Parakeet, GigaAM) carry vocab_size/subsampling_factor
-     * and import cleanly; k2-fsa zipformer releases carry NO vocab_size,
-     * streaming or not, so both their variants fail the metadata gate; and a
-     * streaming NeMo export carries full metadata but needs the catalog's
-     * streaming entry, not the offline importer. One text for all three
-     * outcomes, at import and at load.
+     * TASK-481 ground truth (encoder metadata dumps, eval/models), updated
+     * by the TASK-667 device finding: NeMo-style OFFLINE exports (Parakeet,
+     * GigaAM) carry vocab_size/subsampling_factor and import cleanly; k2-fsa
+     * OFFLINE zipformers carry no vocab_size and import via the catalog's
+     * modelType-empty entries (the metadata gate no longer rejects them);
+     * a streaming NeMo export carries full metadata but needs the catalog's
+     * streaming entry. One text for all three outcomes, at import and load.
+     * Residual known hole: a STREAMING zipformer authored as a non-streaming
+     * entry imports and dies at first transcription (tracked: pre-native
+     * streaming discriminator).
      */
     override fun metadataFailureGuidance(): String = EXPORT_GUIDANCE
 
@@ -361,7 +422,12 @@ object TransducerSupport : ModelFamilySupport {
         }
     }
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig =
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig =
         OfflineModelConfig(
             transducer = OfflineTransducerModelConfig(
                 encoder = "${record.dir}/${SherpaBackend.CANONICAL_ENCODER}",
@@ -399,6 +465,7 @@ object TransducerSupport : ModelFamilySupport {
  */
 object WhisperSupport : ModelFamilySupport {
     override val family: ModelFamily = ModelFamily.WHISPER
+        override val languageCapable: Boolean = true
 
     override fun requiredRoles(): List<String> = listOf(
         SherpaBackend.CANONICAL_ENCODER,
@@ -425,10 +492,19 @@ object WhisperSupport : ModelFamilySupport {
         }
     }
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
-        val language = record.options[ModelFamilySupport.OPTION_WHISPER_LANGUAGE]
-            ?: record.languages.firstOrNull()
-            ?: ""
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig {
+        // TASK-462: a request-resolved pin wins; the record's option and the
+        // languages list stay the defaults (detection when nothing pins).
+        val language = languageOverride.ifBlank {
+            record.options[ModelFamilySupport.OPTION_WHISPER_LANGUAGE]
+                ?: record.languages.firstOrNull()
+                ?: ""
+        }
         val task = record.options[ModelFamilySupport.OPTION_WHISPER_TASK] ?: "transcribe"
         return OfflineModelConfig(
             whisper = OfflineWhisperModelConfig(
@@ -467,7 +543,11 @@ object WhisperSupport : ModelFamilySupport {
  * Record modelType selects the sherpa config subtype:
  * - "nemo_ctc" -> [OfflineNemoEncDecCtcModelConfig] (NeMo encoder-decoder CTC)
  * - "zipformer_ctc" -> [OfflineZipformerCtcModelConfig] (Zipformer CTC)
- * - any other value -> [IllegalArgumentException] naming valid values.
+ * - "omnilingual_ctc" -> [OfflineOmnilingualAsrCtcModelConfig] (TASK-635)
+ * - "paraformer" -> [OfflineParaformerModelConfig] (TASK-667, FunASR export
+ *   with CTC's model+tokens shape)
+ * - any other value -> [IllegalArgumentException] naming valid values
+ *   (derived from [validModelTypes], the ONE table).
  *
  * Metadata: empty (GigaAM CTC exports carry only "onnx.infer" per desktop
  * validation; no family-identifying metadata to check).
@@ -528,16 +608,21 @@ object CtcSupport : ModelFamilySupport {
 
     override fun metadataKeys(modelType: String): List<String> = emptyList()
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig {
         val encoderPath = "${record.dir}/${SherpaBackend.CANONICAL_ENCODER}"
         return when (record.modelType) {
-            "nemo_ctc" -> OfflineModelConfig(
+            ModelFamilySupport.CTC_TYPE_NEMO -> OfflineModelConfig(
                 nemo = OfflineNemoEncDecCtcModelConfig(model = encoderPath),
-                modelType = "nemo_ctc",
+                modelType = ModelFamilySupport.CTC_TYPE_NEMO,
             ).withCommonTail(record, numThreads, provider)
-            "zipformer_ctc" -> OfflineModelConfig(
+            ModelFamilySupport.CTC_TYPE_ZIPFORMER -> OfflineModelConfig(
                 zipformerCtc = OfflineZipformerCtcModelConfig(model = encoderPath),
-                modelType = "zipformer_ctc",
+                modelType = ModelFamilySupport.CTC_TYPE_ZIPFORMER,
             ).withCommonTail(record, numThreads, provider)
             ModelFamilySupport.CTC_TYPE_OMNILINGUAL -> OfflineModelConfig(
                 // Mirrors sherpa's from_omnilingual_asr_ctc: the dedicated
@@ -545,8 +630,18 @@ object CtcSupport : ModelFamilySupport {
                 omnilingual = OfflineOmnilingualAsrCtcModelConfig(model = encoderPath),
                 modelType = "",
             ).withCommonTail(record, numThreads, provider)
+            ModelFamilySupport.CTC_TYPE_PARAFORMER -> OfflineModelConfig(
+                // TASK-667: dedicated config field like the omnilingual route;
+                // desktop-verified on the paraformer-zh-small export (decodes
+                // clean zh through from_paraformer's identical config shape).
+                // modelType "paraformer" mirrors sherpa's own Kotlin factory
+                // (OfflineRecognizer.kt type-0 preset at v1.13.8).
+                paraformer = OfflineParaformerModelConfig(model = encoderPath),
+                modelType = ModelFamilySupport.CTC_TYPE_PARAFORMER,
+            ).withCommonTail(record, numThreads, provider)
             else -> throw IllegalArgumentException(
-                "unknown CTC modelType \"${record.modelType}\"; valid values: nemo_ctc, zipformer_ctc, omnilingual_ctc")
+                "unknown CTC modelType \"${record.modelType}\"; valid values: " +
+                    ModelFamilySupport.validModelTypes(ModelFamily.CTC).joinToString(", "))
         }
     }
 }
@@ -575,6 +670,7 @@ object SenseVoiceSupport : ModelFamilySupport {
     const val CANONICAL_MODEL = SherpaBackend.CANONICAL_MODEL
 
     override val family: ModelFamily = ModelFamily.SENSE_VOICE
+        override val languageCapable: Boolean = true
 
     override fun requiredRoles(): List<String> = listOf(CANONICAL_MODEL, SherpaBackend.CANONICAL_TOKENS)
 
@@ -588,8 +684,16 @@ object SenseVoiceSupport : ModelFamilySupport {
 
     override fun metadataKeys(modelType: String): List<String> = emptyList()
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
-        val language = record.options[ModelFamilySupport.OPTION_SENSEVOICE_LANGUAGE] ?: ""
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig {
+        // TASK-462: the request pin over the record's own option.
+        val language = languageOverride.ifBlank {
+            record.options[ModelFamilySupport.OPTION_SENSEVOICE_LANGUAGE] ?: ""
+        }
         // "true"/"1" enable ITN; anything else (including absent) leaves it off.
         val itn = record.options[ModelFamilySupport.OPTION_SENSEVOICE_ITN]?.let { it == "true" || it == "1" } ?: false
         return OfflineModelConfig(
@@ -632,6 +736,7 @@ object SenseVoiceSupport : ModelFamilySupport {
  */
 object CanarySupport : ModelFamilySupport {
     override val family: ModelFamily = ModelFamily.CANARY
+        override val languageCapable: Boolean = true
 
     override val featureDim: Int = 128
 
@@ -660,10 +765,18 @@ object CanarySupport : ModelFamilySupport {
         }
     }
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
-        val language = record.options[ModelFamilySupport.OPTION_CANARY_LANGUAGE]
-            ?: record.languages.firstOrNull()
-            ?: "en"
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig {
+        // TASK-462: the request pin over the record's option/languages.
+        val language = languageOverride.ifBlank {
+            record.options[ModelFamilySupport.OPTION_CANARY_LANGUAGE]
+                ?: record.languages.firstOrNull()
+                ?: "en"
+        }
         return OfflineModelConfig(
             canary = OfflineCanaryModelConfig(
                 encoder = "${record.dir}/${SherpaBackend.CANONICAL_ENCODER}",
@@ -826,7 +939,12 @@ object MoonshineSupport : ModelFamilySupport {
 
     override fun metadataKeys(modelType: String): List<String> = emptyList()
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig {
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig {
         // record.files.keys is the import-time truth (the canonical names the
         // import actually wrote): a stray file dropped into the directory
         // later cannot flip the generation under the load check's feet
@@ -882,7 +1000,12 @@ object DolphinSupport : ModelFamilySupport {
 
     override fun metadataKeys(modelType: String): List<String> = emptyList()
 
-    override fun buildModelConfig(record: ExternalModelRecord, numThreads: Int, provider: String): OfflineModelConfig =
+    override fun buildModelConfig(
+        record: ExternalModelRecord,
+        numThreads: Int,
+        provider: String,
+        languageOverride: String,
+    ): OfflineModelConfig =
         OfflineModelConfig(
             dolphin = OfflineDolphinModelConfig(
                 model = "${record.dir}/$CANONICAL_MODEL",

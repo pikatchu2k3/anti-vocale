@@ -23,7 +23,7 @@ The family selector above the import buttons picks the architecture; expected fi
 |---|---|---|---|
 | Transducer (NeMo/Zipformer) | `encoder` + `decoder` + `joiner`/`joint` + tokens `.onnx`/`.txt` | `nemo_transducer` (default), `""` (zipformer), `conformer_transducer` | none |
 | Whisper | `encoder` + `decoder` + tokens | `""` | `whisper.language` (optional; blank = auto, falls back to the record's first language) |
-| CTC | `encoder` + tokens | `nemo_ctc`, `zipformer_ctc` or `omnilingual_ctc` (explicit, no default) | none |
+| CTC | `encoder` + tokens | `nemo_ctc`, `zipformer_ctc`, `omnilingual_ctc` or `paraformer` (explicit, no default) | none |
 | SenseVoice | `model` + tokens | `""` | `sensevoice.language` (optional), `sensevoice.itn` (`true`/`false`) |
 | Canary (NeMo) | `encoder` + `decoder` + tokens | `""` | `canary.language` (one of `en`, `es`, `de`, `fr`; conditions the recognizer itself: there is no auto-detection) |
 | Moonshine | v1: `preprocess` + `encode` + `uncached_decode` + `cached_decode` + tokens; v2: `encoder_model.ort` + `decoder_model_merged.ort` + tokens | `""` | none (English and the 2026 exports; 8 s chunking: the 2026-02-27 v2 .ort exports decode empty above ~9 s of input) |
@@ -107,9 +107,9 @@ A single-model manifest with integrity pins. This is how third parties share a m
 |---|---|---|
 | `name` | yes | Display name shown in the Model tab |
 | `family` | no (default `TRANSDUCER`) | one of `TRANSDUCER`, `WHISPER`, `CTC`, `SENSE_VOICE`, `CANARY`, `MOONSHINE`, `DOLPHIN`; unknown values are rejected |
-| `modelType` | no (family-aware default) | `nemo_transducer` for TRANSDUCER without the field, `""` for WHISPER/SENSE_VOICE/CANARY/MOONSHINE/DOLPHIN; CTC requires `nemo_ctc`, `zipformer_ctc` or `omnilingual_ctc` |
+| `modelType` | no (family-aware default) | `nemo_transducer` for TRANSDUCER without the field, `""` for WHISPER/SENSE_VOICE/CANARY/MOONSHINE/DOLPHIN; CTC requires `nemo_ctc`, `zipformer_ctc`, `omnilingual_ctc` or `paraformer` |
 | `languages` | yes for new entries (`family` present) | normalized ISO codes (`["ar"]`); doubles as the Whisper default language |
-| `options` | no | flat map of family options (`{"whisper.language": "ar"}`) |
+| `options` | no | flat map of options (`{"whisper.language": "ar"}`). Family options condition the engine; one cross-family option transforms the result text: `text.lowercase` (`true`/`1`) lowercases the transcript (TASK-719; exports trained on uppercase labels, e.g. the Vietnamese zipformer) |
 | `streaming` | no (default `false`) | `true` for streaming zipformer transducers (decoded via the online recognizer, whole-clip batch); `TRANSDUCER` family only, rejected otherwise |
 | `files` | yes | Array, one entry per file |
 | `files[].name` | yes | Source file name (role-matched by keyword) |
@@ -155,9 +155,9 @@ Per-family required keys (the app validates these at import time):
 | model_type / family | Required encoder metadata |
 |---|---|
 | `nemo_transducer` | `vocab_size`, `subsampling_factor`, `model_type` |
-| icefall transducer (`""` / zipformer) | `vocab_size` |
+| icefall transducer (`""` / zipformer) | none (k2-fsa exports carry no encoder metadata and the plain-transducer loader reads none; import via the catalog entries, TASK-667) |
 | `whisper` | `model_type` whose value starts with `whisper` (value-checked, not just key-present) |
-| `nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc` (CTC family) | none (structural discriminators only) |
+| `nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc` / `paraformer` (CTC family) | none (structural discriminators only) |
 
 Note `vocab_size` is the vocab file line count MINUS one (sherpa adds the blank).
 `subsampling_factor` comes from the original training config (the NVIDIA conformers
@@ -226,7 +226,7 @@ structurally loadable.
 
 ## Family selector
 
-The dropdown above the import buttons sets the model family (see the table above). Below it, a conditional options panel: Whisper gets an optional language field, SenseVoice an optional language plus an inverse-text-normalization switch, CTC a subtype selector (`nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc`), Canary a fixed four-language field (en/es/de/fr, defaulting to en). Moonshine and Dolphin add no options (their recognizers take none); Moonshine accepts both its generations' file shapes and Dolphin shares SenseVoice's, so a `model`+tokens set without a family-name hint asks which family it is. The languages field applies to all families.
+The dropdown above the import buttons sets the model family (see the table above). Below it, a conditional options panel: Whisper gets an optional language field, SenseVoice an optional language plus an inverse-text-normalization switch, CTC a subtype selector (`nemo_ctc` / `zipformer_ctc` / `omnilingual_ctc` / `paraformer`), Canary a fixed four-language field (en/es/de/fr, defaulting to en). Moonshine and Dolphin add no options (their recognizers take none); Moonshine accepts both its generations' file shapes and Dolphin shares SenseVoice's, so a `model`+tokens set without a family-name hint asks which family it is. The languages field applies to all families.
 
 The URL import dialog also offers autocomplete suggestions from a small bundled catalog (searchable by name or language code, e.g. "ar" or "arabic"); tapping a suggestion fills the URL and the family.
 
@@ -248,12 +248,19 @@ Re-importing the same files (same hashes) updates the existing record instead of
 
 The TRANSDUCER family accepts **offline** (non-streaming) transducer exports that
 carry their **original** ONNX metadata (`vocab_size`, and for NeMo-style exports
-`subsampling_factor` + `model_type`): Parakeet TDT, GigaAM, and k2-fsa offline
-zipformers are the known-good sources. Exports with `streaming` in the name
-(sherpa-onnx streaming zipformers) target the online recognizer and are **not
-supported**: they do not carry the offline metadata this app validates, so the
-import fails with a metadata error naming them. A hand-patched encoder that fakes
-the metadata is rejected too (the vocab_size value must be a plausible positive
-integer). If an
-import fails on missing metadata, pick the non-streaming export from the same
-repository; every sherpa release page ships both.
+`subsampling_factor` + `model_type`): Parakeet TDT and GigaAM are the known-good
+NeMo-style sources. k2-fsa offline zipformers import through the catalog entries
+(modelType empty, no metadata demanded since TASK-667); a manual import of one
+needs the NeMo subtype deselected and cannot be pre-validated, so prefer the
+entry. Exports with `streaming` in the name (sherpa-onnx streaming zipformers)
+target the online recognizer and are **not supported** by the offline path.
+The streaming flag is validated against the encoder graph itself at import
+(since TASK-720: streaming graphs carry `decode_chunk_len` metadata and
+comment `streaming zipformer2`, offline ones say `non-streaming
+zipformer2`); a mismatched entry is rejected naming the fix, instead of
+dying at first transcription. Graphs carrying neither marker pass
+unchecked (fail open). A
+hand-patched encoder that fakes the metadata is rejected too (the vocab_size
+value must be a plausible positive integer). If a manual import fails on
+missing metadata, pick the non-streaming export from the same repository;
+every sherpa release page ships both.

@@ -18,7 +18,7 @@ import com.antivocale.app.ui.onboarding.TourStep
 import com.antivocale.app.ui.onboarding.tourCardModifier
 import com.antivocale.app.ui.onboarding.TourOverlayCard
 import com.antivocale.app.ui.onboarding.tourRevealable
-import com.antivocale.app.ui.tabs.LogsTab
+import com.antivocale.app.ui.tabs.HistoryTab
 import com.antivocale.app.ui.tabs.ModelTab
 import com.antivocale.app.ui.tabs.SettingsTab
 import com.antivocale.app.ui.viewmodel.LogsViewModel
@@ -39,15 +39,16 @@ fun MainScreen(
     startOnModelTab: Boolean = false,
     navigateToModel: Boolean = false,
     isInPipMode: Boolean = false,
-    focusSettingsRow: SettingsFocusRow? = null,
-    onSettingsFocusConsumed: () -> Unit = {}
+    activityDestination: AppNavigation.Destination.SettingsRow? = null,
+    onActivityDestinationConsumed: () -> Unit = {}
 ) {
     // PiP mode: show compact transcription view
     if (isInPipMode) {
-        // A settings-row focus arriving while in PiP cannot run (the tab UI is
-        // not composed): consume it instead of firing a stale jump on PiP exit.
-        LaunchedEffect(focusSettingsRow) {
-            if (focusSettingsRow != null) onSettingsFocusConsumed()
+        // An intent-derived destination arriving while in PiP cannot run (the
+        // tab UI is not composed): consume it instead of firing a stale jump
+        // on PiP exit.
+        LaunchedEffect(activityDestination) {
+            if (activityDestination != null) onActivityDestinationConsumed()
         }
         PipTranscriptionView()
         return
@@ -126,14 +127,6 @@ fun MainScreen(
         }
     }
 
-    // TASK-625: switch to Settings when a row-focus signal arrives; the
-    // target is handed to SettingsTab, which consumes it after delivery.
-    LaunchedEffect(focusSettingsRow) {
-        if (focusSettingsRow != null) {
-            selectedTabIndex = AppNavigation.TAB_INDEX_SETTINGS
-        }
-    }
-
     // TASK-486: the debug-SPI navigation signal (consumed exactly once; the
     // settings-scoped remainder is handed to the Settings tab).
     val testNav by TestNavigation.pending.collectAsState()
@@ -162,6 +155,14 @@ fun MainScreen(
         navigateToTab(AppNavigation.TAB_INDEX_SETTINGS)
         settingsNavRequest = AppNavigation.NavRequest.next(destination)
     }
+    // TASK-625/632: an intent-derived destination (today: the settings-row
+    // deep link) routes through the ONE openSettings rule, which switches
+    // the tab and mints the NavRequest SettingsTab already consumes.
+    LaunchedEffect(activityDestination) {
+        val dest = activityDestination ?: return@LaunchedEffect
+        onActivityDestinationConsumed()
+        openSettings(dest)
+    }
     LaunchedEffect(testNav) {
         val dest = testNav ?: return@LaunchedEffect
         TestNavigation.pending.value = null
@@ -172,7 +173,8 @@ fun MainScreen(
                 modelsNavRequest = AppNavigation.NavRequest.next(parsed)
             }
             is AppNavigation.Destination.SettingsSubPage,
-            is AppNavigation.Destination.SettingsSection -> openSettings(parsed)
+            is AppNavigation.Destination.SettingsSection,
+            is AppNavigation.Destination.SettingsRow -> openSettings(parsed)
             null -> Unit
         }
     }
@@ -183,11 +185,11 @@ fun MainScreen(
         // navigates to the export sub-page (TASK-543), where the folder
         // and format cards live.
         TabItem(R.string.logs_tab, Icons.Default.History) {
-            LogsTab(
+            HistoryTab(
                 highlightTaskId = highlightTaskId,
                 tourRevealState = revealState,
                 // TASK-617: the chip's destination; rationale on the
-                // LogsTab parameter it pairs with.
+                // HistoryTab parameter it pairs with.
                 onOpenLanguageSetting = {
                     openSettings(AppNavigation.Destination.SettingsSection("transcription"))
                 },
@@ -201,7 +203,7 @@ fun MainScreen(
             )
         },
         TabItem(R.string.model_tab, Icons.Default.Storage) { ModelTab(onNavigateToSettings = { navigateToTab(AppNavigation.TAB_INDEX_SETTINGS) }, navRequest = modelsNavRequest, onNavConsumed = { modelsNavRequest = null }) },
-        TabItem(R.string.settings_tab, Icons.Default.Settings) { SettingsTab(onNavigateToModelTab = { navigateToTab(AppNavigation.TAB_INDEX_MODELS) }, navRequest = settingsNavRequest, onNavConsumed = { settingsNavRequest = null }, focusRow = focusSettingsRow, onFocusRowConsumed = onSettingsFocusConsumed) }
+        TabItem(R.string.settings_tab, Icons.Default.Settings) { SettingsTab(onNavigateToModelTab = { navigateToTab(AppNavigation.TAB_INDEX_MODELS) }, navRequest = settingsNavRequest, onNavConsumed = { settingsNavRequest = null }) }
     )
 
     RevealCanvas(
@@ -250,9 +252,12 @@ fun MainScreen(
                 }
             },
         ) {
-            // TASK-565: the removed TopAppBar provided the status-bar inset; without
-                // it the TabRow sits under the status-bar icons.
-                Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            // TASK-565: the removed TopAppBar provided the status-bar inset;
+            // without it the TabRow sits under the status-bar icons.
+            // TASK-605 (f): the horizontal safe-drawing half is NOT folded in
+            // (landscape cutout overlap): needs a device trial before any
+            // inset change; recorded here so it is not forgotten.
+            Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
                 // TASK-565 (maintainer): the app-name bar is gone. The
                 // launcher, recents, and Settings > About carry the name;
                 // the TabRow says where you are. The freed space is where

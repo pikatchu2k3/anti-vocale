@@ -63,7 +63,6 @@
     <string name="logs_empty">Brak żądań</string>
     <string name="request_text">Żądanie tekstowe</string>
     <string name="request_audio">Żądanie audio</string>
-    <string name="logs_recent_requests">Ostatnie wpisy (%1$d)</string>
     <string name="logs_clear">Wyczyść</string>
     <string name="logs_delete_entry">Usuń wpis</string>
     <string name="logs_delete_confirmation">Usunąć ten wpis historii?</string>
@@ -151,9 +150,9 @@
     <string name="parakeet_download_confirm_title">Pobrać Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">To pobierze ok. %1$dMB. Parakeet jest szybszy, ale mniej dokładny niż Gemma w transkrypcji.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 języków • Zalecany</string>
+    <string name="parakeet_smoothquant_description">~862MB • 25 języków • Alternatywa dla domyślnego</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 języków • Lżejszy zapasowy</string>
+    <string name="parakeet_stock_description">~640MB • 25 języków • Domyślny: najlepsza zmierzona jakość na urządzeniu</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -245,6 +244,7 @@
     <string name="copy_transcription">Kopiuj do schowka</string>
     <string name="copied_to_clipboard">Skopiowano do schowka</string>
     <string name="transcription_streamed_without_vad">Bez usuwania ciszy</string>
+    <string name="warning_repetition_suspected">Możliwa pętla powtórzeń w tej transkrypcji; sprawdź tekst</string>
     <string name="audio_received_for_transcription">Otrzymano audio do transkrypcji</string>
     <string name="transcription_complete">Transkrypcja ukończona</string>
     <plurals name="transcription_partial">
@@ -256,6 +256,7 @@
     <string name="transcription_partial_chip">Niekompletna</string>
     <string name="transcription_failed">Transkrypcja nie powiodła się</string>
     <string name="error_model_load">Plik modelu może być uszkodzony lub w złym formacie. Spróbuj pobrać go ponownie z karty Model.</string>
+    <string name="error_model_external_corrupt">Pliki zaimportowanego modelu są uszkodzone. Usuń go w zakładce Modele i zaimportuj ponownie.</string>
     <string name="error_model_corrupt_healed">Niektóre pliki modelu były uszkodzone i zostały usunięte. Otwórz zakładkę Modele i pobierz model ponownie.</string>
     <string name="error_native">Wystąpił błąd wewnętrzny podczas transkrypcji. Jeśli się powtarza, spróbuj innego modelu.</string>
     <string name="error_not_initialized">Nie wczytano żadnego modelu. Otwórz kartę Model, aby pobrać lub wybrać model.</string>
@@ -283,6 +284,8 @@
     <string name="native_crash_go_to_model">Przejdź do karty Model</string>
     <string name="model_load_low_memory">Za mało wolnej pamięci dla tego modelu (dostępne %1$s, potrzeba ok. %2$s). Ochrona pamięci jest aktywna: zamknij inne aplikacje, użyj mniejszego modelu albo wyłącz ją w Ustawieniach, aby spróbować mimo to.</string>
     <string name="memory_margin_warning_title">Model blisko limitu pamięci tego telefonu</string>
+    <string name="memory_kill_warning_title">System zamknął aplikację, aby zwolnić pamięć</string>
+    <string name="memory_kill_warning_body">Ostatnia transkrypcja mogła zostać przerwana. Mniejszy model lub krótszy plik audio potrzebuje mniej pamięci.</string>
     <string name="memory_margin_warning_body">Model %1$s może być blisko granicy możliwości tego telefonu. Transkrypcja i tak zostanie wykonana; możesz włączyć ochronę pamięci w Ustawieniach, aby blokować takie wczytywanie.</string>
     <string name="transcribe_low_memory">Za mało wolnej pamięci, aby transkrybować tym modelem (około %1$s wolne, wymagane %2$s). Ochrona pamięci jest aktywna: zamknij inne aplikacje i spróbuj ponownie albo wyłącz ją w ustawieniach, aby spróbować mimo to.</string>
     <string name="external_model_quarantined_title">Model zewnętrzny wyłączony po awarii</string>
@@ -293,6 +296,29 @@
     <string name="external_automation_title">Automatyzacja zewnętrzna (Tasker)</string>
     <string name="external_automation_description">Pozwala innym aplikacjom rozpoczynać transkrypcje przez API automatyzacji (np. Tasker). Domyślnie wyłączona.</string>
     <string name="external_automation_disabled">Automatyzacja zewnętrzna jest wyłączona. Włącz ją w Ustawienia > Zaawansowane > Automatyzacja zewnętrzna.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">Przewodnik automatyzacji</string>
+    <string name="automation_guide_description">Uruchamiaj transkrypcje z Taskera lub adb, wysyłając broadcast do aplikacji. Wszystko dzieje się na urządzeniu.</string>
+    <string name="automation_guide_status_on">Automatyzacja jest włączona: aplikacja odpowiada na broadcasty żądań i wstępnego ładowania.</string>
+    <string name="automation_guide_status_off">Automatyzacja jest wyłączona: każdy broadcast jest odrzucany, dopóki nie włączysz przełącznika automatyzacji zewnętrznej powyżej.</string>
+    <string name="automation_guide_show_toggle">Pokaż przełącznik</string>
+    <string name="automation_guide_body">Dwa broadcasty: PROCESS_REQUEST transkrybuje zachętę tekstową albo plik audio przygotowany w prywatnym folderze aplikacji (ścieżki na karcie sd są odrzucane jako nieczytelne), a PRELOAD_MODEL wcześniej ładuje model.</string>
+    <string name="automation_guide_copy">Skopiuj polecenie testowe</string>
+    <string name="automation_guide_open">Pełny przewodnik</string>
+    <string name="automation_guide_no_browser">Nie znaleziono aplikacji do otwarcia przewodnika</string>
+    <string name="faq_section_title">Częste pytania</string>
+    <string name="faq_full_link">Przeczytaj pełne FAQ na GitHubie</string>
+    <string name="faq_card_calls_title">Czy transkrybuje rozmowy lub spotkania?</string>
+    <string name="faq_card_calls_body">Nie. Android blokuje nagrywanie dźwięku rozmów innych aplikacji, a anti-vocale dostaje tylko to, czym się podzielisz. Na spotkania nagraj dźwięk i udostępnij plik.</string>
+    <string name="faq_card_models_title">Który model wybrać?</string>
+    <string name="faq_card_models_body">Parakeet jest domyślny: szybki i dokładny na czystych wiadomościach głosowych. Inne języki wybierz w zakładce Modele; duże modele są wolniejsze na starszych telefonach.</string>
+    <string name="faq_card_queue_title">Jak działa kolejka?</string>
+    <string name="faq_card_queue_body">Zadania lecą po kolei wg nadejścia; powiadomienie pokazuje pozycję.</string>
+    <string name="faq_card_results_title">Co znaczą szczegóły wyniku?</string>
+    <string name="faq_card_results_body">Każdy wpis przechowuje model, czas trwania i przetwarzania. Przytrzymaj wpis, by powtórzyć, skopiować, usunąć lub zgłosić.</string>
+    <string name="faq_card_trouble_title">Coś poszło nie tak</string>
+    <string name="faq_card_trouble_body">Gdy wynik nie nadchodzi, producent mógł zamrozić aplikację w tle: skorzystaj z porady o baterii w powiadomieniu błędu. Nieudany wynik zachowuje wpis raportu.</string>
+    <string name="no_app_to_open_link">Nie znaleziono aplikacji do otwarcia linku</string>
     <string name="remote_omnivoice_name">Odciążenie LAN (OmniVoice)</string>
     <string name="remote_offload_title">Odciążenie LAN (eksperymentalne)</string>
     <string name="remote_offload_description">Przekazuje długie lub wymagające transkrypcje własnemu serwerowi OmniVoice w Twojej sieci Wi-Fi. Po włączeniu wybierz go w zakładce Modele.</string>
@@ -522,10 +548,11 @@
     <!-- Settings Tab - VAD -->
     <string name="punctuation_status">Formatowanie przez AI…</string>
     <string name="punctuation_mode_title">Interpunkcja i formatowanie</string>
-    <string name="punctuation_mode_description">Przepisuje transkrypcje bez interpunkcji modelem Gemma. Automatycznie tylko dla modeli bez interpunkcji (wymaga pobranego Gemma).</string>
+    <string name="punctuation_mode_description">Przetwarza transkrypcje modelem Gemma. Automatycznie działa tylko dla modeli bez interpunkcji; Zawsze normalizuje też interpunkcję; Konserwatywny dodaje akapity i nigdy nie zmienia słów (wymaga pobranego Gemma).</string>
     <string name="punctuation_mode_off">Wyłączona</string>
     <string name="punctuation_mode_auto">Automatycznie</string>
     <string name="punctuation_mode_always">Zawsze</string>
+    <string name="punctuation_mode_conservative">Konserwatywny (tylko interpunkcja i akapity)</string>
     <string name="punctuation_prompt_title">Prompt interpunkcji</string>
     <string name="punctuation_prompt_description">Instrukcja dla kroku interpunkcji. Zostaw puste, aby użyć wbudowanej.</string>
     <string name="punctuation_prompt_placeholder">Wbudowany prompt</string>
@@ -548,6 +575,11 @@
     <string name="vad_description">Usuwa ciche fragmenty z wiadomości głosowych przed transkrypcją. Skraca czas przetwarzania i poprawia dokładność.</string>
     <string name="progressive_title">Wyświetlanie progresywne</string>
     <string name="progressive_description">Pokazuje tekst w trakcie transkrypcji, bez czekania na koniec nagrania.</string>
+    <string name="early_preview_title">Wczesny podgląd</string>
+    <string name="early_preview_description">Pokazuje wstępny tekst, podczas gdy reszta długiego nagrania jest nadal dekodowana. Jest zastępowany po zakończeniu pierwszego pełnego segmentu.</string>
+    <string name="early_preview_badge">Podgląd</string>
+    <string name="early_preview_requires_progressive">Wymaga wyświetlania progresywnego</string>
+    <string name="auto_save_failed">Automatyczny zapis nie powiódł się (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Domyślny prompt</string>
@@ -672,6 +704,8 @@
     <string name="notification_channel_inference_description">Przetwarzanie transkrypcji audio w tle</string>
     <string name="notification_channel_result">Wynik transkrypcji</string>
     <string name="notification_channel_result_description">Gotowy tekst i działania</string>
+    <string name="notification_channel_interrupted_runs">Przerwane transkrypcje</string>
+    <string name="notification_channel_interrupted_runs_description">Podsumowanie pokazywane przy następnym uruchomieniu, gdy zamykane są transkrypcje przerwane przez ponowne uruchomienie.</string>
     <string name="notification_cancelling">Anulowanie…</string>
 
     <!-- No-model notification -->
@@ -859,6 +893,21 @@
     <string name="benchmark_provider_label">Dostawca</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">Transkrypcja została przerwana</string>
+    <string name="interrupted_runs_title">Przerwane transkrypcje</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">Przerwano %1$d transkrypcję przed zakończeniem. Szczegóły w Historii.</item>
+        <item quantity="few">Przerwano %1$d transkrypcje przed zakończeniem. Szczegóły w Historii.</item>
+        <item quantity="many">Przerwano %1$d transkrypcji przed zakończeniem. Szczegóły w Historii.</item>
+        <item quantity="other">Przerwano %1$d transkrypcji przed zakończeniem. Szczegóły w Historii.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">Przerwano %1$d transkrypcję przed zakończeniem: w aplikacji zabrakło pamięci. Spróbuj krótszego pliku, mniejszego modelu albo zamknij inne aplikacje. Szczegóły w Historii.</item>
+        <item quantity="few">Przerwano %1$d transkrypcje przed zakończeniem: w aplikacji zabrakło pamięci. Spróbuj krótszego pliku, mniejszego modelu albo zamknij inne aplikacje. Szczegóły w Historii.</item>
+        <item quantity="many">Przerwano %1$d transkrypcji przed zakończeniem: w aplikacji zabrakło pamięci. Spróbuj krótszego pliku, mniejszego modelu albo zamknij inne aplikacje. Szczegóły w Historii.</item>
+        <item quantity="other">Przerwano %1$d transkrypcji przed zakończeniem: w aplikacji zabrakło pamięci. Spróbuj krótszego pliku, mniejszego modelu albo zamknij inne aplikacje. Szczegóły w Historii.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">Powiadomienia o przerwanych transkrypcjach</string>
+    <string name="interrupted_run_notifications_description">Pokazuje powiadomienie, gdy przerwane przez ponowne uruchomienie aplikacji transkrypcje są zamykane przy następnym uruchomieniu.</string>
     <string name="action_dismiss">Odrzuć</string>
 
     <!-- Model Info Overlay -->
@@ -976,11 +1025,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">Wielojęzyczny CTC (1600+ języków, eksperymentalnie)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">Paraformer (FunASR)</string>
     <string name="external_notice_single_pass">Bardzo długie audio może nie zostać przetworzone przez duży model w jednym przebiegu. Skróć audio lub wybierz mniejszy model.</string>
     <string name="external_notice_family">Jeśli transkrypcja kończy się awarią bez błędu, architektura może być błędna: usuń model i zaimportuj go ponownie z wybraną inną architekturą.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Modele w menu udostępniania</string>
+    <string name="voice_note_identity_title">Rozpoznawanie nadawcy notatek głosowych</string>
+    <string name="voice_note_identity_description">Zapisuje w wierszu historii imię nadawcy udostępnionej wiadomości głosowej. Na razie tylko WhatsApp. Imię pojawia się tylko wtedy, gdy powiadomienie przyszło przy włączonej opcji, i tylko gdy zadeklarowany czas zgadza się z audio (żadnych strzałów). Imię zostaje w tym wierszu także po wyłączeniu opcji; lista oczekujących żyje tylko w pamięci. Wymaga dostępu do powiadomień.</string>
+    <string name="voice_note_identity_grant_hint">Dostęp do powiadomień jest wyłączony. Dotknij, aby otworzyć ustawienie systemu i włączyć go dla tej aplikacji.</string>
     <string name="share_targets_description">Każdy pobrany model pojawia się jako osobna pozycja w menu systemowym. Audio przetwarza wybrany model.</string>
     <string name="advanced_sharing_toggle">Pokazuj pobrane modele</string>
     <string name="share_targets_models_info">Każdy pobrany model pojawi się jako pozycja w menu udostępniania. Usunięcie modelu usuwa go z menu.</string>
@@ -1024,6 +1077,9 @@
     <string name="battery_exemption_title">Zezwól na działanie w tle</string>
     <string name="battery_exemption_description">System przerwał rozpoznawanie w tle. Zezwól aplikacji na działanie w tle, aby transkrypcja nie została przerwana.</string>
     <string name="battery_exemption_action">Otwórz ustawienie</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">Transkrypcja wstrzymana</string>
+    <string name="suspension_notification_text">System wstrzymał aplikację na %1$s podczas transkrypcji, dlatego nie została ukończona.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Importuj z adresu URL Hugging Face</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1063,7 +1119,6 @@
         <item quantity="other">%1$d dopasowania</item>
     </plurals>
     <string name="settings_search_no_results">Brak pasujących ustawień</string>
-    <string name="settings_search_clear">Wyczyść wyszukiwanie</string>
         <string name="partial_transcript_label">Częściowa transkrypcja</string>
     
     <string name="decoded_of_total">Zdekodowano %1$s z %2$s</string>
@@ -1091,6 +1146,23 @@
     <string name="speaker_labels_status">Identyfikowanie mówców…</string>
     <string name="speaker_labels_title">Identyfikuj mówców</string>
     <string name="speaker_labels_description">Dodaje etykietę mówcy do każdego zdania. Przy pierwszym użyciu pobiera ok.~47 MB modeli; wydłuża czas przetwarzania.</string>
+    <string name="speaker_id_title">Tożsamości mówców</string>
+    <string name="speaker_id_description">Porównuje głosy w twoich transkrypcjach z próbkami, które nagrywasz, i umieszcza na etykietach mówców pasujące imię. Próbki i odciski głosu zostają wyłącznie na tym telefonie i nigdy go nie opuszczają.</string>
+    <string name="speaker_id_empty">Nikt jeszcze nie został zarejestrowany.</string>
+    <string name="speaker_id_add">Dodaj głos</string>
+    <string name="speaker_id_sample_seconds">próbka %1$d s</string>
+    <string name="speaker_id_replay">Odtwórz próbkę</string>
+    <string name="speaker_id_delete">Usuń głos</string>
+    <string name="speaker_id_name_title">Nazwij ten głos</string>
+    <string name="speaker_id_name_label">Imię</string>
+    <string name="speaker_id_name_confirm">Zapisz</string>
+    <string name="speaker_id_name_cancel">Anuluj</string>
+    <string name="speaker_id_error_too_short">Klip za krótki: wybierz co najmniej 3 s głosu tej osoby.</string>
+    <string name="speaker_id_error_too_long">Klip za długi: niech będzie krótszy niż 30 s.</string>
+    <string name="speaker_id_error_decode">Nie udało się odczytać tego klipu audio.</string>
+    <string name="speaker_id_error_extract">Nie udało się wyodrębnić odcisku głosu z tego klipu.</string>
+    <string name="speaker_id_error_save">Nie udało się zapisać tożsamości. Sprawdź wolne miejsce i spróbuj ponownie.</string>
+    <string name="speaker_id_error_model">Pobieranie modelu mówców nie powiodło się. Sprawdź połączenie i spróbuj ponownie.</string>
     <string name="transcription_not_refined">Nie ulepszone (natychmiastowy podgląd)</string>
     <string name="transcription_refined_from">Ulepszone z %1$s</string>
     <string name="refinement_title">Transkrypcja dwuetapowa</string>
@@ -1109,7 +1181,40 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">Wymaga plików model + tokens; wielojęzyczny (baza zh/en)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">linia pominięta</item>
-    <item quantity="other">linie pominięte</item>
+    <item quantity="one">%1$d linia pominięta</item>
+    <item quantity="few">%1$d linie pominięte</item>
+    <item quantity="many">%1$d linii pominiętych</item>
+    <item quantity="other">%1$d linii pominiętych</item>
   </plurals>
+    <string name="speaker_settings_title">Diatryzacja</string>
+    <string name="speaker_settings_summary">Etykiety mówców i tożsamości z imionami</string>
+    <string name="performance_settings_title">Wydajność i pamięć</string>
+    <string name="performance_settings_summary">Wątki, dostawca, ochrona pamięci i diagnostyka</string>
+    <string name="automation_settings_title">Automatyzacja i odciążenie</string>
+    <string name="automation_settings_summary">Odbiorniki Tasker, przewodnik broadcast i odciążenie LAN</string>
+    <string name="settings_group_appearance">Wygląd</string>
+    <string name="settings_group_history">Historia</string>
+    <string name="settings_group_decoding">Dekodowanie i podgląd</string>
+    <string name="settings_group_gemma">Przetwarzanie tekstu (Gemma)</string>
+    <string name="settings_group_output">Wynik</string>
+    <string name="settings_group_integrations">Integracje</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">Ikony skrótów udostępniania</string>
+    <string name="share_shortcut_icons_description">Wybierz własny obraz dla każdego skrótu udostępniania albo wróć do wygenerowanej ikony</string>
+    <string name="shortcut_icon_choose">Wybierz obraz</string>
+    <string name="shortcut_icon_reset">Resetuj</string>
+    <string name="shortcut_icon_custom">Własny obraz</string>
+    <string name="shortcut_icon_saved">Zapisano ikonę skrótu</string>
+    <string name="shortcut_icon_error">Nie udało się wczytać obrazu</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">Historia</string>
+    <string name="shortcut_history_long">Otwórz historię</string>
+    <string name="shortcut_models_short">Modele</string>
+    <string name="shortcut_models_long">Otwórz modele</string>
+    <string name="model_switched_title">Przełączono model</string>
+    <string name="model_switched_message">Aktywny model: %1$s</string>
+    <string name="model_switch_failed">Nie udało się przełączyć: modelu nie ma na urządzeniu</string>
+    <string name="model_shortcut_switch_label">Przełącz na %1$s</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">Dodaj do tej transkrypcji interpunkcję, wielkie litery i podziały na akapity. Nie tłumacz, nie streszczaj i nie dodawaj, usuwaj, przestawiaj ani nie poprawiaj żadnego słowa: kolejność słów musi pozostać dokładnie taka, jak jest napisana. Zwróć tylko sformatowaną transkrypcję.</string>
 </resources>

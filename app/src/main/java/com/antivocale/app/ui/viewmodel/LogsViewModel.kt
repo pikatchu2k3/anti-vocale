@@ -68,6 +68,8 @@ data class LogEntry(
     val failedChunkCount: Int = 0,
     /** Display name of the model that produced this transcription (GH #45; null on old rows). */
     val modelName: String? = null,
+    /** TASK-736: the voice note's sender (null on old rows and unmatched shares). */
+    val senderName: String? = null,
     /** TASK-276 AC3: raw ASR text pre-punctuation, when the pass changed it. */
     val rawTranscript: String? = null,
     /** TASK-121.4: the AI summary of a long transcript, when the pass produced one. */
@@ -106,9 +108,22 @@ data class LogEntry(
 
     enum class Status { QUEUED, PROCESSING, SUCCESS, ERROR }
 
-    /** A final, copyable transcript (mirrors the swipe/menu action gating). */
+    /** A final transcript (the collapsed preview and Share gate on it). */
     val hasCompletedResult: Boolean
         get() = status == Status.SUCCESS && result.isNotEmpty()
+
+    /**
+     * TASK-711 (GH #123): a transcript exists and Copy delivers it, final or
+     * interim (PROCESSING with text: mid-ASR progressive saves, or the
+     * post-ASR summary tail). Interim copy matches exactly what the row
+     * displays, which may be partial; the PROCESSING icon keeps the state
+     * marked. Share and the collapsed preview stay on [hasCompletedResult].
+     * ERROR rows are excluded by design even when they carry salvaged
+     * text (TASK-568: the expanded card gives that text its own copy
+     * affordance; the menu/swipe gates key on delivery, not salvage).
+     */
+    val hasCopyableResult: Boolean
+        get() = result.isNotEmpty() && (status == Status.SUCCESS || status == Status.PROCESSING)
 }
 
 /**
@@ -716,13 +731,14 @@ class LogsViewModel @Inject constructor(
      * bug class): every display label routes through the registry.
      */
     private suspend fun displayNameFor(backendId: String, context: Context): String {
+        // TASK-442: the SAME variant-aware derivation the log row and the
+        // Settings show (the old family-only form labeled the retranscribe
+        // picker "Whisper" while both siblings said "Whisper Small").
         val descriptor = backendRegistry.byBackendId(backendId)
             ?: return transcriptionBackendManager.getBackend(backendId)?.displayName ?: backendId
         val path = descriptor.modelPathFlow(preferencesManager).first()
-        return when {
-            descriptor.displayNameResId != null -> context.getString(descriptor.displayNameResId)
-            else -> descriptor.deriveDisplayName(context, path ?: "")
-        }
+        return com.antivocale.app.transcription.variantAwareDisplayName(context, descriptor, path)
+            .ifBlank { backendId }
     }
 
     fun reTranscribeWithBackend(
@@ -797,6 +813,11 @@ class LogsViewModel @Inject constructor(
             }
             originalEntry.sourcePackageName?.let {
                 putExtra(InferenceService.EXTRA_SOURCE_PACKAGE, it)
+            }
+            // TASK-736: the sender label must survive a re-run (the fresh
+            // row is a new task; without this the label is one-shot).
+            originalEntry.senderName?.let {
+                putExtra(InferenceService.EXTRA_SENDER_NAME, it)
             }
         }
         // F2: unified enqueue; a restricted start rides the fallback

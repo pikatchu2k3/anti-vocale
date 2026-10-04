@@ -26,6 +26,18 @@ interface PreferencesManager {
 
     /** GH #83. */
     suspend fun saveSpeakerLabelsEnabled(enabled: Boolean)
+
+    /**
+     * TASK-670 (GH #83): named speaker labels gate. Voiceprints are
+     * biometric-adjacent data, so the whole feature (enrollment UI, the
+     * identity store, the matching pass) is OFF until the maintainer signs
+     * the privacy wording; while off no surface exists and nothing reads
+     * the store. Flipping this one preference is the entire switch.
+     */
+    val speakerIdEnabled: Flow<Boolean>
+
+    /** TASK-670 (GH #83). */
+    suspend fun saveSpeakerIdEnabled(enabled: Boolean)
     val themeMode: Flow<String>
     val transcriptionBackend: Flow<String>
     /**
@@ -68,6 +80,32 @@ interface PreferencesManager {
      */
     val onboardingCompleted: Flow<Boolean>
     val progressiveTranscription: Flow<Boolean>
+
+    /**
+     * TASK-186: early preview on pipelined runs. While on, the head of the
+     * first full cap-sized chunk is transcribed first and surfaced as a
+     * labeled interim that the real chunk 0 result then replaces. Opt-in:
+     * the extra decode costs battery on every long clip.
+     */
+    val earlyPreviewEnabled: Flow<Boolean>
+
+    /**
+     * TASK-684 (GH #109): notify when runs interrupted by a process death
+     * are closed at next start (the generic class: the suspended class always
+     * notifies). Default on: silence here is the reported gap.
+     */
+    val interruptedRunNotifications: Flow<Boolean>
+
+    /**
+     * TASK-684 one-shot read for the cold-start sweep, in the
+     * [getLegacyLanguagePreference] shape. The original bug this fixed was
+     * a GAP in toCached (the key was missing there, so the primed cache
+     * carried the default and the flow's onStart emission masked the
+     * persisted value); the mapping is restored, and this direct read
+     * keeps the sweep independent of cache coherence.
+     */
+    suspend fun getInterruptedRunNotifications(): Boolean
+
     val defaultPrompt: Flow<String>
     /** TASK-276 punctuation pass mode: "off" | "auto" | "always"; default "auto". */
     val punctuationMode: Flow<String>
@@ -81,6 +119,17 @@ interface PreferencesManager {
     val threadCount: Flow<Int>
     val inferenceProvider: Flow<String>
     val transcriptionLanguage: Flow<String>
+
+    /**
+     * TASK-685 (GH #112): the Models-tab language filter's persisted
+     * selection, and the first-run favorite-seed target. Tri-state: null =
+     * untouched default (the onboarding seed may fire); "" = the user
+     * explicitly cleared the filter (a replayed tour must NOT re-seed); a
+     * language code = the current favorite. The seed only ever fills this
+     * suggestion; the decode-language preference ([transcriptionLanguage])
+     * is a different key the seed never touches (TASK-457 no-pin).
+     */
+    val modelFilterLanguage: Flow<String?>
     val swipeActionMode: Flow<String>
     val groupLogsByConversation: Flow<Boolean>
     /** TASK-616: render the technical processing-context line on expanded entries. */
@@ -91,6 +140,9 @@ interface PreferencesManager {
 
     /** TASK-274: consent gate for the exported automation receivers (Tasker surface). */
     val externalAutomationEnabled: Flow<Boolean>
+
+    /** TASK-735: the identity listener's app-level gate; the privacy contract lives on the listener. */
+    val voiceNoteIdentityEnabled: Flow<Boolean>
 
     /**
      * TASK-681: the LAN-offload consent gate. Off by default; while off the
@@ -169,6 +221,13 @@ interface PreferencesManager {
     /** TASK-491: marks the welcome tour done; false re-arms it. */
     suspend fun saveOnboardingCompleted(completed: Boolean)
     suspend fun saveProgressiveTranscription(enabled: Boolean)
+
+    /** TASK-186: see [earlyPreviewEnabled]. */
+    suspend fun saveEarlyPreviewEnabled(enabled: Boolean)
+
+    /** TASK-684: see [interruptedRunNotifications]. */
+    suspend fun saveInterruptedRunNotifications(enabled: Boolean)
+
     suspend fun saveDefaultPrompt(prompt: String)
     suspend fun savePunctuationMode(mode: String)
     suspend fun savePunctuationPrompt(prompt: String)
@@ -177,6 +236,9 @@ interface PreferencesManager {
     suspend fun saveThreadCount(threads: Int)
     suspend fun saveInferenceProvider(provider: String)
     suspend fun saveTranscriptionLanguage(language: String)
+
+    /** TASK-685: see [modelFilterLanguage]. */
+    suspend fun saveModelFilterLanguage(code: String)
     suspend fun saveSwipeActionMode(mode: String)
     suspend fun saveGroupLogsByConversation(enabled: Boolean)
     /** TASK-616: see [showTechnicalDetails]. */
@@ -187,6 +249,9 @@ interface PreferencesManager {
 
     /** TASK-274: see [externalAutomationEnabled]. */
     suspend fun saveExternalAutomationEnabled(enabled: Boolean)
+
+    /** TASK-735: see [voiceNoteIdentityEnabled]. */
+    suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean)
     suspend fun saveCompactResultActions(enabled: Boolean)
     suspend fun saveLanguageChipEnabled(enabled: Boolean)
 
@@ -238,7 +303,20 @@ interface PreferencesManager {
         /** TASK-515: the stored default; the dropdown's offered set is
          *  presentation data and lives on SettingsViewModel. */
         const val DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES = 5
-        val DEFAULT_THREAD_COUNT = maxOf(2, Runtime.getRuntime().availableProcessors() - 2).coerceAtMost(8)
+        // TASK-102 (device-measured 2026-09-30, RMX3853, parakeet
+        // smoothquant, 90s clip - ONE backend, ONE phone): 4 threads was
+        // fastest (164 ms/s audio) vs 6 (170, the old cores-2 default on
+        // this 8-core device) and 8 (196: contention makes 8 as slow as 2).
+        // The cap at 4 rests on that measurement plus the research consensus
+        // for sherpa-onnx mobile; the OTHER consumers of this preference
+        // (Whisper, streaming Nemotron, VAD, diarizer) were NOT measured -
+        // revisit per-backend if a backend ever shows different scaling.
+        // cores-2 below 6 cores stays: small devices keep 2 cores reserved
+        // for the system/UI on purpose.
+        val DEFAULT_THREAD_COUNT = defaultThreadCount(Runtime.getRuntime().availableProcessors())
+
+        /** cores-2 clamped to [2, 4]; internal for exact host-independent tests. */
+        internal fun defaultThreadCount(processors: Int): Int = (processors - 2).coerceIn(2, 4)
         const val DEFAULT_AUTO_COPY_ENABLED = false
         /** TASK-647: blank text = use the localized default at assembly time. */
         const val DEFAULT_SIGNATURE_ENABLED = false
@@ -250,6 +328,11 @@ interface PreferencesManager {
         const val DEFAULT_TRANSCRIPT_EXPORT_FORMAT = "TXT"
         const val DEFAULT_VAD_ENABLED = false
         const val DEFAULT_PROGRESSIVE_TRANSCRIPTION = true
+        /** TASK-186: the extra head decode is opt-in. */
+        const val DEFAULT_EARLY_PREVIEW = false
+        /** TASK-684: on by default (the honest-failure principle). */
+        const val DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS = true
+
         const val DEFAULT_PROMPT_VALUE = ""
 
         /**
@@ -294,8 +377,14 @@ interface PreferencesManager {
         /** TASK-274: the automation receivers are opt-in; off, they answer with the error
          *  naming this setting instead of running the request. */
         const val DEFAULT_EXTERNAL_AUTOMATION_ENABLED = false
+
+        /** TASK-735: the identity listener ships off; both gates must be on. */
+        const val DEFAULT_VOICE_NOTE_IDENTITY_ENABLED = false
         /** TASK-681: LAN offload is opt-in; off, no audio ever leaves the device. */
         const val DEFAULT_REMOTE_OMNIVOICE_ENABLED = false
+        /** TASK-670: speaker identities are off until the maintainer signs the
+         *  privacy wording; the flag is the whole switch. */
+        const val DEFAULT_SPEAKER_ID_ENABLED = false
         const val DEFAULT_REMOTE_OMNIVOICE_ENDPOINT = ""
         const val DEFAULT_REMOTE_OMNIVOICE_API_KEY = ""
         /** One source with the backend's own default (the field the server resolves). */

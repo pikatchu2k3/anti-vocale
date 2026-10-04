@@ -43,7 +43,7 @@ interface LogDao {
      */
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs ORDER BY timestamp DESC LIMIT 500")
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs ORDER BY timestamp DESC LIMIT 500")
     fun getAll(): Flow<List<LogEntity>>
 
     // TASK-613: RAW query, ESCAPE-clause-aware. Room interfaces cannot give a
@@ -56,7 +56,7 @@ interface LogDao {
     // "%" matching the newest 500 rows regardless of the query).
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
         "ORDER BY timestamp DESC LIMIT 500")
     fun searchAllRaw(query: String): Flow<List<LogEntity>>
 
@@ -111,10 +111,30 @@ interface LogDao {
      * Fails every non-terminal row at once (cold-start sweep): rows left QUEUED or
      * PROCESSING (or the legacy "PENDING") by a process death can never complete.
      * Safe to run only at process start, before the transcription service can be
-     * running in this same process.
+     * running in this same process. Returns the closed-row count (Room
+     * rowcount): the caller reports it as the generic interrupted batch size.
      */
     @Query("UPDATE logs SET status = 'ERROR', errorMessage = :reason WHERE status IN ('QUEUED', 'PROCESSING', 'PENDING')")
-    suspend fun failAllNonTerminal(reason: String)
+    suspend fun failAllNonTerminal(reason: String): Int
+
+    /**
+     * TASK-684: the orphaned rows the cold-start pass classifies. Same
+     * non-terminal set as [failAllNonTerminal]; read BEFORE any close so the
+     * classifier sees the rows exactly as the process death left them.
+     */
+    @Query("SELECT * FROM logs WHERE status IN ('QUEUED', 'PROCESSING', 'PENDING')")
+    suspend fun getNonTerminal(): List<LogEntity>
+
+    /**
+     * TASK-684 (GH #109): closes one row as the OEM-freezer suspension the
+     * classifier proved (ERROR status + the typed failureContext marker, so
+     * consumers need no locale-dependent string match). Guarded to
+     * non-terminal rows like every other close; runs BEFORE
+     * [failAllNonTerminal], which then skips the already-terminal row.
+     */
+    @Query("UPDATE logs SET status = 'ERROR', errorMessage = :errorMessage, failureContext = :failureContext " +
+        "WHERE taskId = :taskId AND status IN ('QUEUED', 'PROCESSING', 'PENDING')")
+    suspend fun markSuspendedBySystem(taskId: String, errorMessage: String, failureContext: String?)
 
     /**
      * TASK-390: column-scoped interim write. The previous read-modify-write
@@ -144,7 +164,13 @@ interface LogDao {
     @Query("UPDATE logs SET audioDurationSeconds = :seconds WHERE taskId = :taskId")
     suspend fun updateAudioDuration(taskId: String, seconds: Double)
 
-    /** TASK-336: rows closed by the cold-start sweep = the process died mid-transcription (OEM background kill). */
-    @Query("SELECT COUNT(*) FROM logs WHERE errorMessage LIKE 'Interrupted by app restart%' AND timestamp > :since")
+    /** TASK-336: rows closed by the cold-start sweep = the process died mid-transcription (OEM background kill).
+     * TASK-684: suspension rows count too. The failureContext marker is the
+     * locale-independent signal (the row's errorMessage is localized, so a
+     * LIKE on it would miss every translated row); the literal token must
+     * stay in sync with SuspendedRunRecovery.SUSPENDED_ERROR_CLASS, the way
+     * the non-terminal set above stays in this file and not in Kotlin. */
+    @Query("SELECT COUNT(*) FROM logs WHERE (errorMessage LIKE 'Interrupted by app restart%' " +
+        "OR failureContext LIKE '%\"errorClass\":\"SystemSuspended\"%') AND timestamp > :since")
     suspend fun countInterruptedSince(since: Long): Int
 }

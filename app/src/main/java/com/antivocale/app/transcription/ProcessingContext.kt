@@ -30,6 +30,21 @@ data class ProcessingContext(
      *  Null on old rows and on zero-blank runs (written only when at least
      *  one chunk was blank). */
     val blankChunks: Int? = null,
+    /** TASK-664: chunks that needed at least one recovery re-feed after a
+     *  first-pass empty decode (the ladder is bounded; failedChunks and
+     *  blankChunks already reflect its outcome, so the recovered count is
+     *  this minus the post-ladder empties). Written only when at least one
+     *  chunk entered the ladder. */
+    val retriedChunks: Int? = null,
+    /** TASK-678 (GH #83): the speaker re-split tier counts for this run
+     *  ("word=2,gap=1,mixed=1"), written only when at least one cue
+     *  straddled; the technical row renders it. */
+    val speakerResplit: String? = null,
+    /** TASK-583 (GH #110): the delivered single-model transcript matched the
+     *  repetition-loop detector (the dual arms already skip on it); the row
+     *  and the result notification carry a visible warning, never a collapse
+     *  or re-run (v1). Written only on single-model runs where it fired. */
+    val repetitionSuspected: Boolean? = null,
     /** Audio seconds actually covered by inference (decoded seconds). */
     val transcribedSeconds: Double? = null,
     /** The chunk ceiling in force, after any RAM-driven tightening. */
@@ -54,6 +69,11 @@ data class ProcessingContext(
     /** TASK-582: measured loop-detector values at the skip ("compression=
      *  2.61 ngram=0.42"); null unless refinementSkipReason is a loop token. */
     val refinementLoopMetrics: String? = null,
+    /** TASK-585: the acceptable-text scan maxima ("compression=X ngram=Y"),
+     *  persisted on substantial clean runs so a future false-positive report
+     *  arrives WITH the acceptable distribution. Null on a fired detection
+     *  (that row carries [refinementLoopMetrics] instead) and on short texts. */
+    val refinementCleanMaxima: String? = null,
 ) {
     companion object {
         /**

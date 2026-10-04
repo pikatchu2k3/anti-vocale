@@ -44,6 +44,10 @@ internal class TestSpiOps(
     private val importer: ExternalModelImportOperations,
     /** Needed by the notify_memory_error op; the debug receiver passes its context. */
     private val appContext: android.content.Context? = null,
+    /** TASK-736 device debugging: the RAM identity cache snapshot. Debug
+     *  builds pass it; the main-source default keeps release construction
+     *  unchanged. */
+    private val identityCache: com.antivocale.app.receiver.VoiceNoteIdentityCache? = null,
 ) {
 
     suspend fun handle(
@@ -59,8 +63,11 @@ internal class TestSpiOps(
             OP_GET -> get()
             OP_SET -> set(key, value, entry)
             OP_RECORDS -> records()
+            OP_IDENTITY_CACHE -> identityCache()
             OP_IMPORT -> importModel(url, family, modelType)
             OP_NOTIFY_MEMORY_ERROR -> notifyMemoryError()
+            OP_CLIPBOARD -> clipboard()
+            OP_NOTIFICATIONS -> notifications()
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -83,6 +90,8 @@ internal class TestSpiOps(
             .put("op", OP_GET)
             .put("vadEnabled", preferences.vadEnabled.first())
             .put("progressiveEnabled", preferences.progressiveTranscription.first())
+            .put("earlyPreviewEnabled", preferences.earlyPreviewEnabled.first())
+            .put("interruptedRunNotifications", preferences.interruptedRunNotifications.first())
             .put("punctuationMode", preferences.punctuationMode.first())
             .put("punctuationPrompt", preferences.punctuationPrompt.first())
             .put("threadCount", preferences.threadCount.first())
@@ -100,6 +109,7 @@ internal class TestSpiOps(
             .put("signaturePosition", preferences.signaturePosition.first())
             .put("memoryProtection", preferences.memoryProtection.first())
             .put("externalAutomationEnabled", preferences.externalAutomationEnabled.first())
+            .put("voiceNoteIdentityEnabled", preferences.voiceNoteIdentityEnabled.first())
             // TASK-681: the LAN-offload config (endpoint visible for E2E
             // verification; the key is masked to its last 4 chars).
             .put("remoteOmnivoiceEnabled", preferences.remoteOmnivoiceEnabled.first())
@@ -120,11 +130,17 @@ internal class TestSpiOps(
             .put("showTechnicalDetails", preferences.showTechnicalDetails.first())
             .put("vadAdvisoryDismissed", preferences.vadAdvisoryDismissed.first())
             .put("onboardingCompleted", preferences.onboardingCompleted.first())
+            // TASK-685: the seeded Models-filter favorite (null = untouched,
+            // "" = cleared; device trials read the seed without UI scraping).
+            .put("modelFilterLanguage", preferences.modelFilterLanguage.first() ?: JSONObject.NULL)
             .put("swipeActionMode", preferences.swipeActionMode.first())
             .put("themePreference", preferences.themePreference.first())
             .put("textScalePreference", preferences.textScalePreference.first())
             .put("refinementEnabled", preferences.refinementEnabled.first())
             .put("speakerLabelsEnabled", preferences.speakerLabelsEnabled.first())
+            // TASK-670 (GH #83): the named-labels privacy gate, readable and
+            // settable over the SPI so device trials can flip it.
+            .put("speakerIdEnabled", preferences.speakerIdEnabled.first())
             .put("themeMode", preferences.themeMode.first())
             .put("defaultPrompt", preferences.defaultPrompt.first())
             .put("summaryPrompt", preferences.summaryPrompt.first())
@@ -155,9 +171,15 @@ internal class TestSpiOps(
     private val booleanKeys: Map<String, suspend (Boolean) -> Unit> = mapOf(
         "vad" to preferences::saveVadEnabled,
         "progressive" to preferences::saveProgressiveTranscription,
+        // TASK-186: the early-preview gate (device trials flip it per clip).
+        "early_preview" to preferences::saveEarlyPreviewEnabled,
+        "interrupted_run_notifications" to preferences::saveInterruptedRunNotifications,
         "summarize" to preferences::saveSummarizeEnabled,
         "refinement_enabled" to preferences::saveRefinementEnabled,
         "speaker_labels_enabled" to preferences::saveSpeakerLabelsEnabled,
+        // TASK-670: the named-labels privacy gate.
+        "speaker_id_enabled" to preferences::saveSpeakerIdEnabled,
+        "voice_note_identity_enabled" to preferences::saveVoiceNoteIdentityEnabled,
         "auto_copy" to preferences::saveAutoCopyEnabled,
         "vad_advisory" to preferences::saveVadAdvisoryDismissed,
         "onboarding" to preferences::saveOnboardingCompleted,
@@ -183,6 +205,12 @@ internal class TestSpiOps(
      * like a real one.
      */
     private val choiceKeys: Map<String, Pair<List<String>, suspend (String) -> Unit>> = mapOf(
+        // TASK-685 review R4: validated against the filter's offered entries
+        // (a typo'd code would render an empty Models tab); blank is the
+        // explicit clear and stays accepted.
+        "model_filter_language" to Pair(
+            com.antivocale.app.transcription.Language.FILTER_ENTRIES + "",
+            preferences::saveModelFilterLanguage),
         "punctuation" to Pair(PUNCTUATION_MODES, preferences::savePunctuationMode),
         "provider" to Pair(InferenceProvider.options, preferences::saveInferenceProvider),
         "swipe_action" to Pair(PreferencesManager.SWIPE_ACTION_MODES, preferences::saveSwipeActionMode),
@@ -377,6 +405,34 @@ internal class TestSpiOps(
         .toString()
 
     /**
+     * TASK-736: the voice-note identity cache (RAM, names included - this
+     * is the explicit adb inspection surface the E2E debugging needed; the
+     * field report came back "no label" and nothing else could tell a
+     * never-cached note from a duration-mismatch refusal).
+     */
+    private fun identityCache(): String {
+        val cache = identityCache ?: return JSONObject()
+            .put("op", OP_IDENTITY_CACHE)
+            .put("error", "cache not wired")
+            .toString()
+        val array = JSONArray()
+        for (note in cache.snapshot()) {
+            array.put(
+                JSONObject()
+                    .put("package", note.packageName)
+                    .put("sender", note.sender)
+                    .put("durationSeconds", note.durationSeconds)
+                    .put("postedAtMs", note.postedAtMs))
+        }
+        return JSONObject()
+            .put("op", OP_IDENTITY_CACHE)
+            .put("accepting", cache.accepting)
+            .put("count", array.length())
+            .put("entries", array)
+            .toString()
+    }
+
+    /**
      * ALL records, not just the valid ones: dangling entries (dir removed from
      * disk) are exactly what a debugging session needs to see. Each element is
      * the record's own persisted JSON ([ExternalModelRecord.toJson], which is
@@ -455,7 +511,7 @@ internal class TestSpiOps(
      * without engineering a real out-of-memory failure. Debug receiver only.
      */
     private fun notifyMemoryError(): String {
-        val ctx = appContext ?: error("notify_memory_error requires a Context (debug receiver only)")
+        val ctx = requireContext("notify_memory_error")
         val factory = com.antivocale.app.service.ResultNotificationFactory(ctx)
         val message = ctx.getString(
             com.antivocale.app.R.string.model_load_low_memory, "1.2GB", "4.8GB")
@@ -468,17 +524,99 @@ internal class TestSpiOps(
             .toString()
     }
 
+    /**
+     * TASK-275/688 trial tool: reads the primary clip (label + text) so a
+     * device trial verifies a copy EXACTLY, with no paste-into-a-field
+     * proxy. Android 10+ lets only the focused app read the clipboard, so
+     * the app must be foreground AND window-focused when the broadcast
+     * lands (after a notification-action copy, am start the app first and
+     * allow a beat); a read without focus is DENIED SILENTLY and answers
+     * null clip text plus a note saying so, so a trial distinguishes
+     * "retry after focusing" from an empty clipboard only by the note:
+     * treat a nulled text with the note as NOT VERIFIED, never as a
+     * failed copy. The text is capped (a repetition-loop clip would blow
+     * the binder result channel, the TASK-506 class) with a truncated
+     * flag. Debug receiver only; appContext is null under the shared unit
+     * fakes.
+     */
+    private fun clipboard(): String {
+        val ctx = requireContext("clipboard")
+        val clip = ctx.getSystemService(android.content.ClipboardManager::class.java).primaryClip
+        val text = clip?.getItemAt(0)?.coerceToText(ctx)?.toString()
+        return JSONObject()
+            .put("op", OP_CLIPBOARD)
+            .put("label", clip?.description?.label?.toString() ?: JSONObject.NULL)
+            .put(
+                "text",
+                if (text == null) JSONObject.NULL else text.take(CLIPBOARD_TEXT_CAP))
+            .put("textTruncated", text != null && text.length > CLIPBOARD_TEXT_CAP)
+            .put(
+                "note",
+                if (clip == null) "no clip visible: either the clipboard is empty or the read was denied (app not focused)" else JSONObject.NULL)
+            .toString()
+    }
+
+    /**
+     * TASK-684/688 trial tool: lists THIS app's active notifications (id,
+     * channel, title, text, bigText, action TITLES). Reading them from
+     * the shade is a UI-driving trap (DND intercepts, heads-ups reorder,
+     * the tree renders inconsistently); NotificationManager
+     * .getActiveNotifications returns our own package's records with no
+     * permission, so trials read notification CONTENT here and reserve
+     * the shade for real visual checks. The Realme 3-button cap makes
+     * action COMPOSITION the load-bearing fact, hence titles not a
+     * count; text and bigText are capped per item (the receiver ships
+     * the JSON over binder, the TASK-506 wall) and the collapsed
+     * EXTRA_TEXT of a paged result notification is only one page, so the
+     * full form rides alongside from EXTRA_BIG_TEXT.
+     */
+    private fun notifications(): String {
+        val ctx = requireContext("notifications")
+        val array = JSONArray()
+        ctx.getSystemService(android.app.NotificationManager::class.java)
+            .activeNotifications
+            .sortedBy { it.id }
+            .forEach { status ->
+                val extras = status.notification.extras
+                fun capped(key: String, value: CharSequence?): Any {
+                    val s = value?.toString() ?: return JSONObject.NULL
+                    return if (s.length <= NOTIFICATION_TEXT_CAP) s
+                    else JSONObject().put("truncated", true).put(key, s.take(NOTIFICATION_TEXT_CAP))
+                }
+                array.put(
+                    JSONObject()
+                        .put("id", status.id)
+                        .put("channel", status.notification.channelId ?: JSONObject.NULL)
+                        .put(
+                            "actions",
+                            JSONArray(
+                                status.notification.actions.orEmpty().map { it.title?.toString() ?: "" }))
+                        .put("title", extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: JSONObject.NULL)
+                        .put("text", capped("text", extras.getCharSequence(android.app.Notification.EXTRA_TEXT)))
+                        .put("bigText", capped("bigText", extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT))))
+            }
+        return JSONObject().put("op", OP_NOTIFICATIONS).put("count", array.length()).put("items", array).toString()
+    }
+
+    /** One guard for the context-requiring ops (message and rationale live here once). */
+    private fun requireContext(op: String): android.content.Context =
+        appContext ?: error("$op requires a Context (debug receiver only)")
+
     private fun help(error: String? = null): String = JSONObject()
         .apply { error?.let { put("error", it) } }
         .put("op", OP_HELP)
-        .put("ops", JSONArray(listOf(OP_GET, OP_SET, OP_RECORDS, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_HELP)))
+        // OPS single-sources the enumeration: the array and the usage line
+        // below both read it, so a new op cannot dispatch fine yet stay
+        // unlisted in one of them (the drift TASK-469 deleted for set keys).
+        .put("ops", JSONArray(OPS))
         .put("setKeys", JSONArray(SET_KEYS))
         .put(
             "usage",
-            "am broadcast -a com.antivocale.app.TEST_SPI --es op=<$OP_GET|$OP_SET|$OP_RECORDS|$OP_IMPORT|$OP_HELP> " +
+            "am broadcast -n com.antivocale.app.debug/com.antivocale.app.receiver.TestSpiReceiver " +
+                "-a com.antivocale.app.TEST_SPI --es op=<${OPS.joinToString("|")}> " +
                 "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path only)] " +
                 "[--es url=<entry-or-repo url> (import only)] [--es family=<ModelFamily> (import only, optional override)] "
-            + "[--es model_type=<subtype> (import only, CTC: nemo_ctc/zipformer_ctc/omnilingual_ctc)]")
+            + "[--es model_type=<subtype> (import only, CTC: nemo_ctc/zipformer_ctc/omnilingual_ctc/paraformer)]")
         .put(
             "transcription",
             "transcription is NOT triggered here: broadcast com.antivocale.app.PROCESS_REQUEST with extras " +
@@ -492,9 +630,26 @@ internal class TestSpiOps(
         const val OP_GET = "get"
         const val OP_SET = "set"
         const val OP_RECORDS = "records"
+        internal const val OP_IDENTITY_CACHE = "identity_cache"
         const val OP_IMPORT = "import"
         const val OP_NOTIFY_MEMORY_ERROR = "notify_memory_error"
+        const val OP_CLIPBOARD = "clipboard"
+        const val OP_NOTIFICATIONS = "notifications"
         const val OP_HELP = "help"
+
+        /**
+         * Every op handle() dispatches; help() renders the array and the
+         * usage line from this one list. The receiver's op=nav (TASK-486)
+         * is deliberately absent: it is intercepted receiver-side before
+         * handle() runs, so it lives in the receiver's own table.
+         */
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_HELP)
+
+        /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
+        const val CLIPBOARD_TEXT_CAP = 64 * 1024
+
+        /** notifications op per-item cap, same binder rationale; generous for a paged transcript. */
+        const val NOTIFICATION_TEXT_CAP = 64 * 1024
 
         /** TASK-276: the single source is PunctuationPolicy.MODE_PREFS; the SPI only adds write-time strictness. */
         val PUNCTUATION_MODES = PunctuationPolicy.MODE_PREFS

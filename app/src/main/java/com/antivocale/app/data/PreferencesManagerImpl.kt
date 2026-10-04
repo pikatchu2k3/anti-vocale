@@ -37,6 +37,8 @@ class PreferencesManagerImpl(
         private val TEXT_SCALE = stringPreferencesKey("text_scale")
         private val REFINEMENT_ENABLED = booleanPreferencesKey("refinement_enabled")
         private val SPEAKER_LABELS_ENABLED = booleanPreferencesKey("speaker_labels_enabled")
+        // TASK-670 (GH #83): the named-labels privacy gate, default off.
+        private val SPEAKER_ID_ENABLED = booleanPreferencesKey("speaker_id_enabled")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val TRANSCRIPTION_BACKEND = stringPreferencesKey("transcription_backend")
         private val SHERPA_MODEL_PATH_PREFIX = "sherpa_model_path_"
@@ -70,6 +72,9 @@ class PreferencesManagerImpl(
         private val TRANSCRIPT_EXPORT_FORMAT = stringPreferencesKey("transcript_export_format")
         private val VAD_ENABLED = booleanPreferencesKey("vad_enabled")
         private val PROGRESSIVE_TRANSCRIPTION = booleanPreferencesKey("progressive_transcription")
+        // TASK-186: the early-preview gate on pipelined runs.
+        private val EARLY_PREVIEW_ENABLED = booleanPreferencesKey("early_preview_enabled")
+        private val INTERRUPTED_RUN_NOTIFICATIONS = booleanPreferencesKey("interrupted_run_notifications")
         private val DEFAULT_PROMPT = stringPreferencesKey("default_prompt")
         private val PUNCTUATION_MODE = stringPreferencesKey("punctuation_mode")
         private val PUNCTUATION_PROMPT = stringPreferencesKey("punctuation_prompt")
@@ -93,6 +98,7 @@ class PreferencesManagerImpl(
         private val MEMORY_PROTECTION = booleanPreferencesKey("memory_protection")
         // TASK-274: consent gate for the exported automation receivers.
         private val EXTERNAL_AUTOMATION_ENABLED = booleanPreferencesKey("external_automation_enabled")
+        private val VOICE_NOTE_IDENTITY_ENABLED = booleanPreferencesKey("voice_note_identity_enabled")
         // TASK-681: the LAN-offload (OmniVoice) consent gate and its config triple.
         private val REMOTE_OMNIVOICE_ENABLED = booleanPreferencesKey("remote_omnivoice_enabled")
         private val REMOTE_OMNIVOICE_ENDPOINT = stringPreferencesKey("remote_omnivoice_endpoint")
@@ -105,6 +111,8 @@ class PreferencesManagerImpl(
         private val EXTERNAL_MODELS_JSON = stringPreferencesKey("external_models_json")
         // TASK-675: silent-model demotion set (backend ids).
         private val DEMOTED_BACKENDS = stringSetPreferencesKey("demoted_backends")
+        // TASK-685: the Models-filter favorite; key absence = untouched.
+        private val MODEL_FILTER_LANGUAGE = stringPreferencesKey("model_filter_language")
     }
 
     private val cache = AtomicReference(CachedPreferences())
@@ -131,6 +139,8 @@ class PreferencesManagerImpl(
         val transcriptExportFormat: String = PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         val vadEnabled: Boolean = PreferencesManager.DEFAULT_VAD_ENABLED,
         val progressiveTranscription: Boolean = PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION,
+        val earlyPreviewEnabled: Boolean = PreferencesManager.DEFAULT_EARLY_PREVIEW,
+        val interruptedRunNotifications: Boolean = PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS,
         val defaultPrompt: String = PreferencesManager.DEFAULT_PROMPT_VALUE,
         val punctuationMode: String = PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         val punctuationPrompt: String = "",
@@ -139,6 +149,9 @@ class PreferencesManagerImpl(
         val threadCount: Int = PreferencesManager.DEFAULT_THREAD_COUNT,
         val inferenceProvider: String = PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
         val transcriptionLanguage: String = PreferencesManager.DEFAULT_TRANSCRIPTION_LANGUAGE,
+        // TASK-685: null = untouched (the onboarding seed may fire), "" =
+        // explicitly cleared, a code = the Models-filter favorite.
+        val modelFilterLanguage: String? = null,
         val swipeActionMode: String = PreferencesManager.DEFAULT_SWIPE_ACTION_MODE,
         val vadAdvisoryDismissed: Boolean = false,
         val onboardingCompleted: Boolean = false,
@@ -148,6 +161,7 @@ class PreferencesManagerImpl(
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         val memoryProtection: Boolean = PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         val externalAutomationEnabled: Boolean = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        val voiceNoteIdentityEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         val remoteOmnivoiceEndpoint: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         val remoteOmnivoiceApiKey: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -185,6 +199,12 @@ class PreferencesManagerImpl(
         transcriptExportFormat = this[TRANSCRIPT_EXPORT_FORMAT] ?: PreferencesManager.DEFAULT_TRANSCRIPT_EXPORT_FORMAT,
         vadEnabled = this[VAD_ENABLED] ?: PreferencesManager.DEFAULT_VAD_ENABLED,
         progressiveTranscription = this[PROGRESSIVE_TRANSCRIPTION] ?: PreferencesManager.DEFAULT_PROGRESSIVE_TRANSCRIPTION,
+        earlyPreviewEnabled = this[EARLY_PREVIEW_ENABLED] ?: PreferencesManager.DEFAULT_EARLY_PREVIEW,
+        // TASK-684 follow-up (2026-09-30 review round): this key was MISSING
+        // from toCached, the actual bug behind the cold-start opt-out reading
+        // the default (the cache is warm in production, AppModule primes it;
+        // it just carried no value for this key until a save touched it).
+        interruptedRunNotifications = this[INTERRUPTED_RUN_NOTIFICATIONS] ?: PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS,
         defaultPrompt = this[DEFAULT_PROMPT] ?: PreferencesManager.DEFAULT_PROMPT_VALUE,
         punctuationMode = this[PUNCTUATION_MODE] ?: PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         punctuationPrompt = this[PUNCTUATION_PROMPT] ?: "",
@@ -193,6 +213,7 @@ class PreferencesManagerImpl(
         threadCount = this[THREAD_COUNT] ?: PreferencesManager.DEFAULT_THREAD_COUNT,
         inferenceProvider = this[INFERENCE_PROVIDER] ?: PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
         transcriptionLanguage = this[TRANSCRIPTION_LANGUAGE] ?: PreferencesManager.DEFAULT_TRANSCRIPTION_LANGUAGE,
+        modelFilterLanguage = this[MODEL_FILTER_LANGUAGE],
         swipeActionMode = this[SWIPE_ACTION_MODE] ?: PreferencesManager.DEFAULT_SWIPE_ACTION_MODE,
         vadAdvisoryDismissed = this[VAD_ADVISORY_DISMISSED] ?: false,
         onboardingCompleted = this[ONBOARDING_COMPLETED] ?: false,
@@ -202,6 +223,7 @@ class PreferencesManagerImpl(
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         memoryProtection = this[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         externalAutomationEnabled = this[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        voiceNoteIdentityEnabled = this[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         remoteOmnivoiceEndpoint = this[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         remoteOmnivoiceApiKey = this[REMOTE_OMNIVOICE_API_KEY] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -293,6 +315,15 @@ class PreferencesManagerImpl(
     override suspend fun saveSpeakerLabelsEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SPEAKER_LABELS_ENABLED] = enabled
+        }
+    }
+
+    override val speakerIdEnabled: Flow<Boolean> =
+        dataStore.data.map { it[SPEAKER_ID_ENABLED] ?: PreferencesManager.DEFAULT_SPEAKER_ID_ENABLED }
+
+    override suspend fun saveSpeakerIdEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SPEAKER_ID_ENABLED] = enabled
         }
     }
 
@@ -492,6 +523,36 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(progressiveTranscription = enabled) }
     }
 
+    override val earlyPreviewEnabled: Flow<Boolean> = dataStore.data.map { it[EARLY_PREVIEW_ENABLED] ?: PreferencesManager.DEFAULT_EARLY_PREVIEW }
+        .onStart { emit(cache.get().earlyPreviewEnabled) }
+
+    override suspend fun saveEarlyPreviewEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[EARLY_PREVIEW_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(earlyPreviewEnabled = enabled) }
+    }
+
+    override val interruptedRunNotifications: Flow<Boolean> = dataStore.data.map { it[INTERRUPTED_RUN_NOTIFICATIONS] ?: PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS }
+        .onStart { emit(cache.get().interruptedRunNotifications) }
+
+    override suspend fun saveInterruptedRunNotifications(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[INTERRUPTED_RUN_NOTIFICATIONS] = enabled
+        }
+        cache.updateAndGet { it.copy(interruptedRunNotifications = enabled) }
+    }
+
+    override suspend fun getInterruptedRunNotifications(): Boolean {
+        // Reads the store directly on purpose: the flow's onStart emits the
+        // process cache, and a key missing from toCached would mask the
+        // persisted value behind the default (the original TASK-684 bug;
+        // the mapping is restored, this read stays independent of it).
+        return dataStore.data.map { preferences ->
+            preferences[INTERRUPTED_RUN_NOTIFICATIONS] ?: PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS
+        }.first()
+    }
+
     override val defaultPrompt: Flow<String> = dataStore.data.map { it[DEFAULT_PROMPT] ?: PreferencesManager.DEFAULT_PROMPT_VALUE }
         .onStart { emit(cache.get().defaultPrompt) }
 
@@ -575,6 +636,20 @@ class PreferencesManagerImpl(
             preferences[TRANSCRIPTION_LANGUAGE] = language
         }
         cache.updateAndGet { it.copy(transcriptionLanguage = language) }
+    }
+
+    // TASK-685: key absence (null) is load-bearing, so the clear writes ""
+    // instead of removing the key: it distinguishes "user cleared the
+    // suggestion" from "never touched", which is the seed's guard.
+    override val modelFilterLanguage: Flow<String?> =
+        dataStore.data.map { it[MODEL_FILTER_LANGUAGE] }
+            .onStart { emit(cache.get().modelFilterLanguage) }
+
+    override suspend fun saveModelFilterLanguage(code: String) {
+        dataStore.edit { preferences ->
+            preferences[MODEL_FILTER_LANGUAGE] = code
+        }
+        cache.updateAndGet { it.copy(modelFilterLanguage = code) }
     }
 
     override val swipeActionMode: Flow<String> = dataStore.data.map { it[SWIPE_ACTION_MODE] ?: PreferencesManager.DEFAULT_SWIPE_ACTION_MODE }
@@ -727,6 +802,9 @@ class PreferencesManagerImpl(
     override val externalAutomationEnabled: Flow<Boolean> = dataStore.data.map { it[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED }
         .onStart { emit(cache.get().externalAutomationEnabled) }
 
+    override val voiceNoteIdentityEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED }
+        .onStart { emit(cache.get().voiceNoteIdentityEnabled) }
+
     // TASK-681: the LAN-offload gate and its config triple. Re-emits on
     // unrelated writes are fine here, like the siblings above: the
     // collectors only compare values.
@@ -842,6 +920,13 @@ class PreferencesManagerImpl(
             preferences[EXTERNAL_AUTOMATION_ENABLED] = enabled
         }
         cache.updateAndGet { it.copy(externalAutomationEnabled = enabled) }
+    }
+
+    override suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VOICE_NOTE_IDENTITY_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(voiceNoteIdentityEnabled = enabled) }
     }
 
     override val externalModelsJson: Flow<String?> = dataStore.data.map { it[EXTERNAL_MODELS_JSON] }

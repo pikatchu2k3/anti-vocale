@@ -50,6 +50,8 @@ internal class FakePreferencesManager : PreferencesManager {
     val _threadCount = MutableStateFlow(PreferencesManager.DEFAULT_THREAD_COUNT)
     val _inferenceProvider = MutableStateFlow("auto")
     val _transcriptionLanguage = MutableStateFlow("auto")
+    // TASK-685: null mirrors the untouched default (key absent in the impl).
+    val _modelFilterLanguage = MutableStateFlow<String?>(null)
     val _swipeActionMode = MutableStateFlow("REVEAL")
     val _groupLogsByConversation = MutableStateFlow(true)
     val _showTechnicalDetails = MutableStateFlow(PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS)
@@ -58,6 +60,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _memoryProtection = MutableStateFlow(false)
     // TASK-274: consent gate for the exported automation receivers.
     val _externalAutomationEnabled = MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED)
+    val _voiceNoteIdentityEnabled = MutableStateFlow(PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED)
     // TASK-681: the LAN-offload (OmniVoice) gate and its config triple.
     val _remoteOmnivoiceEnabled = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED)
     val _remoteOmnivoiceEndpoint = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT)
@@ -99,6 +102,12 @@ internal class FakePreferencesManager : PreferencesManager {
     private val _onboardingCompleted = MutableStateFlow(false)
     override val onboardingCompleted = _onboardingCompleted
     override val progressiveTranscription: Flow<Boolean> get() = _progressiveTranscription
+    // TASK-186: early preview, default off like the real impl.
+    private val _earlyPreviewEnabled = MutableStateFlow(PreferencesManager.DEFAULT_EARLY_PREVIEW)
+    override val earlyPreviewEnabled: Flow<Boolean> get() = _earlyPreviewEnabled
+
+    private val _interruptedRunNotifications = MutableStateFlow(PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS)
+    override val interruptedRunNotifications: Flow<Boolean> get() = _interruptedRunNotifications
     override val punctuationMode: Flow<String> get() = _punctuationMode
     override val punctuationPrompt: Flow<String> get() = _punctuationPrompt
     override val summarizeEnabled: Flow<Boolean> get() = _summarizeEnabled
@@ -108,6 +117,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val threadCount: Flow<Int> get() = _threadCount
     override val inferenceProvider: Flow<String> get() = _inferenceProvider
     override val transcriptionLanguage: Flow<String> get() = _transcriptionLanguage
+    override val modelFilterLanguage: Flow<String?> get() = _modelFilterLanguage
     override val swipeActionMode: Flow<String> get() = _swipeActionMode
     override val groupLogsByConversation: Flow<Boolean> get() = _groupLogsByConversation
     override val showTechnicalDetails: Flow<Boolean> get() = _showTechnicalDetails
@@ -115,6 +125,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
     override val memoryProtection: Flow<Boolean> get() = _memoryProtection
     override val externalAutomationEnabled: Flow<Boolean> get() = _externalAutomationEnabled
+    override val voiceNoteIdentityEnabled: Flow<Boolean> get() = _voiceNoteIdentityEnabled
     override val remoteOmnivoiceEnabled: Flow<Boolean> get() = _remoteOmnivoiceEnabled
     override val remoteOmnivoiceEndpoint: Flow<String> get() = _remoteOmnivoiceEndpoint
     override val remoteOmnivoiceApiKey: Flow<String> get() = _remoteOmnivoiceApiKey
@@ -164,6 +175,9 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveVadAdvisoryDismissed(dismissed: Boolean) { _vadAdvisoryDismissed.value = dismissed }
     override suspend fun saveOnboardingCompleted(completed: Boolean) { _onboardingCompleted.value = completed }
     override suspend fun saveProgressiveTranscription(enabled: Boolean) { _progressiveTranscription.value = enabled }
+    override suspend fun saveEarlyPreviewEnabled(enabled: Boolean) { _earlyPreviewEnabled.value = enabled }
+    override suspend fun saveInterruptedRunNotifications(enabled: Boolean) { _interruptedRunNotifications.value = enabled }
+    override suspend fun getInterruptedRunNotifications(): Boolean = _interruptedRunNotifications.value
     override suspend fun savePunctuationMode(mode: String) { _punctuationMode.value = mode }
     override suspend fun savePunctuationPrompt(prompt: String) { _punctuationPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveSummarizeEnabled(enabled: Boolean) { _summarizeEnabled.value = enabled }
@@ -171,6 +185,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveThreadCount(threads: Int) { _threadCount.value = threads }
     override suspend fun saveInferenceProvider(provider: String) { _inferenceProvider.value = provider }
     override suspend fun saveTranscriptionLanguage(language: String) { _transcriptionLanguage.value = language }
+    override suspend fun saveModelFilterLanguage(code: String) { _modelFilterLanguage.value = code }
     override suspend fun saveSwipeActionMode(mode: String) { _swipeActionMode.value = mode }
     override suspend fun saveGroupLogsByConversation(enabled: Boolean) { _groupLogsByConversation.value = enabled }
     override suspend fun saveShowTechnicalDetails(enabled: Boolean) { _showTechnicalDetails.value = enabled }
@@ -178,6 +193,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
     override suspend fun saveMemoryProtection(enabled: Boolean) { _memoryProtection.value = enabled }
     override suspend fun saveExternalAutomationEnabled(enabled: Boolean) { _externalAutomationEnabled.value = enabled }
+    override suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean) { _voiceNoteIdentityEnabled.value = enabled }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
     override suspend fun saveLanguageChipEnabled(enabled: Boolean) { _languageChipEnabled.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }
@@ -215,6 +231,13 @@ internal class FakePreferencesManager : PreferencesManager {
     override val speakerLabelsEnabled: Flow<Boolean> = _speakerLabelsEnabled
     override suspend fun saveSpeakerLabelsEnabled(enabled: Boolean) {
         _speakerLabelsEnabled.value = enabled
+    }
+
+    // TASK-670 (GH #83): the named-labels gate, default off like the real impl.
+    val _speakerIdEnabled = MutableStateFlow(PreferencesManager.DEFAULT_SPEAKER_ID_ENABLED)
+    override val speakerIdEnabled: Flow<Boolean> = _speakerIdEnabled
+    override suspend fun saveSpeakerIdEnabled(enabled: Boolean) {
+        _speakerIdEnabled.value = enabled
     }
 
     // TASK-576

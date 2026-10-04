@@ -65,7 +65,6 @@
     <string name="logs_empty">Запитів ще немає</string>
     <string name="request_text">Текстовий запит</string>
     <string name="request_audio">Аудіозапит</string>
-    <string name="logs_recent_requests">Останні записи (%1$d)</string>
     <string name="logs_clear">Очистити</string>
     <string name="logs_delete_entry">Видалити запис</string>
     <string name="logs_delete_confirmation">Видалити цей запис історії?</string>
@@ -153,9 +152,9 @@
     <string name="parakeet_download_confirm_title">Завантажити Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">Буде завантажено ~%1$dМБ. Parakeet швидша за Gemma, але менш точна в розшифровці.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862МБ • 25 мов • Рекомендована</string>
+    <string name="parakeet_smoothquant_description">~862МБ • 25 мов • Альтернатива типовій</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640МБ • 25 мов • Легший запасний варіант</string>
+    <string name="parakeet_stock_description">~640МБ • 25 мов • Типова: найкраща якість за вимірюваннями на пристрої</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -247,6 +246,7 @@
     <string name="copy_transcription">Копіювати в буфер обміну</string>
     <string name="copied_to_clipboard">Скопійовано в буфер обміну</string>
     <string name="transcription_streamed_without_vad">Без прибрання тиші</string>
+    <string name="warning_repetition_suspected">Можлива петля повторів у цьому транскрипті; перевірте текст</string>
     <string name="audio_received_for_transcription">Аудіо отримано для розшифровки</string>
     <string name="transcription_complete">Розшифровку завершено</string>
     <plurals name="transcription_partial">
@@ -258,6 +258,7 @@
     <string name="transcription_partial_chip">Неповна</string>
     <string name="transcription_failed">Розшифровка не вдалася</string>
     <string name="error_model_load">Файл моделі може бути пошкоджений або мати хибний формат. Спробуйте завантажити його знову на вкладці «Модель».</string>
+    <string name="error_model_external_corrupt">Файли імпортованої моделі пошкоджено. Видаліть її на вкладці Моделі та імпортуйте знову.</string>
     <string name="error_model_corrupt_healed">Деякі файли моделі були пошкоджені, і їх видалено. Відкрийте вкладку Моделі та завантажте модель знову.</string>
     <string name="error_native">Під час розшифровки сталася внутрішня помилка. Якщо це повторюється, спробуйте іншу модель.</string>
     <string name="error_not_initialized">Модель не завантажено. Відкрийте вкладку «Модель», щоб завантажити або вибрати модель.</string>
@@ -285,6 +286,8 @@
     <string name="native_crash_go_to_model">Перейти на вкладку «Модель»</string>
     <string name="model_load_low_memory">Недостатньо вільної памʼяті для цієї моделі (доступно %1$s, потрібно близько %2$s). Захист памʼяті активний: закрийте інші додатки, використайте меншу модель або вимкніть його в налаштуваннях, щоб спробувати попри все.</string>
     <string name="memory_margin_warning_title">Модель близька до межі пам\'яті цього телефону</string>
+    <string name="memory_kill_warning_title">Система закрила застосунок, щоб звільнити памʼять</string>
+    <string name="memory_kill_warning_body">Останню транскрипцію могло бути перервано. Менша модель або коротший аудіофайл потребують менше памʼяті.</string>
     <string name="memory_margin_warning_body">Модель %1$s, можливо, близька до межі можливостей цього телефону. Транскрипція все одно виконається; можна ввімкнути захист пам\'яті в Налаштуваннях, щоб блокувати такі завантаження.</string>
     <string name="transcribe_low_memory">Недостатньо вільної памʼяті для транскрипції цією моделлю (вільно близько %1$s, потрібно %2$s). Захист памʼяті активний: закрийте інші застосунки та спробуйте ще раз або вимкніть його в налаштуваннях, щоб спробувати попри все.</string>
     <string name="external_model_quarantined_title">Зовнішню модель вимкнено після збою</string>
@@ -295,6 +298,29 @@
     <string name="external_automation_title">Зовнішня автоматизація (Tasker)</string>
     <string name="external_automation_description">Дозволяє іншим додаткам запускати транскрипцію через API автоматизації (наприклад, Tasker). Типово вимкнено.</string>
     <string name="external_automation_disabled">Зовнішня автоматизація вимкнена. Увімкніть її в розділі Налаштування > Розширені > Зовнішня автоматизація.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">Посібник з автоматизації</string>
+    <string name="automation_guide_description">Запускайте розшифровку з Tasker або adb, надсилаючи broadcast програмі. Усе лишається на пристрої.</string>
+    <string name="automation_guide_status_on">Автоматизацію увімкнено: програма відповідає на broadcast-запити й попереднє завантаження.</string>
+    <string name="automation_guide_status_off">Автоматизацію вимкнено: кожен broadcast відхиляється, доки ви не ввімкнете перемикач зовнішньої автоматизації вище.</string>
+    <string name="automation_guide_show_toggle">Показати перемикач</string>
+    <string name="automation_guide_body">Два broadcast: PROCESS_REQUEST розшифровує текстовий запит або аудіофайл, підготовлений у приватній теці програми (шляхи sdcard відхиляються як нечитані), а PRELOAD_MODEL завчасно завантажує модель.</string>
+    <string name="automation_guide_copy">Копіювати тестову команду</string>
+    <string name="automation_guide_open">Повний посібник</string>
+    <string name="automation_guide_no_browser">Не знайдено застосунка для відкриття посібника</string>
+    <string name="faq_section_title">Часті питання</string>
+    <string name="faq_full_link">Читати повний FAQ на GitHub</string>
+    <string name="faq_card_calls_title">Чи розшифрує дзвінки чи наради?</string>
+    <string name="faq_card_calls_body">Ні. Android блокує запис звуку дзвінків інших застосунків, і anti-vocale отримує лише те, що ви поширюєте. Для нарад запишіть звук і поділіться файлом.</string>
+    <string name="faq_card_models_title">Яку модель обрати?</string>
+    <string name="faq_card_models_body">Parakeet типова: швидка й точна на чистих голосових. Для інших мов оберіть у вкладці Моделі ту, що покриває вашу; великі моделі повільніші на старих телефонах.</string>
+    <string name="faq_card_queue_title">Як працює черга?</string>
+    <string name="faq_card_queue_body">Запити йдуть по одному в порядку надходження; сповіщення показує позицію.</string>
+    <string name="faq_card_results_title">Що означають деталі результату?</string>
+    <string name="faq_card_results_body">Кожен запис зберігає модель, тривалість і час обробки. Утримуйте запис для повтору, копіювання, видалення чи звіту.</string>
+    <string name="faq_card_trouble_title">Щось пішло не так</string>
+    <string name="faq_card_trouble_body">Якщо результат не надходить, виробник міг заморозити застосунок у фоні: дотримуйтеся поради про акумулятор у сповіщенні про помилку. Невдалий результат зберігає запис звіту.</string>
+    <string name="no_app_to_open_link">Не знайдено застосунка для відкриття посилання</string>
     <string name="remote_omnivoice_name">Перенесення на сервер LAN (OmniVoice)</string>
     <string name="remote_offload_title">Перенесення на сервер LAN (експериментально)</string>
     <string name="remote_offload_description">Передача довгих або важких розшифровок вашому власному серверу OmniVoice у вашій мережі Wi-Fi. Після ввімкнення виберіть його на вкладці «Моделі».</string>
@@ -524,10 +550,11 @@
     <!-- Settings Tab - VAD -->
     <string name="punctuation_status">Форматування ШІ…</string>
     <string name="punctuation_mode_title">Пунктуація та форматування</string>
-    <string name="punctuation_mode_description">Переписує розшифровки без пунктуації моделлю Gemma. Автоматично лише для моделей без пунктуації (потрібно завантажене Gemma).</string>
+    <string name="punctuation_mode_description">Переформатовує транскрипти моделлю Gemma. Автоматично працює лише для моделей без пунктуації; Завжди також нормалізує пунктуацію; Консервативний додає абзаци й ніколи не змінює слова (потрібно завантажити Gemma).</string>
     <string name="punctuation_mode_off">Вимкнено</string>
     <string name="punctuation_mode_auto">Автоматично</string>
     <string name="punctuation_mode_always">Завжди</string>
+    <string name="punctuation_mode_conservative">Консервативний (лише пунктуація та абзаци)</string>
     <string name="punctuation_prompt_title">Промпт пунктуації</string>
     <string name="punctuation_prompt_description">Інструкція для кроку пунктуації. Залиште порожнім, щоб використати вбудовану.</string>
     <string name="punctuation_prompt_placeholder">Вбудований промпт</string>
@@ -550,6 +577,11 @@
     <string name="vad_description">Видаляє тихі частини з голосових повідомлень перед розшифровкою. Зменшує час обробки та покращує точність.</string>
     <string name="progressive_title">Поступове відображення</string>
     <string name="progressive_description">Показує текст розшифровки після завершення кожного сегмента мовлення, замість очікування повного результату.</string>
+    <string name="early_preview_title">Ранній перегляд</string>
+    <string name="early_preview_description">Показує перший чернетковий текст, поки решта довгого кліпу ще розшифровується. Його буде замінено, коли завершиться перший повний сегмент.</string>
+    <string name="early_preview_badge">Попередній перегляд</string>
+    <string name="early_preview_requires_progressive">Потрібен прогресивний показ</string>
+    <string name="auto_save_failed">Не вдалося автозберегти (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Типовий запит розшифровки</string>
@@ -674,6 +706,8 @@
     <string name="notification_channel_inference_description">Фонова обробка розшифровки аудіо</string>
     <string name="notification_channel_result">Результат розшифровки</string>
     <string name="notification_channel_result_description">Повідомлення після завершення розшифровки</string>
+    <string name="notification_channel_interrupted_runs">Перервані розшифровки</string>
+    <string name="notification_channel_interrupted_runs_description">Короткий підсумок, що показується під час наступного запуску, коли закриваються розшифровки, перервані перезапуском.</string>
     <string name="notification_cancelling">Скасування…</string>
 
     <!-- No-model notification -->
@@ -861,6 +895,21 @@
     <string name="benchmark_provider_label">Провайдер</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">Розшифровку було перервано</string>
+    <string name="interrupted_runs_title">Перервані розшифровки</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d розшифровку перервано до завершення. Подробиці в Історії.</item>
+        <item quantity="few">%1$d розшифровки перервано до завершення. Подробиці в Історії.</item>
+        <item quantity="many">%1$d розшифровок перервано до завершення. Подробиці в Історії.</item>
+        <item quantity="other">%1$d розшифровок перервано до завершення. Подробиці в Історії.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d розшифровку перервано до завершення: у додатку закінчилася пам\'ять. Спробуйте коротший файл, меншу модель або закрийте інші додатки. Подробиці в Історії.</item>
+        <item quantity="few">%1$d розшифровки перервано до завершення: у додатку закінчилася пам\'ять. Спробуйте коротший файл, меншу модель або закрийте інші додатки. Подробиці в Історії.</item>
+        <item quantity="many">%1$d розшифровок перервано до завершення: у додатку закінчилася пам\'ять. Спробуйте коротший файл, меншу модель або закрийте інші додатки. Подробиці в Історії.</item>
+        <item quantity="other">%1$d розшифровок перервано до завершення: у додатку закінчилася пам\'ять. Спробуйте коротший файл, меншу модель або закрийте інші додатки. Подробиці в Історії.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">Сповіщення про перервані розшифровки</string>
+    <string name="interrupted_run_notifications_description">Показувати сповіщення, коли перервані перезапуском додатка розшифровки закриваються під час наступного запуску.</string>
     <string name="action_dismiss">Відхилити</string>
 
     <!-- Model Info Overlay -->
@@ -978,11 +1027,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">Багатомовний CTC (1600+ мов, експериментально)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">Paraformer (FunASR)</string>
     <string name="external_notice_single_pass">Однопрохідна розшифровка: дуже довге аудіо може не вдатися з великими моделями. Обріжте аудіо або використайте меншу модель.</string>
     <string name="external_notice_family">Якщо розшифровка аварійно завершується без помилки, архітектура може бути хибною: видаліть модель та імпортуйте її знову з іншою вибраною архітектурою.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Цілі надсилання</string>
+    <string name="voice_note_identity_title">Розпізнавання відправника голосових</string>
+    <string name="voice_note_identity_description">Записує в рядок історії ім\'я відправника поділеного голосового повідомлення. Поки лише WhatsApp. Ім\'я з\'являється лише якщо повідомлення прийшло, поки опція була увімкнена, і лише коли заявлена тривалість збігається з аудіо (без вгадувань). Ім\'я залишається в рядку і після вимкення; список живе лише в пам\'яті. Потрібен доступ до сповіщень.</string>
+    <string name="voice_note_identity_grant_hint">Доступ до сповіщень вимкнено. Торкніться, щоб відкрити системне налаштування й увімкнути його для цього застосунку.</string>
     <string name="share_targets_description">Показувати кожну завантажену модель окремим варіантом у меню надсилання Android. Коли ви надсилаєте аудіо через конкретну модель, вона використовується тимчасово лише для цієї розшифровки.</string>
     <string name="advanced_sharing_toggle">Показувати моделі в меню надсилання</string>
     <string name="share_targets_models_info">Кожна завантажена модель з\'явиться як окрема ціль надсилання. Видалення моделі прибирає її ціль надсилання.</string>
@@ -1026,6 +1079,9 @@
     <string name="battery_exemption_title">Дозволити розшифровку у фоні</string>
     <string name="battery_exemption_description">Ваш пристрій зупинив розшифровку, поки додаток був у фоні (часто на деяких телефонах з Android). Дозвольте Anti-Vocale працювати у фоні, щоб завершувати розшифровки.</string>
     <string name="battery_exemption_action">Відкрити налаштування</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">Транскрипцію призупинено</string>
+    <string name="suspension_notification_text">Система призупинила застосунок на %1$s під час транскрипції, тому вона не завершилася.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">Імпортувати з URL Hugging Face</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1065,7 +1121,6 @@
         <item quantity="other">%1$d збіги</item>
     </plurals>
     <string name="settings_search_no_results">Немає відповідних налаштувань</string>
-    <string name="settings_search_clear">Очистити пошук</string>
         <string name="partial_transcript_label">Часткова розшифровка</string>
     
     <string name="decoded_of_total">Розпізнано %1$s з %2$s</string>
@@ -1093,6 +1148,23 @@
     <string name="speaker_labels_status">Визначення мовців…</string>
     <string name="speaker_labels_title">Визначати мовців</string>
     <string name="speaker_labels_description">Додає мітку мовця до кожного речення. При першому використанні завантажує близько~47 МБ моделей; збільшує час обробки.</string>
+    <string name="speaker_id_title">Голосові профілі</string>
+    <string name="speaker_id_description">Порівнює голоси у ваших розшифровках зі зразками, які ви записуєте, і ставить на мітки мовців ім\'я, що збігається. Зразки та відбитки голосу лишаються лише на цьому телефоні й ніколи його не покидають.</string>
+    <string name="speaker_id_empty">Ще нікого не зареєстровано.</string>
+    <string name="speaker_id_add">Додати голос</string>
+    <string name="speaker_id_sample_seconds">зразок %1$d с</string>
+    <string name="speaker_id_replay">Відтворити зразок</string>
+    <string name="speaker_id_delete">Видалити голос</string>
+    <string name="speaker_id_name_title">Дайте ім\'я цьому голосу</string>
+    <string name="speaker_id_name_label">Ім\'я</string>
+    <string name="speaker_id_name_confirm">Зберегти</string>
+    <string name="speaker_id_name_cancel">Скасувати</string>
+    <string name="speaker_id_error_too_short">Кліп надто короткий: виберіть щонайменше 3 с голосу цієї людини.</string>
+    <string name="speaker_id_error_too_long">Кліп надто довгий: тримайте менше 30 с.</string>
+    <string name="speaker_id_error_decode">Не вдалося прочитати цей аудіокліп.</string>
+    <string name="speaker_id_error_extract">Не вдалося витягти голосовий відбиток із цього кліпу.</string>
+    <string name="speaker_id_error_save">Не вдалося зберегти ідентичність. Перевірте вільне місце і повторіть.</string>
+    <string name="speaker_id_error_model">Не вдалося завантажити модель мовців. Перевірте з\'єднання і спробуйте ще раз.</string>
     <string name="transcription_not_refined">Не уточнено (миттєвий перегляд)</string>
     <string name="transcription_refined_from">Уточнено з %1$s</string>
     <string name="refinement_title">Двопрохідна розшифровка</string>
@@ -1111,7 +1183,40 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">Потребує файли model + tokens; багатомовна (база zh/en)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">рядок пропущено</item>
-    <item quantity="other">рядків пропущено</item>
+    <item quantity="one">%1$d рядок пропущено</item>
+    <item quantity="few">%1$d рядки пропущено</item>
+    <item quantity="many">%1$d рядків пропущено</item>
+    <item quantity="other">%1$d рядків пропущено</item>
   </plurals>
+    <string name="speaker_settings_title">Діаризація</string>
+    <string name="speaker_settings_summary">Мітки мовців та іменовані профілі</string>
+    <string name="performance_settings_title">Продуктивність і пам\'ять</string>
+    <string name="performance_settings_summary">Потоки, провайдер, захист пам\'яті та діагностика</string>
+    <string name="automation_settings_title">Автоматизація та розвантаження</string>
+    <string name="automation_settings_summary">Приймачі Tasker, підручник broadcast та LAN-розвантаження</string>
+    <string name="settings_group_appearance">Вигляд</string>
+    <string name="settings_group_history">Історія</string>
+    <string name="settings_group_decoding">Декодування та передперегляд</string>
+    <string name="settings_group_gemma">Обробка тексту (Gemma)</string>
+    <string name="settings_group_output">Результат</string>
+    <string name="settings_group_integrations">Інтеграції</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">Значки ярликів надсилання</string>
+    <string name="share_shortcut_icons_description">Виберіть власне зображення для кожного ярлика надсилання або поверніться до згенерованого значка</string>
+    <string name="shortcut_icon_choose">Вибрати зображення</string>
+    <string name="shortcut_icon_reset">Скинути</string>
+    <string name="shortcut_icon_custom">Власне зображення</string>
+    <string name="shortcut_icon_saved">Значок ярлика збережено</string>
+    <string name="shortcut_icon_error">Не вдалося завантажити зображення</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">Історія</string>
+    <string name="shortcut_history_long">Відкрити історію</string>
+    <string name="shortcut_models_short">Моделі</string>
+    <string name="shortcut_models_long">Відкрити моделі</string>
+    <string name="model_switched_title">Модель перемкнено</string>
+    <string name="model_switched_message">Активна модель: %1$s</string>
+    <string name="model_switch_failed">Не вдалося перемкнути: моделі немає на пристрої</string>
+    <string name="model_shortcut_switch_label">Перемкнути на %1$s</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">Додай до цього транскрипту пунктуацію, великі літери та розбиття на абзаци. Не перекладай, не стискуй і не додавай, не видаляй, не змінюй порядок і не виправляй жодного слова: послідовність слів має залишитися точно такою, як написано. Поверни лише відформатований транскрипт.</string>
 </resources>

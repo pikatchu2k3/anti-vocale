@@ -1,6 +1,7 @@
 package com.antivocale.app
 
 import android.app.Application
+import android.util.Log
 import kotlinx.coroutines.flow.first
 import androidx.work.Configuration
 import com.antivocale.app.audio.MemoryReadings
@@ -14,6 +15,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -24,6 +26,7 @@ class BridgeApplication : Application(), Configuration.Provider {
     @Inject lateinit var preferencesManager: PreferencesManager
     @Inject lateinit var shareTargetManager: ShareTargetManager
     @Inject lateinit var shareShortcutManager: ShareShortcutManager
+    @Inject lateinit var voiceNoteIdentityCache: com.antivocale.app.receiver.VoiceNoteIdentityCache
     @Inject lateinit var launcherIconManager: com.antivocale.app.ui.appearance.LauncherIconManager
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var externalModelStore: com.antivocale.app.data.ExternalModelStore
@@ -55,7 +58,25 @@ class BridgeApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         com.antivocale.app.data.catalog.BundledCatalog.attach(this)
-        com.antivocale.app.util.SharedAudioHandler.cleanupOldFiles(this)
+        // TASK-684 review: the suspension sweep (below) posts a Retry
+        // notification pointing at files/shared_audio; this 24h cleanup must
+        // not delete the file BEFORE the offer (a freezer kill + reopen >24h
+        // would deterministically offer a re-run of a just-deleted file). The
+        // sweep itself guards on file existence, so this order is sufficient.
+        runCatching {
+            // TASK-684 review: ORDERING. The suspension sweep (further down)
+        // posts a Retry notification pointing at files/shared_audio; this
+        // 24h cleanup must not delete that file BEFORE the offer. The sweep
+        // itself now guards on the file's existence (drops a dead Retry
+        // action rather than offering a doomed one), so both orders stay
+        // honest; keep the cleanup where it is (early) and let the sweep's
+        // guard decide per row.
+        runCatching {
+            com.antivocale.app.util.SharedAudioHandler.cleanupOldFiles(this)
+        }.onFailure { e ->
+            android.util.Log.w("BridgeApplication", "shared_audio cleanup failed", e)
+        }
+        }.onFailure { Log.w("BridgeApplication", "shared_audio cleanup failed", it) }
         // BEFORE syncAll: a persisted "custom-transductor" id must already resolve to an
         // external record, or the share sync (and any early transcription) would see a
         // registry without it and silently fall through to the LLM loader.
@@ -72,6 +93,22 @@ class BridgeApplication : Application(), Configuration.Provider {
                 preferencesManager.saveExternalMigrationDone(false)
             }
         }
+        // TASK-736 hardening: the identity listener's COMPONENT follows the
+        // preference (ships disabled; the toggle, TEST_SPI, or any other
+        // writer flips it here, one owner). distinctUntilChanged: the flow
+        // replays the cached value at startup and the write is a binder
+        // call. Off also clears the RAM identity cache: the service's own
+        // collector is cancelled by the disable itself, so this owner must
+        // do it (the RAM-only contract: off leaves nothing readable).
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            preferencesManager.voiceNoteIdentityEnabled.distinctUntilChanged().collect { enabled ->
+                voiceNoteIdentityCache.accepting = enabled
+                com.antivocale.app.receiver.VoiceNoteIdentityComponent.setEnabled(
+                    this@BridgeApplication, enabled)
+                if (!enabled) voiceNoteIdentityCache.clear()
+            }
+        }
+
         // TASK-643: builds <=1.13.x persisted the unsuffixed catalog URL on
         // "Restore"; that literal is now the FROZEN legacy index and would
         // read as a phantom override (custom-source badge, no asset fallback,
@@ -85,6 +122,8 @@ class BridgeApplication : Application(), Configuration.Provider {
                     preferencesManager.clearExternalCatalogUrl()
                 }
             }
+        }.onFailure { e ->
+            android.util.Log.e("BridgeApplication", "Legacy catalog-URL cleanup failed (phantom pin stays; retries next launch)", e)
         }
 
         // TASK-640: a leaked pendingBackendLoad marker means the previous
@@ -145,16 +184,27 @@ class BridgeApplication : Application(), Configuration.Provider {
         runCatching {
             val wasOOMCrash = CrashReporter.consumeLastCrashWasOOM()
             kotlinx.coroutines.runBlocking {
-                // TASK-396 pt.2: when the previous process died on an OOM, the
-                // sweep reason carries the mitigation advice instead of the bare
-                // technical "Interrupted by app restart" (the Crashlytics pattern:
-                // 4 reports, users had no hint the cause was memory).
-                val reason = if (wasOOMCrash) {
-                    "Interrupted by app restart: out of memory. Try a shorter file, a smaller model, or close other apps."
-                } else {
-                    "Interrupted by app restart"
-                }
-                logDao.failAllNonTerminal(reason)
+                // TASK-684 (GH #109): the sweep grew a classifier. Rows a
+                // process death orphaned still all close (the GH #51 guarantee:
+                // nothing renders as in-flight forever), but a death the
+                // heartbeat evidence proves was an OEM-freezer suspension now
+                // gets the honest label, the re-run notification, and the
+                // battery-exemption link, instead of the bare "Interrupted by
+                // app restart" that blamed a restart that never happened.
+                com.antivocale.app.service.SuspendedRunRecovery
+                    .closeInterruptedRuns(
+                        this@BridgeApplication, logDao, wasOOMCrash,
+                        // TASK-684: the user preference gates the generic
+                        // class's summary notification (suspended always
+                        // notifies). The one-shot getter reads DataStore
+                        // directly, so the sweep never depends on cache
+                        // coherence. Contained on its own: a DataStore
+                        // failure must not abort the row-close sweep this
+                        // runCatching guards (the GH #51 guarantee).
+                        notifyGenericInterrupted =
+                            runCatching { preferencesManager.getInterruptedRunNotifications() }
+                                .getOrDefault(PreferencesManager.DEFAULT_INTERRUPTED_RUN_NOTIFICATIONS),
+                    )
             }
         }.onFailure { e ->
             android.util.Log.e("BridgeApplication", "Non-terminal log sweep failed", e)
@@ -178,7 +228,9 @@ class BridgeApplication : Application(), Configuration.Provider {
             // from a retired icon variant (TASK-473) has every alias disabled,
             // and the shortcuts must anchor to the healed, enabled Default.
             launcherIconManager.healIfNoAliasEnabled()
-            shareTargetManager.syncAll()
+            // Ordered chain, TASK-738: the heal, the alias sync and the shortcut
+            // refresh must land in this sequence, so the suspend form stays.
+            shareTargetManager.syncAllNow()
             // Dynamic long-press share shortcuts (TASK-393): same startup slot,
             // after the alias sync so the components the shortcut intents launch
             // are already in their persisted state.

@@ -60,7 +60,6 @@
     <string name="logs_empty">עדיין אין בקשות</string>
     <string name="request_text">בקשת טקסט</string>
     <string name="request_audio">בקשת אודיו</string>
-    <string name="logs_recent_requests">רשומות אחרונות (%1$d)</string>
     <string name="logs_clear">ניקוי</string>
     <string name="logs_delete_entry">מחיקת רשומה</string>
     <string name="logs_delete_confirmation">למחוק את הרשומה הזו מההיסטוריה?</string>
@@ -147,9 +146,9 @@
     <string name="parakeet_download_confirm_title">להוריד את Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">פעולה זו תוריד כ-%1$dMB. Parakeet מהיר יותר אך פחות מדויק מ-Gemma בתמלול.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 שפות • מומלץ</string>
+    <string name="parakeet_smoothquant_description">~862MB • 25 שפות • חלופה לברירת המחדל</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 שפות • חלופה קלה יותר</string>
+    <string name="parakeet_stock_description">~640MB • 25 שפות • ברירת המחדל: האיכות הטובה ביותר שנמדדה במכשיר</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
@@ -241,6 +240,7 @@
     <string name="copy_transcription">העתקה ללוח</string>
     <string name="copied_to_clipboard">הועתק ללוח</string>
     <string name="transcription_streamed_without_vad">בלי הסרת שקט</string>
+    <string name="warning_repetition_suspected">ייתכן לולאת חזרה בתמליל זה; בדוק את הטקסט</string>
     <string name="audio_received_for_transcription">התקבל אודיו לתמלול</string>
     <string name="transcription_complete">התמלול הושלם</string>
     <plurals name="transcription_partial">
@@ -251,6 +251,7 @@
     <string name="transcription_partial_chip">חלקי</string>
     <string name="transcription_failed">התמלול נכשל</string>
     <string name="error_model_load">ייתכן שקובץ המודל פגום או בפורמט שגוי. נסה להוריד אותו מחדש מהלשונית מודלים.</string>
+    <string name="error_model_external_corrupt">הקבצים של המודל המיובא פגומים. מחק אותו מלשונית המודלים וייבא אותו מחדש.</string>
     <string name="error_model_corrupt_healed">חלק מקבצי המודל היו פגומים, ולכן האפליקציה הסירה אותם. פתח את הלשונית מודלים והורד את המודל מחדש.</string>
     <string name="error_native">אירעה שגיאה פנימית במהלך התמלול. אם זה חוזר, נסה מודל אחר.</string>
     <string name="error_not_initialized">לא נטען מודל. פתח את הלשונית מודלים כדי להוריד או לבחור אחד.</string>
@@ -278,6 +279,8 @@
     <string name="native_crash_go_to_model">מעבר ללשונית מודלים</string>
     <string name="model_load_low_memory">אין מספיק זיכרון פנוי למודל הזה (%1$s זמינים, דרושים כ-%2$s). הגנת הזיכרון פעילה: סגור אפליקציות אחרות, השתמש במודל קטן יותר, או כבה אותה בהגדרות כדי לנסות בכל זאת.</string>
     <string name="memory_margin_warning_title">מודל קרוב למגבלת הזיכרון של הטלפון הזה</string>
+    <string name="memory_kill_warning_title">המערכת סגרה את האפליקציה כדי לפנות זיכרון</string>
+    <string name="memory_kill_warning_body">ייתכן שהתמליל האחרון נקטע באמצע. מודל קטן יותר או קובץ שמע קצר יותר דורשים פחות זיכרון.</string>
     <string name="memory_margin_warning_body">ייתכן שהמודל %1$s קרוב למה שהטלפון הזה יכול להחזיק. התמלול ממשיך בכל מקרה; תוכל להפעיל את הגנת הזיכרון בהגדרות כדי לחסום טעינות כאלה.</string>
     <string name="transcribe_low_memory">אין מספיק זיכרון פנוי לתמלל עם המודל הזה (כ-%1$s פנויים, דרושים %2$s). הגנת הזיכרון פעילה: סגור אפליקציות אחרות ונסה שוב, או כבה אותה בהגדרות כדי לנסות בכל זאת.</string>
     <string name="external_model_quarantined_title">מודל חיצוני הושבת לאחר קריסה</string>
@@ -288,6 +291,29 @@
     <string name="external_automation_title">אוטומציה חיצונית (Tasker)</string>
     <string name="external_automation_description">מאפשר לאפליקציות אחרות להתחיל תמלול דרך API האוטומציה (למשל Tasker). כבוי כברירת מחדל.</string>
     <string name="external_automation_disabled">אוטומציה חיצונית כבויה. הפעל אותה בהגדרות > מתקדם > אוטומציה חיצונית.</string>
+    <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
+    <string name="automation_guide_title">מדריך אוטומציה</string>
+    <string name="automation_guide_description">התחילו תמלול מ-Tasker או מ-adb בשליחת broadcast לאפליקציה. הכול נשאר במכשיר.</string>
+    <string name="automation_guide_status_on">האוטומציה פעילה: האפליקציה עונה ל-broadcast של בקשה ושל טעינה מוקדמת.</string>
+    <string name="automation_guide_status_off">האוטומציה כבויה: כל broadcast נדחה עד שתפעילו את מתג האוטומציה החיצונית שלמעלה.</string>
+    <string name="automation_guide_show_toggle">הצגת המתג</string>
+    <string name="automation_guide_body">שני broadcast: PROCESS_REQUEST מתמלל פקודת טקסט או קובץ שמע שהוכן מראש בתיקייה הפרטית של האפליקציה (נתיבי sdcard נדחים כבלתי קריאים), ו-PRELOAD_MODEL טוען את המודל מראש.</string>
+    <string name="automation_guide_copy">העתקת פקודת בדיקה</string>
+    <string name="automation_guide_open">המדריך המלא</string>
+    <string name="automation_guide_no_browser">לא נמצאה אפליקציה לפתיחת המדריך</string>
+    <string name="faq_section_title">שאלות נפוצות</string>
+    <string name="faq_full_link">לקרוא את שאלות הנפוצות המלאות ב-GitHub</string>
+    <string name="faq_card_calls_title">האם זה יכול לתעתק שיחות או פגישות?</string>
+    <string name="faq_card_calls_body">לא. Android חוסם הקלטת שמע שיחות של אפליקציות אחרות, ו-anti-vocale מקבל רק את מה שתשתפו. לפגישות הקליטו את השמע ושתפו את הקובץ.</string>
+    <string name="faq_card_models_title">איזה מודל לבחור?</string>
+    <string name="faq_card_models_body">Parakeet ברירת המחדל: מהיר ומדויק בהודעות קוליות נקיות. לשפות אחרות בחרו בלשונית המודלים מודל שמכסה את שלכם; מודלים גדולים אטיים יותר בטלפונים ישנים.</string>
+    <string name="faq_card_queue_title">איך עובד התור?</string>
+    <string name="faq_card_queue_body">בקשות רצות אחת-אחת לפי סדר הגעה; ההתראה מציגה את המקום בתור.</string>
+    <string name="faq_card_results_title">מה אומרים פרטי התוצאה?</string>
+    <string name="faq_card_results_body">כל רשומה שומרת את המודל, משך וזמן עיבוד. לחיצה ארוכה לניסיון חוזר, העתקה, מחיקה או דיווח.</string>
+    <string name="faq_card_trouble_title">משהו השתבש</string>
+    <string name="faq_card_trouble_body">אם תוצאה לא מגיעה, ייתכן שיצרן הטלפון הקפיא את האפליקציה ברקע: עקבו אחרי עצת הסוללה בהתראת השגיאה. תוצאה שנכשלה שומרת רשומת דיווח.</string>
+    <string name="no_app_to_open_link">לא נמצאה אפליקציה לפתיחת הקישור</string>
     <string name="remote_omnivoice_name">העברה לשרת LAN (OmniVoice)</string>
     <string name="remote_offload_title">העברה לשרת LAN (ניסיוני)</string>
     <string name="remote_offload_description">מעביר תמלולים ארוכים או כבדים לשרת ה-OmniVoice שלכם ברשת ה-Wi-Fi. לאחר ההפעלה בחרו אותו בלשונית המודלים.</string>
@@ -515,10 +541,11 @@
     <!-- Settings Tab - Punctuation (TASK-276) -->
     <string name="punctuation_status">מעצב עם AI…</string>
     <string name="punctuation_mode_title">פיסוק ועיצוב</string>
-    <string name="punctuation_mode_description">כותב מחדש תמלילים לא מפוסקים בעזרת מודל Gemma. הרצה אוטומטית חלה רק על מודלים שאינם מפסקים (דורש הורדת Gemma).</string>
+    <string name="punctuation_mode_description">מעצב מחדש תמלילים עם מודל Gemma. אוטומטי פועל רק למודלים ללא פיסוק; תמיד מנרמל גם את הפיסוק; שמרני מוסיף פסקאות ולעולם אינו משנה מילים (נדרש Gemma שהורד).</string>
     <string name="punctuation_mode_off">כבוי</string>
     <string name="punctuation_mode_auto">אוטומטי</string>
     <string name="punctuation_mode_always">תמיד</string>
+    <string name="punctuation_mode_conservative">שמרני (רק פיסוק ופסקאות)</string>
     <string name="punctuation_prompt_title">פרומפט פיסוק</string>
     <string name="punctuation_prompt_description">הוראה לשלב הפיסוק. השאר ריק כדי להשתמש בפרומפט המובנה.</string>
     <string name="punctuation_prompt_placeholder">פרומפט מובנה</string>
@@ -541,6 +568,11 @@
     <string name="vad_description">מסיר קטעי שקט מהודעות קוליות לפני התמלול. מקצר את זמן העיבוד ומשפר את הדיוק.</string>
     <string name="progressive_title">הצגה מדורגת</string>
     <string name="progressive_description">מציג טקסט בזמן שהתמלול מתקדם, במקום לחכות שההקלטה תסתיים.</string>
+    <string name="early_preview_title">תצוגה מקדימה מוקדמת</string>
+    <string name="early_preview_description">מציג טקסט ראשוני גס בזמן שקליפ ארוך עדיין מפוענח. הוא מוחלף כשמסתיים המקטע הראשון המלא.</string>
+    <string name="early_preview_badge">תצוגה מקדימה</string>
+    <string name="early_preview_requires_progressive">דורש תצוגה מתקדמת</string>
+    <string name="auto_save_failed">השמירה האוטומטית נכשלה (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">פרומפט ברירת מחדל</string>
@@ -665,6 +697,8 @@
     <string name="notification_channel_inference_description">עיבוד תמלול אודיו ברקע</string>
     <string name="notification_channel_result">תוצאת תמלול</string>
     <string name="notification_channel_result_description">טקסט מוגמר ופעולות</string>
+    <string name="notification_channel_interrupted_runs">תמלולים שהופסקו</string>
+    <string name="notification_channel_interrupted_runs_description">התקציר שמופיע בהפעלה הבאה כשתמלולים שהופסקו בעקבות הפעלה מחדש נסגרים.</string>
     <string name="notification_cancelling">מבטל…</string>
 
     <!-- No-model notification -->
@@ -851,6 +885,19 @@
     <string name="benchmark_provider_label">מנוע</string>
     <string name="benchmark_provider_value">%1$s</string>
     <string name="transcription_interrupted_title">התמלול הופסק</string>
+    <string name="interrupted_runs_title">תמלולים שהופסקו</string>
+    <plurals name="interrupted_runs_text">
+        <item quantity="one">%1$d תמלול הופסק לפני שהסתיים. פרטים בהיסטוריה.</item>
+        <item quantity="two">%1$d תמלולים הופסקו לפני שהסתיימו. פרטים בהיסטוריה.</item>
+        <item quantity="other">%1$d תמלולים הופסקו לפני שהסתיימו. פרטים בהיסטוריה.</item>
+    </plurals>
+    <plurals name="interrupted_runs_oom_text">
+        <item quantity="one">%1$d תמלול הופסק לפני שהסתיים: הזיכרון של האפליקציה אזל. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. פרטים בהיסטוריה.</item>
+        <item quantity="two">%1$d תמלולים הופסקו לפני שהסתיימו: הזיכרון של האפליקציה אזל. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. פרטים בהיסטוריה.</item>
+        <item quantity="other">%1$d תמלולים הופסקו לפני שהסתיימו: הזיכרון של האפליקציה אזל. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. פרטים בהיסטוריה.</item>
+    </plurals>
+    <string name="interrupted_run_notifications_title">התראות על תמלולים שהופסקו</string>
+    <string name="interrupted_run_notifications_description">מציג התראה כשתמלולים שהופסקו בעקבות הפעלה מחדש של האפליקציה נסגרים בהפעלה הבאה.</string>
     <string name="action_dismiss">סגירה</string>
 
     <!-- Model Info Overlay -->
@@ -966,11 +1013,15 @@
     <string name="external_ctc_subtype_nemo">NeMo CTC</string>
     <string name="external_ctc_subtype_omnilingual">CTC רב-לשוני (1600+ שפות, ניסיוני)</string>
     <string name="external_ctc_subtype_zipformer">Zipformer CTC</string>
+    <string name="external_ctc_subtype_paraformer">פאראפורמר (FunASR)</string>
     <string name="external_notice_single_pass">ייתכן שמודלים גדולים לא יעבדו אודיו ארוך מאוד בהעברה אחת. קצר את האודיו או בחר מודל קטן יותר.</string>
     <string name="external_notice_family">אם התמלול קורס בלי הודעת שגיאה, ייתכן שהארכיטקטורה שגויה: מחק וייבא מחדש את המודל עם ארכיטקטורה אחרת שנבחרה.</string>
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">מודלים בתפריט השיתוף</string>
+    <string name="voice_note_identity_title">זיהוי שולח ההודעות הקוליות</string>
+    <string name="voice_note_identity_description">כותב בשורת ההיסטוריה את שם השולח של הודעת הקול ששותפה. לעת עתה רק WhatsApp. השם מופיע רק אם ההתראה של ההודעה הגיעה בעת שהאפשרות היתה פעילה, ורק אם האוך שדווח תואם לשמע (בלי שמות מנוחשים). השם נשאר בשורה גם לאחר כיבוי; רשימת ההמתנה מוחזרת רק בזכרון. דורש הרשאת גישה להתראות.</string>
+    <string name="voice_note_identity_grant_hint">גישה להתראות כבויה. הקש כדי לפתוח את הגדרת המערכת ולהפעיל אותה ליישום הזה.</string>
     <string name="share_targets_description">כל מודל שהורד מופיע כאפשרות נפרדת בתפריט המערכת. האודיו מעובד על ידי המודל שנבחר.</string>
     <string name="advanced_sharing_toggle">הצגת מודלים שהורדו</string>
     <string name="share_targets_models_info">כל מודל שהורד יופיע כפריט בתפריט השיתוף. מחיקת מודל מסירה אותו מהתפריט.</string>
@@ -1013,6 +1064,9 @@
     <string name="battery_exemption_title">אפשר פעולה ברקע</string>
     <string name="battery_exemption_description">המערכת עצרה את הזיהוי בזמן שהאפליקציה הייתה ברקע. אפשר ל-Anti-Vocale לפעול ברקע כדי שהזיהוי לא יופרע.</string>
     <string name="battery_exemption_action">פתיחת ההגדרה</string>
+    <!-- TASK-684 (GH #109): OEM-freezer suspension outcome -->
+    <string name="suspension_notification_title">התעתוק הושהה</string>
+    <string name="suspension_notification_text">המערכת השהתה את האפליקציה למשך %1$s במהלך התעתוק, ולכן הוא לא הסתיים.</string>
     <!-- TASK-373: litert-lm HF url import -->
     <string name="litertlm_import_from_url">ייבוא מכתובת URL של Hugging Face</string>
     <string name="litertlm_url_hint">https://huggingface.co/owner/repo</string>
@@ -1052,7 +1106,6 @@
         <item quantity="other">%1$d התאמות</item>
     </plurals>
     <string name="settings_search_no_results">אין הגדרות תואמות</string>
-    <string name="settings_search_clear">נקה חיפוש</string>
         <string name="partial_transcript_label">תמליל חלקי</string>
     
     <string name="decoded_of_total">פוענחו %1$s מתוך %2$s</string>
@@ -1080,6 +1133,23 @@
     <string name="speaker_labels_status">מזהה דוברים…</string>
     <string name="speaker_labels_title">זיהוי דוברים</string>
     <string name="speaker_labels_description">מוסיף תווית דובר לכל משפט. בשימוש הראשון מוריד כ-~47 מ״ב של מודלים; מוסיף זמן עיבוד.</string>
+    <string name="speaker_id_title">זהויות דוברים</string>
+    <string name="speaker_id_description">משווה את הקולות בתמלילים שלך לדגימות שאתה מקליט, ושם על תוויות הדוברים את השם שתואם. הדגימות וטביעות הקול נשארות רק בטלפון הזה ולעולם לא עוזבות אותו.</string>
+    <string name="speaker_id_empty">עדיין לא נרשם אף אחד.</string>
+    <string name="speaker_id_add">הוספת קול</string>
+    <string name="speaker_id_sample_seconds">דגימה של %1$d שנ׳</string>
+    <string name="speaker_id_replay">נגן דגימה</string>
+    <string name="speaker_id_delete">מחיקת קול</string>
+    <string name="speaker_id_name_title">לתת שם לקול הזה</string>
+    <string name="speaker_id_name_label">שם</string>
+    <string name="speaker_id_name_confirm">שמירה</string>
+    <string name="speaker_id_name_cancel">ביטול</string>
+    <string name="speaker_id_error_too_short">הקליפ קצר מדי: בחרו לפחות 3 שנ׳ מהקול של אותו אדם.</string>
+    <string name="speaker_id_error_too_long">הקליפ ארוך מדי: קצר מ־30 שנ׳.</string>
+    <string name="speaker_id_error_decode">לא ניתן היה לקרוא את קטע השמע.</string>
+    <string name="speaker_id_error_extract">לא ניתן היה לחלץ טביעת קול מהקליפ.</string>
+    <string name="speaker_id_error_save">לא ניתן היה לשמור את הזהות. בדוק את האחסון הפנוי ונסה שוב.</string>
+    <string name="speaker_id_error_model">הורדת מודל הדוברים נכשלה. בדקו את החיבור ונסו שוב.</string>
     <string name="transcription_not_refined">לא מחודד (תצוגה מיידית)</string>
     <string name="transcription_refined_from">חודד מ-%1$s</string>
     <string name="refinement_title">תמלול דו-שלבי</string>
@@ -1098,7 +1168,39 @@
     <string name="external_family_dolphin">Dolphin</string>
     <string name="external_family_dolphin_help">דורש קבצי model + tokens; רב-לשוני (בסיס zh/en)</string>
   <plurals name="subtitle_import_skipped_cues">
-    <item quantity="one">שורה דילגה</item>
-    <item quantity="other">שורות דילגו</item>
+    <item quantity="one">שורה %1$d דילגה</item>
+    <item quantity="two">שתי שורות דילגו</item>
+    <item quantity="other">%1$d שורות דילגו</item>
   </plurals>
+    <string name="speaker_settings_title">זיהוי דוברים</string>
+    <string name="speaker_settings_summary">תוויות דוברים וזהויות בשם</string>
+    <string name="performance_settings_title">ביצועים וזיכרון</string>
+    <string name="performance_settings_summary">תהליכונים, ספק, הגנת זיכרון ואבחון</string>
+    <string name="automation_settings_title">אוטומציה והאצה חוצה</string>
+    <string name="automation_settings_summary">מקלטי Tasker, מדריך broadcast והעברה ל-LAN</string>
+    <string name="settings_group_appearance">מראה ותחושה</string>
+    <string name="settings_group_history">היסטוריה</string>
+    <string name="settings_group_decoding">פענוח ותצוגה מקדימה</string>
+    <string name="settings_group_gemma">עיבוד טקסט (Gemma)</string>
+    <string name="settings_group_output">פלט</string>
+    <string name="settings_group_integrations">שילובים</string>
+    <!-- TASK-490: user-chosen share-shortcut icons -->
+    <string name="share_shortcut_icons_title">סמלי קיצורי הדרך לשיתוף</string>
+    <string name="share_shortcut_icons_description">בחרו תמונה מותאמת אישית לכל קיצור דרך לשיתוף, או חזרו לסמל שנוצר אוטומטית</string>
+    <string name="shortcut_icon_choose">בחירת תמונה</string>
+    <string name="shortcut_icon_reset">איפוס</string>
+    <string name="shortcut_icon_custom">תמונה מותאמת אישית</string>
+    <string name="shortcut_icon_saved">סמל קיצור הדרך נשמר</string>
+    <string name="shortcut_icon_error">טעינת התמונה נכשלה</string>
+    <!-- TASK-552: app icon shortcuts (dynamic model switch + static tabs) -->
+    <string name="shortcut_history_short">היסטוריה</string>
+    <string name="shortcut_history_long">פתיחת ההיסטוריה</string>
+    <string name="shortcut_models_short">מודלים</string>
+    <string name="shortcut_models_long">פתיחת מודלים</string>
+    <string name="model_switched_title">המודל הוחלף</string>
+    <string name="model_switched_message">מודל פעיל: %1$s</string>
+    <string name="model_switch_failed">ההחלפה נכשלה: המודל אינו במכשיר</string>
+    <string name="model_shortcut_switch_label">מעבר אל %1$s</string>
+    <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
+    <string name="punctuation_default_prompt_conservative">הוסף לתמליל הזה פיסוק, אותיות גדולות ומעברי פסקה. אל תתרגם, אל תסכם ואל תוסיף, תסיר, תשנה סדר או תתקן אף מילה: רצף המילים חייב להישאר בדיוק כפי שנכתב. החזר רק את התמליל המעוצב.</string>
 </resources>

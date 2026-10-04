@@ -26,8 +26,8 @@ import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.ui.AppNavigation
+import com.antivocale.app.util.MemoryKillStartupCheck
 import com.antivocale.app.ui.MainScreen
-import com.antivocale.app.ui.SettingsFocusRow
 import com.antivocale.app.ui.TestNavigation
 import com.antivocale.app.ui.theme.AntiVocaleTheme
 import com.antivocale.app.ui.theme.TextScale
@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
         /** Intent extra: taskId of a log entry to highlight (scroll-to + expand). */
         const val EXTRA_HIGHLIGHT_TASK_ID = "highlight_task_id"
 
-        /** Intent extra: [com.antivocale.app.ui.SettingsFocusRow] name to scroll to and highlight. */
+        /** Intent extra: an [com.antivocale.app.ui.AppNavigation] ROW_KEYS value to scroll to and highlight. */
         const val EXTRA_NAVIGATE_TO_SETTINGS_ROW = "navigate_to_settings_row"
 
         private const val PIP_ASPECT_RATIO_NUMERATOR = 9
@@ -82,11 +82,34 @@ class MainActivity : AppCompatActivity() {
     private val _navigateToModelTab = MutableStateFlow(false)
 
     /**
-     * TASK-625: the Settings row to scroll to and highlight (the memory-failure
-     * notification action). Null once consumed by the Settings tab, so a second
-     * tap on the same notification re-delivers instead of being deduped.
+     * TASK-625/632: the intent-derived destination pending hand-off to
+     * MainScreen (today: the memory-failure notification's settings row).
+     * Null once consumed, so a second tap on the same notification
+     * re-delivers instead of being deduped. Routed through MainScreen's ONE
+     * openSettings rule, never a parallel channel.
      */
-    private val _settingsFocusRow = MutableStateFlow<SettingsFocusRow?>(null)
+    private val _pendingIntentDestination =
+        MutableStateFlow<AppNavigation.Destination.SettingsRow?>(null)
+
+    /**
+     * Parses the settings-row extra; null when absent or unknown. The extra
+     * is removed ONCE READ either way (review: an unknown value left in place
+     * is re-parsed by every later onNewIntent forever), and the pre-TASK-632
+     * enum-name token ("MEMORY_PROTECTION") is accepted so a PendingIntent
+     * recorded by the previously installed version still deep-links.
+     */
+    private fun takeSettingsRowExtra(intent: Intent): AppNavigation.Destination.SettingsRow? {
+        val key = intent.getStringExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW) ?: return null
+        intent.removeExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW)
+        // "MEMORY_PROTECTION" was the old enum name; "memory_protection" is
+        // the ROW_KEYS value both new writers use.
+        val rowKey = when (key) {
+            AppNavigation.ROW_KEY_MEMORY_PROTECTION, "MEMORY_PROTECTION" ->
+                AppNavigation.ROW_KEY_MEMORY_PROTECTION
+            else -> return null
+        }
+        return AppNavigation.Destination.SettingsRow(rowKey)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,13 +117,25 @@ class MainActivity : AppCompatActivity() {
 
         if (!checkDeviceCompatibility()) return
 
-        val startOnModelTab = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_MODEL_TAB, false)
+        // TASK-552: the static Models shortcut delivers its extra as a
+        // String (static-shortcut extras are string-only), while the
+        // notification writers use a Boolean; both forms navigate.
+        val startOnModelTab = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_MODEL_TAB, false) ||
+            intent.getStringExtra(EXTRA_NAVIGATE_TO_MODEL_TAB) == "true"
         if (startOnModelTab) intent.removeExtra(EXTRA_NAVIGATE_TO_MODEL_TAB)
         captureTestNavigation(intent)
 
         // If the previous process died from a native crash (e.g. sherpa-onnx
         // exit(255) from a corrupt model) or a low-memory kill, explain what happened.
-        when (val crash = NativeCrashDetector.checkForRecentCrash(this)) {
+        // TASK-426: the memory-limiter advisory posts from this foreground
+        // context, not the Application: a post from a background process
+        // start (cold race, a broadcast) is silently dropped on 13+ and
+        // would consume the once-per-kill mark without ever being shown.
+        // TASK-426 review: ONE exit-history read serves both startup checks
+        // (this used to be two binder calls per onCreate, rotation included).
+        val startupExits = NativeCrashDetector.recentExits(this)
+        MemoryKillStartupCheck.run(this, startupExits)
+        when (val crash = NativeCrashDetector.checkForRecentCrash(this, startupExits)) {
             is NativeCrashDetector.CrashCheckResult.NativeCrash -> {
                 // If the user had NNAPI selected, the crash was likely the NNAPI driver:
                 // auto-fallback to CPU so the app is usable on the next launch (issue #26).
@@ -136,10 +171,7 @@ class MainActivity : AppCompatActivity() {
 
         // TASK-625: Settings row focus (cold start); removed so a later
         // configuration-change recreation does not replay the scroll.
-        AppNavigation.parseSettingsFocusRow(intent.getStringExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW))?.let {
-            _settingsFocusRow.value = it
-            intent.removeExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW)
-        }
+        takeSettingsRowExtra(intent)?.let { _pendingIntentDestination.value = it }
 
         requestNotificationPermissionIfNeeded()
         requestAudioPermissionIfNeeded()
@@ -171,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             val navigateToModel by _navigateToModelTab.collectAsState()
 
             // TASK-625: the Settings row-focus signal, cleared after delivery
-            val settingsFocusRow by _settingsFocusRow.collectAsState()
+            val pendingIntentDestination by _pendingIntentDestination.collectAsState()
 
             // Observe transcription state and update PiP auto-enter params
             LaunchedEffect(Unit) {
@@ -189,8 +221,8 @@ class MainActivity : AppCompatActivity() {
                         startOnModelTab = startOnModelTab,
                         navigateToModel = navigateToModel,
                         isInPipMode = isInPip,
-                        focusSettingsRow = settingsFocusRow,
-                        onSettingsFocusConsumed = { _settingsFocusRow.value = null }
+                        activityDestination = pendingIntentDestination,
+                        onActivityDestinationConsumed = { _pendingIntentDestination.value = null }
                     )
                 }
             }
@@ -212,11 +244,10 @@ class MainActivity : AppCompatActivity() {
         intent.getStringExtra(EXTRA_HIGHLIGHT_TASK_ID)?.let {
             logsViewModel.highlightLogEntry(it)
         }
-        AppNavigation.parseSettingsFocusRow(intent.getStringExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW))?.let {
-            _settingsFocusRow.value = it
-            // Strip it so the retained intent cannot replay the deep link on a
-            // later configuration-change recreation (same contract as onCreate).
-            intent.removeExtra(EXTRA_NAVIGATE_TO_SETTINGS_ROW)
+        takeSettingsRowExtra(intent)?.let {
+            _pendingIntentDestination.value = it
+            // Stripped inside takeSettingsRowExtra so the retained intent cannot
+            // replay the deep link on a later configuration-change recreation.
         }
         captureTestNavigation(intent)
     }

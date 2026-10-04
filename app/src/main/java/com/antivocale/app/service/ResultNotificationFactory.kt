@@ -9,11 +9,12 @@ import com.antivocale.app.MainActivity
 import com.antivocale.app.R
 import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.receiver.NotificationActionReceiver
+import com.antivocale.app.receiver.TaskerRequestReceiver
 import com.antivocale.app.util.AppInfoUtils
 import com.antivocale.app.util.TranscriptSignature
 import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.LanguageNames
-import com.antivocale.app.ui.SettingsFocusRow
+import com.antivocale.app.ui.AppNavigation
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Everything needed to (re)build one result notification (TASK-327). */
@@ -42,6 +43,12 @@ data class ResultNotificationSpec(
     val refinedFrom: String? = null,
     /** GH #43 sentinel for [refinedFrom]: delivered unrefined (F4/F5). */
     val notRefined: Boolean = false,
+    /** TASK-583 (GH #110): the delivered single-model transcript matched the
+     *  repetition-loop detector; said in subText, leading it. */
+    val repetitionSuspected: Boolean = false,
+    /** TASK-722: the auto-save failure reason when the export could not be
+     *  written; null when saved, not configured, or the run predates it. */
+    val saveFailureReason: String? = null,
     val firstPostedAt: Long = System.currentTimeMillis(),
     /** True when rebuilding after a prev/next tap: suppresses re-alerting. */
     val repost: Boolean = false
@@ -73,6 +80,32 @@ class ResultNotificationFactory(private val context: Context) {
         AppNotificationChannel.TRANSCRIPTION_RESULT.create(context)
     }
 
+    fun noModelNotification(): Notification {
+        // TASK-328: the no-model notification, ONE builder (was a line-for-line
+        // pair in InferenceService and TranscriptionNotificationListener).
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra(MainActivity.EXTRA_NAVIGATE_TO_MODEL_TAB, true)
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            context, RC_ERROR_LAUNCH_MODEL_TAB, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(context, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
+            .setContentTitle(context.getString(R.string.notification_no_model_title))
+            .setContentText(context.getString(R.string.notification_no_model_message))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openPendingIntent)
+            .setAutoCancel(true)
+            .addAction(
+                android.R.drawable.ic_menu_set_as,
+                context.getString(R.string.notification_no_model_action),
+                openPendingIntent
+            )
+            .build()
+    }
+
     /**
      * TASK-625: the transcription-failure error notification, shared by both
      * error surfaces (InferenceService and TranscriptionNotificationListener)
@@ -83,7 +116,7 @@ class ResultNotificationFactory(private val context: Context) {
      */
     fun errorNotification(errorMessage: String, memoryAction: Boolean): Notification {
         val launch = if (memoryAction) {
-            settingsRowPendingIntent(SettingsFocusRow.MEMORY_PROTECTION)
+            settingsRowPendingIntent(AppNavigation.ROW_KEY_MEMORY_PROTECTION)
         } else {
             plainLaunchPendingIntent()
         }
@@ -105,20 +138,118 @@ class ResultNotificationFactory(private val context: Context) {
     }
 
     /**
-     * TASK-640: a plain high-importance alert on the result channel (title,
-     * text, app-launch content intent). The quarantine notice and any future
+     * TASK-640: a plain alert on the result channel (title, text,
+     * app-launch content intent). The quarantine notice and any future
      * one-shot alerts compose here instead of hand-rolling builders outside
-     * the service layer.
+     * the service layer; [priority] and [channel] default to the
+     * high-importance result channel, the quiet-summary variants override
+     * both.
      */
-    fun alertNotification(title: String, text: String): Notification =
-        NotificationCompat.Builder(context, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
+    fun alertNotification(
+        title: String,
+        text: String,
+        priority: Int = NotificationCompat.PRIORITY_HIGH,
+        channel: AppNotificationChannel = AppNotificationChannel.TRANSCRIPTION_RESULT,
+    ): Notification =
+        NotificationCompat.Builder(context, channel.id)
             .setContentTitle(title)
             .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(priority)
+            .setContentIntent(plainLaunchPendingIntent())
+            .setAutoCancel(true)
+            .build()
+
+    /**
+     * TASK-684 (GH #109): the quiet summary for the GENERIC interrupted
+     * class (rows closed by the sweep that the classifier could not name a
+     * cause for). No retry action (unlike the suspended class there is no
+     * proven file to re-run), no battery link: this is the honest "your run
+     * did not finish" the reporter was missing, one notification for the
+     * whole batch, count and History pointer in BOTH arms. Its own
+     * IMPORTANCE_DEFAULT channel: a step quieter than the proven
+     * suspension's heads-up, and independently toggleable at the system
+     * level. Channel created here so every post site is covered (the
+     * lazy-create pattern the other channels use).
+     */
+    fun interruptedRunsNotification(count: Int, oom: Boolean): Notification {
+        AppNotificationChannel.INTERRUPTED_RUNS.create(context)
+        val textRes = if (oom) R.plurals.interrupted_runs_oom_text else R.plurals.interrupted_runs_text
+        return alertNotification(
+            title = context.getString(R.string.interrupted_runs_title),
+            text = context.resources.getQuantityString(textRes, count, count),
+            priority = NotificationCompat.PRIORITY_DEFAULT,
+            channel = AppNotificationChannel.INTERRUPTED_RUNS,
+        )
+    }
+
+    /**
+     * TASK-684 (GH #109): the OEM-freezer suspension outcome. The honest
+     * message (already localized, duration included) plus the two one-tap
+     * remedies: re-run the same audio (a broadcast the
+     * [NotificationActionReceiver] re-enqueues through [InferenceEnqueue])
+     * and the battery-exemption deep link (the 1.11-prep guidance, the same
+     * system dialog the Settings card opens). Two actions, inside the
+     * three-button shade cap.
+     */
+    fun suspensionNotification(
+        text: String,
+        rerunTaskId: String,
+        filePath: String?,
+        prompt: String?,
+        sourcePackage: String?,
+        retryFileAlive: Boolean = true,
+        /** TASK-736: the original row's sender, so the re-run's row keeps the label. */
+        senderName: String? = null,
+    ): Notification {
+        val rerunIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_RERUN_SUSPENDED
+            putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, filePath)
+            putExtra(TaskerRequestReceiver.EXTRA_PROMPT, prompt ?: "")
+            sourcePackage?.let { putExtra(NotificationActionReceiver.EXTRA_SOURCE_PACKAGE, it) }
+            senderName?.let { putExtra(InferenceService.EXTRA_SENDER_NAME, it) }
+            // Diagnostic only: the re-run mints its own task id.
+            putExtra(NotificationActionReceiver.EXTRA_TASK_ID, rerunTaskId)
+        }
+        val rerun = PendingIntent.getBroadcast(
+            context, RC_SUSPENSION_RERUN, rerunIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val battery = PendingIntent.getActivity(
+            context, RC_SUSPENSION_BATTERY,
+            Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:" + context.packageName)
+            ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(context, AppNotificationChannel.TRANSCRIPTION_RESULT.id)
+            .setContentTitle(context.getString(R.string.suspension_notification_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(plainLaunchPendingIntent())
             .setAutoCancel(true)
+            // TASK-684 review: the Retry action only when the source file
+            // survived (shared_audio's 24h cleanup runs before this sweep;
+            // a doomed Retry would toast "file not found" on every tap).
+            .apply {
+                if (retryFileAlive) {
+                    addAction(
+                        android.R.drawable.ic_media_play,
+                        context.getString(R.string.retranscribe),
+                        rerun
+                    )
+                }
+            }
+            .addAction(
+                android.R.drawable.ic_menu_manage,
+                context.getString(R.string.battery_exemption_action),
+                battery
+            )
             .build()
+    }
 
     /** The plain app launch both error surfaces default to. */
     private fun plainLaunchPendingIntent(): PendingIntent = PendingIntent.getActivity(
@@ -132,11 +263,11 @@ class ResultNotificationFactory(private val context: Context) {
      * TASK-625: the settings-row deep link. In-app handoff (the live activity
      * receives the extra via onNewIntent), not a task clear.
      */
-    fun settingsRowPendingIntent(row: SettingsFocusRow): PendingIntent = PendingIntent.getActivity(
+    fun settingsRowPendingIntent(rowKey: String): PendingIntent = PendingIntent.getActivity(
         context, RC_ERROR_LAUNCH_SETTINGS_ROW,
         Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, row.name),
+            .putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, rowKey),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
@@ -212,6 +343,17 @@ class ResultNotificationFactory(private val context: Context) {
             oversized -> subTextParts.add(
                 context.getString(R.string.char_counter, CHAR_PREVIEW_LIMIT, text.length)
             )
+        }
+        if (spec.repetitionSuspected) {
+            subTextParts.add(context.getString(R.string.warning_repetition_suspected))
+        }
+
+        if (spec.saveFailureReason != null) {
+            // TASK-722: a failed auto-save is never silent; the reason token
+            // rides the subtext AFTER the repetition warning (TASK-583: the
+            // warning that the text may be garbage leads the status facts).
+            subTextParts.add(
+                context.getString(R.string.auto_save_failed, spec.saveFailureReason))
         }
         val langLabel = spec.detectedLanguage?.let { lang ->
             LanguageNames.nativeLanguageName(lang)
@@ -326,6 +468,7 @@ class ResultNotificationFactory(private val context: Context) {
             putExtra(NotificationActionReceiver.EXTRA_PAGE_INDEX, pageIndex)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, spec.notificationId)
             putExtra(NotificationActionReceiver.EXTRA_FIRST_POSTED_AT, spec.firstPostedAt)
+            putExtra(NotificationActionReceiver.EXTRA_SAVE_FAILURE, spec.saveFailureReason)
             putExtra(NotificationActionReceiver.EXTRA_IS_PARTIAL, spec.isPartial)
             putExtra(NotificationActionReceiver.EXTRA_FAILED_CHUNK_COUNT, spec.failedChunkCount)
             spec.taskId?.let { putExtra(NotificationActionReceiver.EXTRA_TASK_ID, it) }
@@ -363,7 +506,14 @@ class ResultNotificationFactory(private val context: Context) {
         // Mirror the services' launch-band constants so the same intent shape
         // stays a single PendingIntent whichever builder produced it.
         private const val RC_ERROR_LAUNCH_DEFAULT = 0
+        private const val RC_ERROR_LAUNCH_MODEL_TAB = 1
         private const val RC_ERROR_LAUNCH_SETTINGS_ROW = 2
+
+        // TASK-684: the suspension notification's action band. Fixed codes:
+        // one live suspension notification at a time (fixed id), and
+        // FLAG_UPDATE_CURRENT replaces its intents on re-post.
+        private const val RC_SUSPENSION_RERUN = 3
+        private const val RC_SUSPENSION_BATTERY = 4
 
         /** Preview truncation for the non-pageable oversized path, unchanged from the previous implementations. */
         const val CHAR_PREVIEW_LIMIT = 100
@@ -381,11 +531,21 @@ class ResultNotificationFactory(private val context: Context) {
          * - 1005: CrashQuarantineCheck.NOTIFICATION_ID (TASK-640 quarantine notice)
          * - 1006: TranscriptionOrchestrator.MEMORY_MARGIN_WARNING_ID (TASK-631
          *   part-2 dismissable tight-margin warning, default path)
+         * - 1007: MemoryKillStartupCheck.NOTIFICATION_ID (TASK-426 previous
+         *   process killed by memory enforcement, once per kill)
+         * - 1009: ModelShortcutActivity.SWITCH_NOTIFICATION_ID (TASK-552 the
+         *   model-switch confirmation, self-replacing)
          * - 2001..2100: ExtractionService download-progress band (per-jobKey hash)
          * - 2201..2300: TaskerRequestReceiver fallback band (sequential slots)
          * - 2401..2500: ShareReceiverActivity choice + share-error band
          *   (per-taskId / per-message hash, TASK-440)
-         * New fixed ids or bands go under the base; 2301..2400 and 2501..2999
+         * - 2501: LogsViewModel.HISTORY_ERROR_NOTIFICATION_ID (F1 History
+         *   error surface, TASK-500 F-batch)
+         * - 2502: SuspendedRunRecovery.NOTIFICATION_ID (TASK-684 freezer
+         *   suspension outcome)
+         * - 2503: SuspendedRunRecovery.INTERRUPTED_NOTIFICATION_ID (TASK-684
+         *   generic interrupted-runs summary)
+         * New fixed ids or bands go under the base; 2301..2400 and 2504..2999
          * are free headroom.
          */
         const val RESULT_NOTIFICATION_ID_BASE = 3000

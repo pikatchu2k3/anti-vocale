@@ -10,6 +10,7 @@ import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.data.PreferencesManagerImpl
 import com.antivocale.app.data.RecentModelUse
 import com.antivocale.app.data.ShareShortcutManager
+import com.antivocale.app.data.ShortcutIconStore
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.EXTERNAL_MODELS_DIR_NAME
@@ -82,10 +83,23 @@ object AppModule {
         @ApplicationContext context: Context,
         preferencesManager: PreferencesManager,
         backendRegistry: BackendRegistry,
-        externalModelStore: ExternalModelStore
+        externalModelStore: ExternalModelStore,
+        @ApplicationScope applicationScope: CoroutineScope
     ): ShareTargetManager {
-        return ShareTargetManager(context, preferencesManager, backendRegistry, externalModelStore)
+        return ShareTargetManager(
+            context,
+            preferencesManager,
+            backendRegistry,
+            externalModelStore,
+            applicationScope,
+        )
     }
+
+    @Provides
+    @Singleton
+    fun provideShortcutIconStore(
+        @ApplicationContext context: Context,
+    ): ShortcutIconStore = ShortcutIconStore(context)
 
     /**
      * The dynamic share-shortcut manager's recency source (TASK-393): the
@@ -101,6 +115,7 @@ object AppModule {
         preferencesManager: PreferencesManager,
         backendRegistry: BackendRegistry,
         launcherIconManager: LauncherIconManager,
+        shortcutIconStore: ShortcutIconStore,
         transcriptionCalibrator: TranscriptionCalibrator
     ): ShareShortcutManager {
         return ShareShortcutManager(
@@ -108,6 +123,7 @@ object AppModule {
             preferencesManager = preferencesManager,
             backendRegistry = backendRegistry,
             launcherIconManager = launcherIconManager,
+            shortcutIconStore = shortcutIconStore,
             recentUsage = {
                 transcriptionCalibrator.getAllProfiles().map { profile ->
                     RecentModelUse(
@@ -123,6 +139,33 @@ object AppModule {
     @Singleton
     fun provideExternalModelStore(preferencesManager: PreferencesManager): ExternalModelStore =
         ExternalModelStore(preferencesManager)
+
+    // TASK-670 (GH #83): the voiceprint store, app-private files only.
+    @Provides
+    @Singleton
+    fun provideSpeakerIdentityStore(
+        @ApplicationContext context: Context
+    ): com.antivocale.app.transcription.diarization.SpeakerIdentityStore =
+        com.antivocale.app.transcription.diarization.SpeakerIdentityStore(
+            com.antivocale.app.transcription.diarization.SpeakerIdentityStore.dir(context))
+
+    // TASK-670 simplify F2: the enrollment pipeline behind the Settings
+    // file pick; the environment seams (SAF copy, metadata probe, model
+    // download, titanet session) close over the app context inside create.
+    @Provides
+    @Singleton
+    fun provideSpeakerEnroller(
+        @ApplicationContext context: Context,
+        preprocessor: com.antivocale.app.audio.AudioPreprocessor,
+        preferencesManager: PreferencesManager,
+        store: com.antivocale.app.transcription.diarization.SpeakerIdentityStore,
+    ): com.antivocale.app.transcription.diarization.SpeakerEnroller =
+        com.antivocale.app.transcription.diarization.SpeakerEnroller.create(
+            context = context,
+            preprocessor = preprocessor,
+            threadCount = { preferencesManager.threadCount.first() },
+            store = store,
+        )
 
     @Provides
     @Singleton

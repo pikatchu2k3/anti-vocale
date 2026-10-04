@@ -190,6 +190,14 @@ sealed class BackendConfig {
         val record: ExternalModelRecord,
         val numThreads: Int,
         val provider: String,
+        /**
+         * TASK-462: the policy-resolved language pin for this request (""
+         * and the sentinels mean detection: the family defaults apply).
+         * Consumed by the families whose engines condition on language
+         * (Whisper forced decoding, SenseVoice, Canary) over the record's
+         * own option/default.
+         */
+        val languageOverride: String = "",
     ) : BackendConfig()
 
     /**
@@ -214,6 +222,16 @@ sealed class BackendConfig {
  */
 sealed class TranscriptionException(message: String, cause: Throwable? = null) :
     Exception(message, cause) {
+    /**
+     * DRAFT-11 (TASK-659): the LLM engine rejected a generation because its
+     * fresh conversation's state entries cannot hold the prefill. Typed at
+     * the LlmManager boundary (the one place the JNI message exists before
+     * any wrapping) so consumers match the CLASS, with the string walk kept
+     * only as the legacy-cause fallback.
+     */
+    class PrefillOverflow(cause: Throwable? = null) :
+        TranscriptionException("Prefill input length exceeds available state entries", cause)
+
     /** The model file is missing, corrupt, truncated, or the wrong format for this backend. */
     open class ModelLoadError(detail: String, cause: Throwable? = null) :
         TranscriptionException("Model load failed: $detail", cause)
@@ -233,6 +251,16 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
      */
     class CorruptModelFiles(detail: String) : ModelLoadError(detail)
 
+    /**
+     * TASK-482: the same pre-native content gate as [CorruptModelFiles], but
+     * the rejected model is a USER IMPORT (external backend): there is no
+     * catalog re-download to offer, so the orchestrator heal must NOT fire;
+     * the heal is delete + re-import from the Models tab, which the
+     * user-facing message says. Deliberately NOT a [CorruptModelFiles]
+     * subtype: instanceof would route it into the catalog dir-heal.
+     */
+    class ExternalModelCorruptFiles(detail: String) : ModelLoadError(detail)
+
     /** The model loaded but a native/decoding error occurred during transcription. */
     class NativeError(detail: String, cause: Throwable? = null) :
         TranscriptionException("Native inference error: $detail", cause)
@@ -246,9 +274,14 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
      * TASK-622: [blankChunks] counts chunks that decoded successfully but
      * blank (1 on the whole-file path); it rides the exception to the ERROR
      * row's FailureContext without changing the user-facing message.
+     * TASK-664: [retriedChunks] counts chunks that entered the recovery
+     * ladder (null when it never ran), so an all-blank ERROR row can say
+     * the ladder already did.
      */
-    class NoTranscriptionProduced(val blankChunks: Int? = null) :
-        TranscriptionException("No transcription produced")
+    class NoTranscriptionProduced(
+        val blankChunks: Int? = null,
+        val retriedChunks: Int? = null,
+    ) : TranscriptionException("No transcription produced")
 
     /** The device had too little free memory to load the model (pre-flight block). */
     class InsufficientMemory(detail: String) :
@@ -327,6 +360,10 @@ data class TranscriptionResult(
     /** TASK-276 AC3: the raw ASR text before the punctuation pass, set only
      *  when the pass replaced the text (persisted as the log row's original). */
     val rawTranscript: String? = null,
+    /** TASK-581: the text is the output of a custom final generative pass
+     *  (the condensing class): a short result is then the PROMPT's job, not a
+     *  collapsed decode, and the refinement guard must leave it alone. */
+    val finalPassApplied: Boolean = false,
     /** TASK-121.4: the AI summary of a long transcript, attached as metadata
      *  (persisted as the log row's summary). The delivered [text] is never
      *  replaced by it. */
@@ -401,10 +438,8 @@ data class FirstPassOutcome(
      *  partial results as partial (guard-review finding). */
     val isPartial: Boolean = false,
     val failedChunkCount: Int = 0,
-    /** Stable token when refinement did NOT complete (F4/F5): the delivered
-     *  text IS the first pass and the row carries a not-refined caption. */
-    val refinementFailedToken: String? = null,
-    /** TASK-582: the detector's measured values when the token is a loop
-     *  skip ("compression=2.61 ngram=0.42"), for field threshold tuning. */
-    val refinementLoopMetrics: String? = null,
+    /** TASK-584: the paired skip verdict (token + loop metrics when the
+     *  token is a loop token; null when refinement completed). The
+     *  delivered text IS the first pass whenever this is set. */
+    val skipOutcome: DualRefinementPolicy.SkipOutcome? = null,
 )

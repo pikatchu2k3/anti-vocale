@@ -8,7 +8,8 @@
      is acceptable only because debug builds are never distributed. See
      docs/testing-spi.md; the production exported receivers are reviewed in
      docs/research/2026-09-03_tasker-receiver-security-analysis.md. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application android:usesCleartextTraffic="true">
 
@@ -24,6 +25,34 @@
                 <action android:name="com.antivocale.app.TEST_SPI" />
             </intent-filter>
         </receiver>
+
+        <!-- Lint quirk workaround (TASK-269 round): once an overlay
+             declares ANY <service>, lint resolves startForeground call
+             sites against the overlay manifest and reports false
+             ForegroundServiceType errors on the MAIN services. Re-asserting
+             the two real declarations satisfies the lookup. tools:replace
+             makes this value WIN the merge (plain merge would union it into
+             a duplicated token); that also means these values MUST mirror
+             main's declarations, pinned by FgsTypeMirrorTest. Re-probe lint
+             after any AGP bump and delete this block if the false errors
+             are gone. -->
+        <service android:name=".service.InferenceService" android:foregroundServiceType="specialUse" tools:node="merge" tools:replace="android:foregroundServiceType" />
+        <service android:name=".service.ExtractionService" android:foregroundServiceType="specialUse" tools:node="merge" tools:replace="android:foregroundServiceType" />
+
+        <!-- TASK-269 spike: debug-only observation listener (metadata only);
+             enable command and design rationale in VoiceNoteListenerSpike's
+             KDoc. exported=false per the official NotificationListenerService
+             sample: only the system binds, the signature permission is the
+             real gate. -->
+        <service
+            android:name=".spike.VoiceNoteListenerSpike"
+            android:exported="false"
+            android:label="Voice note spike (debug)"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>

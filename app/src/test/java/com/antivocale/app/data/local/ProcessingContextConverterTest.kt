@@ -22,6 +22,20 @@ class ProcessingContextConverterTest {
     )
 
     @Test
+    fun `repetition suspected round-trips and pins the badge substring`() {
+        // TASK-583 (GH #110): the History badge greps the raw JSON for the
+        // exact "repetitionSuspected":true fragment (the isSubtitleSourced
+        // pinning pattern): a serializer change must not silently kill it.
+        val json = requireNotNull(ProcessingContextConverter.toJson(full.copy(repetitionSuspected = true)))
+        assertTrue(json.contains("\"repetitionSuspected\":true"))
+        assertEquals(
+            true,
+            ProcessingContextConverter.fromJson(json)?.repetitionSuspected)
+        // Absent stays null (old rows): the optBooleanOrNull guard.
+        assertNull(ProcessingContextConverter.fromJson(ProcessingContextConverter.toJson(full))?.repetitionSuspected)
+    }
+
+    @Test
     fun `round trip preserves every field`() {
         assertEquals(full, ProcessingContextConverter.fromJson(ProcessingContextConverter.toJson(full)))
     }
@@ -36,6 +50,28 @@ class ProcessingContextConverterTest {
         assertEquals(
             "pipeline chunks=157 (failed 3) decoded=4620.0s cap=60s ram=5531MB vad=on",
             ProcessingContextConverter.render(full.copy(blankChunks = 0)))
+    }
+
+    @Test
+    fun `retried chunks round-trip and render beside the blank count`() {
+        // TASK-664: the ladder's observable. It renders outside the chunks
+        // block so the single-decode path (whole_file) reports its recovery
+        // re-feed too; blank/failed already reflect the ladder's outcome.
+        val retried = ProcessingContext(
+            decodePath = "vad_chunked",
+            totalChunks = 9,
+            failedChunks = 0,
+            blankChunks = 1,
+            retriedChunks = 2,
+        )
+        assertEquals(retried, ProcessingContextConverter.fromJson(ProcessingContextConverter.toJson(retried)))
+        assertEquals(
+            "vad_chunked chunks=9 (blank 1) retried=2",
+            ProcessingContextConverter.render(retried))
+        assertEquals(
+            "whole_file retried=1",
+            ProcessingContextConverter.render(
+                ProcessingContext(decodePath = "whole_file", retriedChunks = 1)))
     }
 
     @Test

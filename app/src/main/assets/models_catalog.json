@@ -16,7 +16,7 @@
       "shareAlias": "com.antivocale.app.ShareParakeet",
       "storageDir": "parakeet-tdt",
       "flags": {
-        "defaultVariant": "smoothquant",
+        "defaultVariant": "stock-int8",
         "tailPadSeconds": 1,
         "chunkDurationSeconds": 60,
         "metaKeys": [
@@ -139,7 +139,7 @@
         "defaultVariant": "small",
         "skipMetadataCheck": true,
         "whisperTailPaddings": 1000,
-        "chunkDurationSeconds": 30,
+        "chunkDurationSeconds": 29,
         "maxAudioDurationSeconds": 30,
         "passLanguage": true
       },

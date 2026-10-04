@@ -23,7 +23,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ADB="${ADB:-$HOME/Android/Sdk/platform-tools/adb}"
+# adb lives in different homes per host (bird: ~/Android/Sdk, mac: ~/Library/Android/sdk).
+if [[ -z "${ADB:-}" ]]; then
+    if [[ -x "$HOME/Android/Sdk/platform-tools/adb" ]]; then
+        ADB="$HOME/Android/Sdk/platform-tools/adb"
+    elif [[ -x "$HOME/Library/Android/sdk/platform-tools/adb" ]]; then
+        ADB="$HOME/Library/Android/sdk/platform-tools/adb"
+    else
+        ADB="$(command -v adb)"
+    fi
+fi
 
 # Load config from env file if present
 ENV_FILE="${DEVICE_ENV_FILE:-$HOME/.config/anti-vocale/device.env}"
@@ -34,6 +43,9 @@ fi
 # Product flavors + ABI splits produce per-flavor, per-ABI APKs:
 #   app/build/outputs/apk/<flavor>/debug/app-<flavor>-<abi>-debug.apk
 FLAVOR="${FLAVOR:-playStore}"
+# The gradle task name needs the flavor's first letter uppercased; ${FLAVOR^}
+# is bash-4-only and Apple's /bin/bash 3.2 chokes on it (TASK-697).
+FLAVOR_CAP="$(echo "${FLAVOR:0:1}" | tr 'a-z' 'A-Z')${FLAVOR:1}"
 APK_ABI="${APK_ABI:-arm64-v8a}"
 APK="$PROJECT_DIR/app/build/outputs/apk/$FLAVOR/debug/app-$FLAVOR-$APK_ABI-debug.apk"
 
@@ -42,15 +54,17 @@ PAIRING_CODE="${2:-${DEVICE_PAIRING_CODE:-}}"
 
 if [[ ! -f "$APK" ]]; then
     echo "APK not found at $APK"
-    echo "Run ./gradlew assemble${FLAVOR^}Debug first (or set FLAVOR/APK_ABI)"
+    echo "Run ./gradlew assemble${FLAVOR_CAP}Debug first (or set FLAVOR/APK_ABI)"
     exit 1
 fi
 
-APK_AGE_SEC=$(( $(date +%s) - $(date +%s -r "$APK") ))
+# date -r FILE is GNU-only (BSD date -r means epoch-seconds); stat differs too.
+APK_MTIME=$(stat -c%Y "$APK" 2>/dev/null || stat -f%m "$APK")
+APK_AGE_SEC=$(( $(date +%s) - APK_MTIME ))
 if (( APK_AGE_SEC > 60 )); then
     AGE_MIN=$(( APK_AGE_SEC / 60 ))
     echo "APK is ${AGE_MIN}m old - rebuild first:"
-    echo "  ./gradlew assemble${FLAVOR^}Debug"
+    echo "  ./gradlew assemble${FLAVOR_CAP}Debug"
     exit 1
 fi
 
@@ -65,7 +79,15 @@ connected_ipport() {
 # Wireless ip:port via mDNS discovery (for when nothing is connected yet). Best-effort:
 # mDNS can be slow/flaky, so this is a fallback rather than the primary path.
 mdns_address() {
-    timeout 10 "$ADB" mdns services 2>/dev/null | awk '
+    # GNU timeout guards a hung adb; stock macOS ships no timeout binary
+    # (TASK-697 review: the stat pair got fixed, this was left GNU-only).
+    local out
+    if command -v timeout >/dev/null 2>&1; then
+        out=$(timeout 10 "$ADB" mdns services 2>/dev/null)
+    else
+        out=$("$ADB" mdns services 2>/dev/null)
+    fi
+    printf '%s' "$out" | awk '
         /_adb-tls-connect\._tcp/ {
             for (i = 1; i <= NF; i++) {
                 if ($i ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+$/) { print $i; exit }

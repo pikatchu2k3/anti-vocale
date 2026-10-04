@@ -14,7 +14,8 @@
 # Checks (each prints OK or FAIL; any FAIL exits non-zero at the end):
 #  1. versionName/versionCode consistent; per-ABI codes = base*10+{the ABI
 #     set from the gradle abiCode when-map, the single owner};
-#     the `?: N` fallback literal matches the base code.
+#     the per-ABI derivation carries NO `?: N` fallback literal (TASK-683.2:
+#     it reads defaultConfig.versionCode and fails the build on null).
 #  2. Latest release-notes section per locale is within the Play 500-char limit
 #     (the extractor fails loudly on over-length, so this also fails the build).
 #  3. fastlane changelogs/<base>.txt exist for en-US and it-IT, within 500 chars.
@@ -67,11 +68,34 @@ done
 gradle="$REPO_DIR/app/build.gradle.kts"
 base=$(grep -m1 'versionCode = ' "$gradle" | grep -oE '[0-9]+')
 vname=$(grep -m1 'versionName = ' "$gradle" | grep -oE '"[^"]+"' | tr -d '"')
-fallback=$(grep -m1 'defaultConfig.versionCode ?:' "$gradle" | grep -oE '\?: [0-9]+' | grep -oE '[0-9]+')
 [ -n "$base" ] && [ -n "$vname" ] || { fail "could not read versionName/versionCode from app/build.gradle.kts"; exit 1; }
 ok "version $vname (base code $base)"
-[ "$base" = "$fallback" ] && ok "per-ABI fallback literal matches base ($fallback)" \
-  || fail "per-ABI fallback literal is $fallback, base is $base: a fresh sync resolves wrong codes"
+# A fallback literal is a second source of the base code (44-vs-46 drift, TASK-683.2);
+# the greps run against CODE lines only (line and block comments stripped), so a
+# comment quoting the old idiom neither trips the ban nor satisfies the guard; the
+# guard grep pins the derivation's shape: rename either and update these WITH it.
+gradle_code=$(awk '
+  {
+    line = $0
+    # inline block comments, one span at a time (no greedy over-strip)
+    while (match(line, /\/\*[^*]*\*\//)) {
+      line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
+    }
+    if (match(line, /^[[:space:]]*\/\*/)) { inblock = 1; next }
+    if (inblock) {
+      if (match(line, /\*\//)) { inblock = 0; line = substr(line, RSTART + RLENGTH) }
+      else next
+    }
+    sub(/(^|[^:])\/\/.*$/, "", line)
+  }
+  line !~ /^[[:space:]]*(\/\*|\*|\*\/)/ && line != ""' "$gradle")
+if grep -q 'defaultConfig.versionCode ?:' <<<"$gradle_code"; then
+  fail "per-ABI versionCode carries a '?: N' fallback literal: remove it so the derivation cannot guess a stale base (TASK-683.2)"
+elif ! grep -q 'requireNotNull(defaultConfig.versionCode' <<<"$gradle_code" || ! grep -q 'baseVersionCode \* 10' <<<"$gradle_code"; then
+  fail "per-ABI derivation lost the requireNotNull(defaultConfig.versionCode) guard or its use (baseVersionCode * 10): a null base would fail opaquely or a stale literal could return (TASK-683.2)"
+else
+  ok "per-ABI codes derive from defaultConfig.versionCode (guard present, no fallback literal)"
+fi
 
 # --- 2. Play release notes within the extractor cap (fail-loud, 490) ----------
 if python3 "$REPO_DIR/scripts/extract-release-notes.py" --output-dir /tmp/preflight-whatsnew >/dev/null 2>/tmp/preflight-notes.err; then
@@ -98,12 +122,12 @@ done
 
 # --- 4. AAR version matches the fetch script ---------------------------------
 aar_ver=$(grep -m1 -oE 'SHERPA_ONNX_VERSION="[0-9.]+"' "$REPO_DIR/scripts/fetch-sherpa-aar.sh" | grep -oE '[0-9.]+')
-aar_actual=$(unzip -p "$REPO_DIR/app/libs/sherpa-onnx.aar classes.jar 2>/dev/null | true; echo")
 # The AAR does not carry a version string; check size-vs-known-jar is unreliable, so
 # verify the sha against the upstream release asset when online, else trust the fetch script.
 if [ "$OFFLINE" -eq 0 ] && [ -n "$aar_ver" ]; then
   expected_size=$(curl -sIL "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$aar_ver/sherpa-onnx-$aar_ver.aar" | grep -i '^content-length' | tail -1 | tr -dc '0-9')
-  local_size=$(stat -c%s "$REPO_DIR/app/libs/sherpa-onnx.aar" 2>/dev/null || echo 0)
+  # GNU stat first, BSD (macOS) fallback: b75a583e's portability pair (TASK-694).
+  local_size=$(stat -c%s "$REPO_DIR/app/libs/sherpa-onnx.aar" 2>/dev/null || stat -f%z "$REPO_DIR/app/libs/sherpa-onnx.aar" 2>/dev/null || echo 0)
   [ -n "$expected_size" ] && [ "$expected_size" = "$local_size" ] \
     && ok "sherpa AAR on disk matches upstream v$aar_ver (size $local_size)" \
     || fail "app/libs/sherpa-onnx.aar (size $local_size) differs from upstream v$aar_ver (size ${expected_size:-unknown}): re-run scripts/fetch-sherpa-aar.sh"

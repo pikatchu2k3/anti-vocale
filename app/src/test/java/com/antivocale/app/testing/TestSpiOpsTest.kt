@@ -395,6 +395,7 @@ class TestSpiOpsTest {
             "summary_prompt" to "s", "external_catalog_url" to "https://x",
             "output_folder" to "", "keep_alive" to "5", "subtitle_timeout" to "5", "threads" to "4",
             "backend" to "llm", "language" to "auto", "model_path" to "/m",
+            "model_filter_language" to "it",
             "sherpa_path" to "/m", "transcript_export_format" to "SRT",
             "signature_position" to "append", "signature_text" to "sig",
         )
@@ -428,10 +429,43 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "import", "notify_memory_error", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
+    }
+
+    @Test
+    fun `notifications op answers with the context-required error under the unit fakes`() = runTest {
+        // Same rationale as the clipboard op: the happy path needs a live
+        // NotificationManager, so it stays a device-trial concern; this
+        // pins dispatch and loud failure.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_NOTIFICATIONS))
+        assertEquals("notifications", json.getString("op"))
+        assertTrue(json.getString("error").contains("Context"))
+    }
+
+    @Test
+    fun `every OP_ constant is in OPS so a when arm cannot outlive the help list`() {
+        // The ops array and the usage line both render from OPS, so an
+        // equality check between them can never fail; the real drift
+        // surface is a new OP_ constant plus when arm that never joins
+        // OPS (the TASK-469 class). Reflection pins that membership.
+        // const vals compile to STATIC fields on the outer class, not the Companion.
+        val constants = TestSpiOps::class.java.declaredFields
+            .filter { it.name.startsWith("OP_") && it.type == String::class.java }
+            .map { it.isAccessible = true; it.get(null) as String }
+        assertEquals(TestSpiOps.OPS.sorted(), constants.sorted())
+    }
+
+    @Test
+    fun `clipboard op answers with the context-required error under the unit fakes`() = runTest {
+        // The happy path needs a live ClipboardManager and focus (Android
+        // 10+ foreground rule), so it stays a device-trial concern; this
+        // pins the op is dispatched and fails loud, not silently.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_CLIPBOARD))
+        assertEquals("clipboard", json.getString("op"))
+        assertTrue(json.getString("error").contains("Context"))
     }
 
     @Test

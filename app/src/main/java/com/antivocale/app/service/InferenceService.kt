@@ -5,8 +5,6 @@ import android.app.NotificationManager
 import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.TranscriptSignature
 import android.app.Service
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -28,8 +26,8 @@ import com.antivocale.app.transcription.DualRefinementPolicy
 import com.antivocale.app.transcription.TimedSegment
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.TranscriptionOrchestrator
-import com.antivocale.app.ui.SettingsFocusRow
 import com.antivocale.app.util.CrashReporter
+import com.antivocale.app.util.ClipboardWriter
 import com.antivocale.app.util.ProgressThrottler
 import com.antivocale.app.util.SubtitleFormatter
 import com.antivocale.app.util.TranscriptFileSaver
@@ -81,6 +79,8 @@ class InferenceService : Service(), TranscriptionListener {
 
         const val EXTRA_SOURCE = "source"
         const val EXTRA_SOURCE_PACKAGE = "source_package"
+        /** TASK-736: the matched voice-note sender (share flow only). */
+        const val EXTRA_SENDER_NAME = "sender_name"
         const val SOURCE_SHARE = "share"
 
         /** TASK-500: the History browse FAB; not a share request. */
@@ -136,6 +136,7 @@ class InferenceService : Service(), TranscriptionListener {
     private val pendingCount = AtomicInteger(0)
     private val resultNotificationFactory: ResultNotificationFactory by lazy { ResultNotificationFactory(this) }
 
+
     // ---- Chunk navigation state (TASK-242) ----
     // Null outside a multi-chunk progressive job; created on the first interim chunk result
     // and cleared when the next job starts. Single-chunk jobs never create one (nav is a no-op).
@@ -163,6 +164,8 @@ class InferenceService : Service(), TranscriptionListener {
         val startTime: Long = System.currentTimeMillis(),
         val source: String? = null,
         val sourcePackage: String? = null,
+        /** TASK-736: the matched voice-note sender, written on the row at enqueue. */
+        val senderName: String? = null,
         val backendOverride: String? = null,
         /** TASK-546 AC3: request-scoped language override, like [backendOverride]. */
         val languageOverride: String? = null,
@@ -214,6 +217,7 @@ class InferenceService : Service(), TranscriptionListener {
             requesterPackage = intent?.getStringExtra(EXTRA_REQUESTER_PACKAGE),
             source = intent?.getStringExtra(EXTRA_SOURCE),
             sourcePackage = intent?.getStringExtra(EXTRA_SOURCE_PACKAGE),
+            senderName = intent?.getStringExtra(EXTRA_SENDER_NAME),
             backendOverride = intent?.getStringExtra(EXTRA_BACKEND_OVERRIDE),
             languageOverride = intent?.getStringExtra(EXTRA_LANGUAGE_OVERRIDE),
             trackIndex = intent?.getIntExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, -1) ?: -1
@@ -244,6 +248,7 @@ class InferenceService : Service(), TranscriptionListener {
                     prompt = request.prompt,
                     filePath = request.filePath,
                     sourcePackageName = request.sourcePackage,
+                    senderName = request.senderName,
                 )
             }.onFailure { Log.w(TAG, "Failed to log queued request ${request.taskId}", it) }
         }
@@ -310,6 +315,20 @@ class InferenceService : Service(), TranscriptionListener {
                         // ACTION_CANCEL instead cancels the drain job itself, and join()
                         // rethrows, reaching the batch catch below.
                         val taskJob = launch {
+                            // TASK-684 (GH #109): the phase-blind liveness heartbeat.
+                            // Seeds immediately and ticks for the whole task lifetime
+                            // (decode, summary, diarization alike), so the cold-start
+                            // classifier can tell an OEM-freezer suspension (ticks
+                            // stopped while the row lived on) from a run that was
+                            // alive when killed (fresh tick at death). Cleared in the
+                            // finally, AFTER processRequest closed the row, so a
+                            // normally-ended run never leaves suspension evidence.
+                            val heartbeat = launch {
+                                while (isActive) {
+                                    RunHeartbeat.touch(applicationContext, request.taskId)
+                                    delay(RunHeartbeat.TICK_MS)
+                                }
+                            }
                             try {
                                 orchestrator.processRequest(
                                     taskId = request.taskId,
@@ -329,6 +348,8 @@ class InferenceService : Service(), TranscriptionListener {
                                     coroutineScope = this
                                 )
                             } finally {
+                                heartbeat.cancel()
+                                RunHeartbeat.clear(applicationContext, request.taskId)
                                 // Always release the taskId so a future request with the
                                 // same id is accepted. Runs on success, error, cancel.
                                 inFlightTaskIds.remove(request.taskId)
@@ -479,6 +500,23 @@ class InferenceService : Service(), TranscriptionListener {
         }
     }
 
+    /**
+     * TASK-186: the early-preview interim. Renders the run's EXISTING
+     * in-progress notification (the same surface the interim path updates)
+     * with the preview badge, in the legacy non-chunk-nav shape: the preview
+     * is not a completed chunk, so ChunkNavState stays untouched and no new
+     * notification id is allocated (the reserved-range contract). The real
+     * chunk 0 delivery replaces this render moments later.
+     */
+    override fun onPreviewResult(chunkText: String) {
+        updateNotification(
+            contentText = chunkText,
+            bigText = chunkText,
+            subText = getString(R.string.early_preview_badge),
+            startTimeMillis = transcriptionStartTime
+        )
+    }
+
     private fun handleChunkNavAction(action: String) {
         val state = chunkNavState ?: return
         when (action) {
@@ -589,9 +627,12 @@ class InferenceService : Service(), TranscriptionListener {
         failedChunkCount: Int,
         streamedWithoutVad: Boolean,
         segments: List<TimedSegment>,
-        refinementOutcome: String?
+        refinementOutcome: String?,
+        repetitionSuspected: Boolean,
     ) {
-        sendSuccessReply(taskId, resultText)
+        // DRAFT-12 (TASK-598 boundary): the Tasker reply carries the same
+        // annotated form every other surface delivers on diarized runs.
+        sendSuccessReply(taskId, SubtitleFormatter.annotatedOrStored(resultText, segments))
         forgetRequester(taskId)
         // Every completed task moves the model-recency source: re-derive the
         // launcher's dynamic share shortcuts. Metadata-only side effect on the
@@ -702,14 +743,17 @@ class InferenceService : Service(), TranscriptionListener {
         } ?: false
 
         if (globalAutoCopy || perAppAutoCopy) {
-            val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             // TASK-647: the clipboard is an exit surface; the AI-disclaimer
             // signature (when enabled) rides exactly here.
             val sig = TranscriptSignature.effectiveSpec(
                 preferencesManager, getString(R.string.signature_default_text))
             val signedText = TranscriptSignature.apply(transcriptionText, sig.text, sig.position)
-            val clip = ClipData.newPlainText(getString(R.string.clipboard_label_transcription), signedText)
-            clipboardManager.setPrimaryClip(clip)
+            // TASK-688: the write itself is the shared ClipboardWriter; the
+            // signature above stays here (its single owner).
+            ClipboardWriter.copy(
+                this@InferenceService,
+                getString(R.string.clipboard_label_transcription),
+                signedText)
             Log.i(TAG, "Auto-copied transcription to clipboard (${transcriptionText.length} chars), source=$sourcePackage, global=$globalAutoCopy, perApp=$perAppAutoCopy")
 
             Handler(Looper.getMainLooper()).post {
@@ -725,13 +769,15 @@ class InferenceService : Service(), TranscriptionListener {
 
     // ---- Auto-save to folder (issue #14) ----
 
+    /** @return the auto-save failure reason for the result notification
+     *  subtext, or null when saved/not configured (TASK-722: never silent). */
     private suspend fun saveTranscriptToFileIfEnabled(
         text: String,
         sourcePackage: String?,
         segments: List<TimedSegment>,
         failedChunkCount: Int
-    ) {
-        val name = withContext(Dispatchers.IO) {
+    ): String? {
+        val result = withContext(Dispatchers.IO) {
             TranscriptFileSaver.saveAuto(
                 this@InferenceService,
                 preferencesManager.outputFolderUri.first(),
@@ -741,12 +787,11 @@ class InferenceService : Service(), TranscriptionListener {
                     preferencesManager, getString(R.string.signature_default_text)).let { it.text },
                 signaturePosition = TranscriptSignature.effectiveSpec(
                     preferencesManager, getString(R.string.signature_default_text)).position,
-            
             )
         }
-        if (name != null) {
-            Log.i(TAG, "Saved transcript to output folder: $name")
-        }
+        // TASK-722: the failure reason rides the result notification; the
+        // saver already logged the concrete failing step.
+        return result.failureOrNull()
     }
 
     // ---- Notifications ----
@@ -893,7 +938,9 @@ class InferenceService : Service(), TranscriptionListener {
         streamedWithoutVad: Boolean = false,
         refinedFrom: String? = null,
         notRefined: Boolean = false,
+        repetitionSuspected: Boolean = false,
         segments: List<TimedSegment>,
+        saveFailure: String? = null,
     ) {
         // TASK-598 F5: the notification's whole text (body, copy, share,
         // page rebuilds) derives the speaker-annotated form when the run
@@ -929,6 +976,8 @@ class InferenceService : Service(), TranscriptionListener {
             streamedWithoutVad = streamedWithoutVad,
             refinedFrom = refinedFrom,
             notRefined = notRefined,
+            repetitionSuspected = repetitionSuspected,
+            saveFailureReason = saveFailure,
             firstPostedAt = System.currentTimeMillis()
         )
         val notification = resultNotificationFactory.build(spec, prefs)
@@ -947,22 +996,8 @@ class InferenceService : Service(), TranscriptionListener {
     }
 
     private fun showNoModelNotification() {
-        val openPendingIntent = buildLaunchPendingIntent(navigateToModelTab = true)
-
-        val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_no_model_title))
-            .setContentText(getString(R.string.notification_no_model_message))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openPendingIntent)
-            .setAutoCancel(true)
-            .addAction(
-                android.R.drawable.ic_menu_set_as,
-                getString(R.string.notification_no_model_action),
-                openPendingIntent
-            )
-            .build()
-
+        // TASK-328: composition lives in ResultNotificationFactory.
+        val notification = resultNotificationFactory.noModelNotification()
         val id = ResultNotificationFactory.nextNotificationId()
         notificationManager.notify(id, notification)
         Log.i(TAG, "Showed no-model notification (id=$id)")
@@ -970,41 +1005,6 @@ class InferenceService : Service(), TranscriptionListener {
 
     // ---- Notification Helpers ----
 
-    private fun buildLaunchPendingIntent(
-        navigateToModelTab: Boolean = false,
-        highlightTaskId: String? = null,
-        navigateToSettingsRow: SettingsFocusRow? = null
-    ): android.app.PendingIntent {
-        val requestCode = when {
-            highlightTaskId != null ->
-                RC_HASH_BASE + highlightTaskId.hashCode().let { if (it < 0) it.inv() else it }
-            navigateToSettingsRow != null -> RC_LAUNCH_SETTINGS_ROW
-            navigateToModelTab -> RC_LAUNCH_MODEL_TAB
-            else -> RC_LAUNCH_DEFAULT
-        }
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            // In-app deep links (highlight, settings row) hand the extra to the
-            // live activity (onNewIntent) instead of clearing its task.
-            if (highlightTaskId != null || navigateToSettingsRow != null) {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            } else {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            }
-            when {
-                highlightTaskId != null ->
-                    putExtra(MainActivity.EXTRA_HIGHLIGHT_TASK_ID, highlightTaskId)
-                navigateToSettingsRow != null ->
-                    putExtra(MainActivity.EXTRA_NAVIGATE_TO_SETTINGS_ROW, navigateToSettingsRow.name)
-            }
-            if (navigateToModelTab) {
-                putExtra(MainActivity.EXTRA_NAVIGATE_TO_MODEL_TAB, true)
-            }
-        }
-        return android.app.PendingIntent.getActivity(
-            this, requestCode, openIntent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-    }
 
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
 

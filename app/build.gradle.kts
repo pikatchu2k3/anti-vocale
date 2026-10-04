@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // TASK-710: org.jetbrains.kotlin.android is REMOVED under AGP 9's
+    // built-in Kotlin (applying it is a hard configuration error). The
+    // compose compiler plugin stays: built-in Kotlin still runs it.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
@@ -21,11 +23,13 @@ android {
     compileSdk = 36
 
     // Pinned to the NDK the fdroiddata builds actually resolve to: r27
-    // (27.0.12077973), which is also AGP 8.10's default and the toolchain
-    // behind the strip/compile bytes we must match reproducibly. AGP strips
-    // the packaged .so with the NDK's llvm-strip; an unpinned (or absent)
-    // NDK made release APKs differ from the F-Droid buildserver
-    // byte-for-byte (fdroiddata MR !46215). Keep in sync with the recipe.
+    // (27.0.12077973), the toolchain behind the strip/compile bytes we
+    // must match reproducibly. AGP strips the packaged .so with the NDK's
+    // llvm-strip; an unpinned (or absent) NDK made release APKs differ
+    // from the F-Droid buildserver byte-for-byte (fdroiddata MR !46215).
+    // TASK-710 note: AGP 9's DEFAULT NDK is 28.2.13676358, so this pin is
+    // now the ONLY thing holding r27 - never read "AGP default" into it.
+    // Keep in sync with the recipe.
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
@@ -147,9 +151,12 @@ android {
                 else -> 0
             }
             if (abiCode > 0) {
-                // Interim: keep this fallback in sync with the base versionCode (TASK-683.2 removes the literal).
+                // No ?: N fallback: the literal sat at 44 from the v1.13.0 bump while the base reached 46 (TASK-683.2).
+                val baseVersionCode = requireNotNull(defaultConfig.versionCode) {
+                    "Per-ABI versionCode derivation needs defaultConfig.versionCode set"
+                }
                 (output as com.android.build.api.variant.impl.VariantOutputImpl).versionCode
-                    .set((defaultConfig.versionCode ?: 46) * 10 + abiCode)
+                    .set(baseVersionCode * 10 + abiCode)
             }
         }
     }
@@ -263,6 +270,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.exifinterface)
 
     // Coroutines
     implementation(libs.coroutines.android)
@@ -326,12 +334,10 @@ dependencies {
     // Hilt testing
     testImplementation(libs.hilt.android.testing)
     kspTest(libs.hilt.compiler)
-    // Hilt 2.58 (last AGP-8 line) ships kotlin-metadata-jvm 2.2.20, which cannot
-    // read the Kotlin 2.4 metadata our classes now carry. Forcing the matching
-    // version on the KSP classpath; drop this when Hilt requires AGP 9 and we
-    // follow (2.59+ embeds a new enough metadata reader).
-    "ksp"(libs.kotlin.metadata.jvm)
-    "kspTest"(libs.kotlin.metadata.jvm)
+    // TASK-710 review F3: the kotlin-metadata-jvm force-pins added for Hilt
+    // 2.58 (its 2.2.20 reader could not read Kotlin 2.4 metadata) are
+    // REMOVED - their own drop condition (Hilt 2.59+ on AGP 9) is met by
+    // hilt 2.60.1; keeping them would downgrade Hilt's own newer reader.
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))

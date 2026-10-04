@@ -78,19 +78,24 @@ class SherpaBackend(
         /**
          * Metadata keys a transducer encoder must carry for [modelType], shared by the
          * external-model importer (import-time validation) and the external engine
-         * (load-time validation) so the two cannot drift: vocab_size for every family
-         * except qwen3_asr, whose loader and export carry no encoder metadata; the nemo
-         * loader's subsampling_factor + model_type only for the nemo family (a zipformer
-         * import with modelType "" does not carry them and must not be rejected for
-         * their absence).
+         * (load-time validation) so the two cannot drift: the nemo loader's
+         * vocab_size + subsampling_factor + model_type for nemo_transducer ONLY;
+         * every other modelType demands nothing (qwen3's vocab lives in the
+         * tokenizer dir; plain zipformers and qwen3 exports carry no encoder
+         * metadata their loaders would read, TASK-667 device-found).
          */
         fun requiredTransducerMetadataKeys(modelType: String): List<String> = when (modelType) {
             "nemo_transducer" -> listOf("vocab_size", "subsampling_factor", "model_type")
-            // GH #68: the qwen3 loader reads no encoder metadata (vocab lives in the
-            // tokenizer dir) and the published export carries none, so any required
-            // key would reject a loadable model.
-            "qwen3_asr" -> emptyList()
-            else -> listOf("vocab_size")
+            // GH #68 + TASK-667: every other loader (qwen3's vocab lives in the
+            // tokenizer dir; plain zipformers of every k2-fsa release carry no
+            // encoder metadata the plain-transducer loader would read;
+            // desktop-decoded clean on the pinned 1.13.8) demands nothing.
+            // Demanding vocab_size for "" rejected the catalog's OWN
+            // zipformer entries at import time. The wrong-family guard for
+            // "" is the file-shape plan (encoder/decoder/joiner roles), not
+            // metadata; the streaming-vs-offline flag mismatch is caught by
+            // [zipformerGraphIsStreaming] at import and load (TASK-720).
+            else -> emptyList()
         }
 
         /**
@@ -100,7 +105,10 @@ class SherpaBackend(
          * Catalog-driven so a tuned key list lives in the catalog, not in each backend.
          */
         fun requiredMetadataKeys(entry: CatalogEntry): List<String> =
-            entry.flags.metaKeys.ifEmpty { requiredTransducerMetadataKeys(entry.modelType) }
+            // TASK-412: null = not declared (modelType default); an explicit
+            // empty list = require nothing (the catalog channel, replacing the
+            // qwen3 code branch's reason to exist).
+            entry.flags.metaKeys ?: requiredTransducerMetadataKeys(entry.modelType)
 
         // TASK-413: internal (not private) so MetadataFixturesContractTest can
         // assert the fixtures' recorded scan window against the production
@@ -149,7 +157,11 @@ class SherpaBackend(
             // every initialize and every post-idle re-initialization for
             // bytes nothing consumed; the sibling missingOnnxMetadata
             // already short-circuits this way).
-            if (requiredKeys.isEmpty() && valueKey == null) return emptyList<String>() to null
+            if (requiredKeys.isEmpty()) return emptyList<String>() to null
+            // (an empty key list also voids the value read: the plausible-
+            // value check exists to sanity-check a REQUIRED key, and the
+            // metadata-free families paid a 2 MiB tail read per init for a
+            // value nothing consumed; review round, TASK-667.)
             val data = readTail(file, maxScanBytes) ?: return requiredKeys to null
             val value = valueKey?.let { onnxMetadataValueBytes(data, it) }
             return missingOnnxMetadataKeys(data, requiredKeys) to value
@@ -204,6 +216,29 @@ class SherpaBackend(
         ): String? {
             val data = readTail(file, maxScanBytes) ?: return null
             return onnxMetadataValueBytes(data, key)
+        }
+
+        /**
+         * TASK-720: streaming-vs-offline discriminator for plain zipformers,
+         * verified on real exports both ways (eval host, 2026-09-29):
+         * streaming encoders carry `decode_chunk_len` (and friends like
+         * encoder_dims/T/num_encoder_layers) plus comment "streaming
+         * zipformer2"; offline ones carry neither key and comment
+         * "non-streaming zipformer2" (whose startsWith("streaming") is
+         * false, the trap a naive contains() would fall into). Null when
+         * neither marker is readable: undeterminable, callers fail open.
+         */
+        fun zipformerGraphIsStreaming(encoderFile: File, maxScanBytes: Long = ONNX_METADATA_SCAN_LIMIT): Boolean? {
+            val data = readTail(encoderFile, maxScanBytes) ?: return null
+            return zipformerGraphIsStreamingBytes(data)
+        }
+
+        /** Pure half of [zipformerGraphIsStreaming], unit-testable on raw bytes. */
+        @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+        internal fun zipformerGraphIsStreamingBytes(data: ByteArray): Boolean? {
+            if (onnxMetadataValueBytes(data, "decode_chunk_len") != null) return true
+            val comment = onnxMetadataValueBytes(data, "comment")?.trim() ?: return null
+            return comment.lowercase().startsWith("streaming")
         }
 
         /** Pure (no I/O) value parser behind [onnxMetadataValue], unit-testable directly. */
@@ -367,7 +402,12 @@ class SherpaBackend(
         tag = TAG,
         defaultTimeoutMinutes = PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT,
         onIdleUnload = { runCatching { unload() } },
-    )
+    ).also {
+        // TASK-665: the adaptive idle window: a cold backend unloads after
+        // 2 minutes, one that served in the previous window holds to the
+        // preference (5 by default). The preference stays the ceiling.
+        it.setAdaptiveTimeouts(baseMinutes = 2, warmMinutes = PreferencesManager.DEFAULT_KEEP_ALIVE_TIMEOUT)  // REVIEW CR3: the ceiling comes from timeoutMinutes at restart
+    }
     private val onAutoUnloadCallback = java.util.concurrent.atomic.AtomicReference<(() -> Unit)?>(null)
 
     /**
@@ -447,28 +487,41 @@ class SherpaBackend(
             // which the native loader answers with a process abort
             // ("Protobuf parsing failed") and every retry re-aborts on the
             // same bytes. Structural checks run for every file; SHA-256 for
-            // files the catalog pins. Failed files are removed with their
-            // sidecars so the next attempt is a clean re-download, not
-            // another abort.
+            // files the catalog pins. The failed files STAY ON DISK (the
+            // verdict must stay repeatable for callers that cannot heal);
+            // the orchestrator's heal removes the directory.
             // TASK-660: the verdict is the TYPED
             // [TranscriptionException.CorruptModelFiles] the orchestrator
             // heals on; the abort mechanism this gate exists to prevent lives
             // in that exception's KDoc (the one authoritative home).
-            val integrityFailures = ModelDirIntegrity.verify(dir, variant, verifyPins = variantMatchesDir)
-            if (integrityFailures.isNotEmpty()) {
-                // TASK-660 review F1: the files stay ON DISK (no removeFailed
-                // here) so the typed verdict stays REPEATABLE: a direct
-                // backend caller that cannot heal (the benchmark) would
-                // otherwise strip them, and every later load would fail the
-                // completeness check with a generic missing-files error the
-                // heal can never fire on. The orchestrator's heal removes the
-                // whole directory on the first ordinary load.
+            // TASK-482 review: a READ failure is not a corruption verdict -
+            // typing it CorruptModelFiles would let the heal delete a healthy
+            // dir over a transient IO error. Only real content failures heal.
+            val gateVerdict = ModelDirIntegrity.split(
+                ModelDirIntegrity.verify(dir, variant, verifyPins = variantMatchesDir))
+            if (gateVerdict.unreadable.isNotEmpty()) {
+                val unreadable = gateVerdict.unreadable
+                Log.e(TAG, "Model files unreadable in $modelDirectory: " +
+                    unreadable.joinToString { "${it.file.name} (${it.reason})" })
+                return@withContext Result.failure(TranscriptionException.ModelLoadError(
+                    "could not read the model files: " +
+                        unreadable.joinToString { "${it.file.name} (${it.reason})" }))
+            }
+            val corrupt = gateVerdict.corrupt
+            if (corrupt.isNotEmpty()) {
+                // TASK-660 review F1: the files stay ON DISK so the typed
+                // verdict stays REPEATABLE: a direct backend caller that
+                // cannot heal (the benchmark) would otherwise strip them, and
+                // every later load would fail the completeness check with a
+                // generic missing-files error the heal can never fire on. The
+                // orchestrator's heal removes the whole directory on the
+                // first ordinary load.
                 Log.e(TAG, "Corrupt model files in $modelDirectory: " +
-                    integrityFailures.joinToString { "${it.file.name} (${it.reason})" } +
+                    corrupt.joinToString { "${it.file.name} (${it.reason})" } +
                     " - the orchestrator heal removes the dir for re-download")
                 return@withContext Result.failure(TranscriptionException.CorruptModelFiles(
                     "corrupted model files (re-download from the Models tab): " +
-                    integrityFailures.joinToString { it.file.name })
+                    corrupt.joinToString { it.file.name })
                 )
             }
             // Pre-native validation: sherpa-onnx calls exit(255) when the encoder is missing
@@ -644,10 +697,21 @@ class SherpaBackend(
 
                 stream = rec.createStream()
                 stream.acceptWaveform(samples, sampleRate)
-                // Append `tailPadSeconds` (catalog flag) of silence so trailing tokens
-                // finalize correctly (benchmarked ~2% WER improvement on WhatsApp audio).
-                // Second acceptWaveform of one shared zero buffer: no per-chunk copy
-                // (TASK-340 Fix 1b). acceptWaveform appends, so this equals one padded array.
+                // Append `tailPadSeconds` (catalog flag) of silence. The pad's
+                // WER effect on parakeet is VARIANT-DEPENDENT (TASK-715 + the
+                // 717 smoothquant arm, DESKTOP numbers): stock-int8 pays 2.5pp
+                // for it (0.0065 without, 0.0313 with), smoothquant GAINS
+                // 0.9pp (0.0476 with, 0.0563 without). The flag is entry-level
+                // and now applies to stock-int8, the default since 1.14.0:
+                // the device A/B of pad-on-stock is THE open follow-up (the
+                // desktop numbers were measured before the input-chain fix);
+                // if it confirms the 2.5pp cost, the flag must become
+                // per-variant. The old "~2% improvement on WhatsApp audio"
+                // claim remains unreproduced on either variant.
+                // Nemotron's 1.5s lives in the STREAMING path below (TASK-340
+                // Fix 1b shape: a second acceptWaveform of one shared zero
+                // buffer, no per-chunk copy). Gigaam's 1s is unmeasured (its
+                // model dir is not on the eval host).
                 val tailPad = entry.flags.tailPadSeconds
                 if (tailPad > 0) {
                     stream.acceptWaveform(tailSilence.get((sampleRate * tailPad).toInt()), sampleRate)
@@ -821,7 +885,9 @@ class SherpaBackend(
     }
 
     override fun setKeepAliveTimeout(minutes: Int) {
-        keepAlive.setTimeout(minutes)
+        // TASK-665 review: the orchestrator preference sync must not arm the
+        // user-override flag (that would permanently disarm the adaptive pair).
+        keepAlive.setTimeoutSystemSync(minutes)
     }
 
     override fun setOnAutoUnloadCallback(callback: (() -> Unit)?) {

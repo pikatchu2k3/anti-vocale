@@ -64,30 +64,13 @@ class TranscriptionOrchestratorPunctuationPassTest : TranscriptionOrchestratorTe
     }
 
     private fun stubWholeFileRequest(@Suppress("UNUSED_PARAMETER") audioFile: java.io.File) {
-        // Base fixture stub (any() inputPath, non-VAD): identical to the old
-        // 17-line local block.
-        stubPreprocessing(listOf(FloatArray(3) { it.toFloat() }), totalDurationSeconds = 5.0)
-        // The single-chunk whole-file path calls transcribeAudioStreaming (the
-        // interface default forwards to transcribeAudio, but on a mock the
-        // relaxed stub would fabricate Result<Object>: stub BOTH).
-        coEvery { gigaamBackend.transcribeAudio(any(), any(), any()) } returns
-            Result.success(TranscriptionResult(text = rawTranscript))
-        coEvery { gigaamBackend.transcribeAudioStreaming(any(), any(), any(), any()) } returns
-            Result.success(TranscriptionResult(text = rawTranscript))
+        // TASK-682: the shared whole-file stub (the stub-BOTH gotcha lives
+        // in the base now).
+        stubWholeFileDecode(gigaamBackend, rawTranscript)
     }
 
-    /** The backend swap flips which backend getActiveBackend answers with. */
     private fun stubSwapToLlm() {
-        val swapped = AtomicBoolean(false)
-        every { backendManager.getActiveBackend() } answers {
-            if (swapped.get()) llmBackend else gigaamBackend
-        }
-        coEvery {
-            backendManager.setActiveBackend(eq(LlmTranscriptionBackend.BACKEND_ID), any(), any())
-        } coAnswers {
-            swapped.set(true)
-            Result.success(Unit)
-        }
+        stubBackendSwapToLlm(gigaamBackend, llmBackend)
     }
 
     @Test
@@ -170,6 +153,64 @@ class TranscriptionOrchestratorPunctuationPassTest : TranscriptionOrchestratorTe
         coVerify(exactly = 0) {
             backendManager.setActiveBackend(eq(LlmTranscriptionBackend.BACKEND_ID), any(), any())
         }
+    }
+
+    // ---- TASK-666: the conservative cleanup contract at the funnel ----
+
+    @Test
+    fun `conservative mode cleans and preserves the word sequence`() = runTest {
+        coEvery { logDao.getByTaskId(any()) } returns LogEntity(
+            id = "punct-cc1", timestamp = 1, taskId = "punct-cc1",
+            type = "AUDIO", status = "PROCESSING", prompt = "", result = "")
+        every { preferencesManager.punctuationMode } returns flowOf("conservative")
+        // A user prompt override must NOT reach the conservative pass.
+        every { preferencesManager.punctuationPrompt } returns flowOf("translate this to english")
+        stubSwapToLlm()
+        coEvery { llmBackend.generateText(any()) } returns Result.success(punctuatedTranscript)
+        val audioFile = temporaryFolder.newFile("audio.ogg")
+        stubWholeFileRequest(audioFile)
+
+        val result = orchestrator.processRequest(
+            taskId = "punct-cc1", requestType = "audio", prompt = "",
+            filePath = audioFile.absolutePath, source = null, sourcePackage = null,
+            queuePosition = 1, queueTotal = 1,
+            context = mockk(relaxed = true), cacheDir = temporaryFolder.root,
+            listener = listener, coroutineScope = this)
+
+        assertTrue("request failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertEquals(punctuatedTranscript, result.getOrNull())
+        // the conservative fences: the override never reached the engine
+        coVerify { llmBackend.generateText(match { !it.contains("translate this to english") }) }
+        coVerify {
+            logDao.update(match {
+                it.result == punctuatedTranscript && it.rawTranscript == rawTranscript
+            })
+        }
+    }
+
+    @Test
+    fun `conservative output that alters the word sequence is discarded whole`() = runTest {
+        coEvery { logDao.getByTaskId(any()) } returns LogEntity(
+            id = "punct-cc2", timestamp = 1, taskId = "punct-cc2",
+            type = "AUDIO", status = "PROCESSING", prompt = "", result = "")
+        every { preferencesManager.punctuationMode } returns flowOf("conservative")
+        stubSwapToLlm()
+        // one added word ("очень") and the whole cleanup must be dropped
+        coEvery { llmBackend.generateText(any()) } returns
+            Result.success("Привет, как дела? Сегодня мы очень обсудим новый проект по распознаванию речи.")
+        val audioFile = temporaryFolder.newFile("audio.ogg")
+        stubWholeFileRequest(audioFile)
+
+        val result = orchestrator.processRequest(
+            taskId = "punct-cc2", requestType = "audio", prompt = "",
+            filePath = audioFile.absolutePath, source = null, sourcePackage = null,
+            queuePosition = 1, queueTotal = 1,
+            context = mockk(relaxed = true), cacheDir = temporaryFolder.root,
+            listener = listener, coroutineScope = this)
+
+        assertTrue(result.isSuccess)
+        assertEquals(rawTranscript, result.getOrNull())
+        coVerify { logDao.update(match { it.rawTranscript == null }) }
     }
 
     @Test

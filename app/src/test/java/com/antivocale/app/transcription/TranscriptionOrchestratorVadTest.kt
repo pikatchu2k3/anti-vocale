@@ -13,6 +13,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 
+/** TASK-678: cues now carry transient tokens; these tests pin cue geometry. */
+private fun List<com.antivocale.app.transcription.TimedSegment>.withoutTransientTokens() =
+    map { it.copy(tokens = emptyList()) }
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
 
@@ -213,9 +217,15 @@ class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
             Result.success(TranscriptionResult(text = "   ")),
             Result.success(TranscriptionResult(text = "seg3")),
         )
-        var callIndex = 0
-        coEvery { backend.transcribeAudio(any(), any(), any()) } answers {
-            results[callIndex++]
+        // TASK-664: keyed by chunk content, not call order, because the
+        // empty segment's recovery ladder adds re-feed calls (all answered
+        // blank here: overlap feeds are never chunk-sized).
+        backend.stubContentKeyedDecodes { size, first ->
+            when {
+                size == 100 && first == 1.0f -> results[0]
+                size == 100 && first == 3.0f -> results[2]
+                else -> results[1]
+            }
         }
 
         val result = runProcessRequest(scope = this)
@@ -242,9 +252,10 @@ class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
             Result.failure(RuntimeException("backend error")),
             Result.success(TranscriptionResult(text = "  ")),
         )
-        var callIndex = 0
-        coEvery { backend.transcribeAudio(any(), any(), any()) } answers {
-            results[callIndex++]
+        // TASK-664: content-keyed (the blank segment's ladder re-feeds answer
+        // blank; only the failing chunk errors, on every call).
+        backend.stubContentKeyedDecodes { size, first ->
+            if (size == 100 && first == 1.0f) results[0] else results[1]
         }
 
         val result = runProcessRequest(scope = this)
@@ -268,10 +279,9 @@ class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
             Result.success(TranscriptionResult(text = "")),
             Result.success(TranscriptionResult(text = "\t\n"))
         )
-        var callIndex = 0
-        coEvery { backend.transcribeAudio(any(), any(), any()) } answers {
-            results[callIndex++]
-        }
+        // TASK-664: every decode (first passes and ladder re-feeds alike)
+        // succeeds blank; the call order no longer identifies the segment.
+        coEvery { backend.transcribeAudio(any(), any(), any()) } answers { results[0] }
 
         val result = runProcessRequest(scope = this)
 
@@ -324,7 +334,11 @@ class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
             transcriptionCalibrator.record(
                 backendId = "whisper",
                 modelPath = "/models/whisper",
-                displayName = "Whisper Whisper",
+                // TASK-442: the label rides the shared variant-aware
+                // derivation now; "/models/whisper" resolves no variant dir,
+                // so the family label alone is the honest name (the estimate
+                // key is still backendId+path: unchanged).
+                displayName = "Whisper",
                 audioDurationSeconds = any(),
                 processingTimeMs = any()
             )
@@ -362,7 +376,7 @@ class TranscriptionOrchestratorVadTest : TranscriptionOrchestratorTestBase() {
                 TimedSegment(6000, 7900, "Prima frase."),
                 TimedSegment(8000, 9900, "Seconda frase."),
             ),
-            segmentsSlot.captured,
+            segmentsSlot.captured.withoutTransientTokens(),
         )
     }
 
