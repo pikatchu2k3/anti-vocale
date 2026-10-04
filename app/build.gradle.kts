@@ -18,6 +18,29 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// Fork: Fallback-Version fuer Builds ohne VERSION_NAME (lokale Laeufe, CI, F-Droid).
+// Der Katalog-Index ist versionsgebunden (external-catalog/index-<x.y.z>.json), also
+// MUSS der Fallback die Version tragen, deren Index im Repo liegt. Ein fest
+// verdrahteter Wert ist beim naechsten Upstream-Bump still weggedriftet (stand auf
+// 1.13.0, ausgeliefert wird index-1.14.0.json) und hat 8 Unit-Tests
+// (ExternalCatalogTest, ExternalCatalogRepositoryTest, CuratedProfilesTest) auf
+// jedem Lauf ohne VERSION_NAME rot gemacht. Deshalb aus den Assets ableiten.
+val bundledCatalogVersion = requireNotNull(
+    fileTree("src/main/assets/external-catalog") { include("index-*.json") }
+        .files
+        .mapNotNull { file ->
+            Regex("""index-(\d+\.\d+\.\d+)\.json""").find(file.name)?.groupValues?.get(1)
+        }
+        .maxByOrNull { version ->
+            version.split('.').let { (major, minor, patch) ->
+                major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt()
+            }
+        }
+) {
+    "Kein versionsgebundener Katalog-Index (index-<x.y.z>.json) in " +
+        "app/src/main/assets/external-catalog gefunden"
+}
+
 android {
     namespace = "com.antivocale.app"
     compileSdk = 36
@@ -41,7 +64,7 @@ android {
         // Fallback is the upstream version. Without this the tag never matches the
         // embedded versionName and Obtainium offers the same update forever.
         versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 43
-        versionName = System.getenv("VERSION_NAME") ?: "1.13.0-SNAPSHOT"
+        versionName = System.getenv("VERSION_NAME") ?: "$bundledCatalogVersion-SNAPSHOT"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
