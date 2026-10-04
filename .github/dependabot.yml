@@ -1,0 +1,12 @@
+# Dependabot: haelt die auf Commit-SHA gepinnten GitHub Actions aktuell.
+# Ohne Bot frieren SHA-Pins auf dem Stand des Pinning-Datums ein.
+version: 2
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    groups:
+      github-actions:
+        patterns:
+          - '*'
