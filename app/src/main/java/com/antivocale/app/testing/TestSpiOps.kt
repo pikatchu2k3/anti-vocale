@@ -92,6 +92,11 @@ internal class TestSpiOps(
             .put("progressiveEnabled", preferences.progressiveTranscription.first())
             .put("earlyPreviewEnabled", preferences.earlyPreviewEnabled.first())
             .put("interruptedRunNotifications", preferences.interruptedRunNotifications.first())
+            // TASK-740: the two-pass refinement model pin (empty = inherit).
+            .put("refinementModelBackendId", preferences.refinementModelBackendId.first())
+            // TASK-588.1: the advanced-reveal state (the conformance test
+            // pins every flow exposed, keyed by its flow name).
+            .put("settingsTranscriptionAdvancedExpanded", preferences.settingsTranscriptionAdvancedExpanded.first())
             .put("punctuationMode", preferences.punctuationMode.first())
             .put("punctuationPrompt", preferences.punctuationPrompt.first())
             .put("threadCount", preferences.threadCount.first())
@@ -109,6 +114,7 @@ internal class TestSpiOps(
             .put("signaturePosition", preferences.signaturePosition.first())
             .put("memoryProtection", preferences.memoryProtection.first())
             .put("externalAutomationEnabled", preferences.externalAutomationEnabled.first())
+            .put("openTranscribeEnabled", preferences.openTranscribeEnabled.first())
             .put("voiceNoteIdentityEnabled", preferences.voiceNoteIdentityEnabled.first())
             // TASK-681: the LAN-offload config (endpoint visible for E2E
             // verification; the key is masked to its last 4 chars).
@@ -133,6 +139,16 @@ internal class TestSpiOps(
             // TASK-685: the seeded Models-filter favorite (null = untouched,
             // "" = cleared; device trials read the seed without UI scraping).
             .put("modelFilterLanguage", preferences.modelFilterLanguage.first() ?: JSONObject.NULL)
+            // TASK-741: the scheduled folder watch, raw JSON, read-only for
+            // now (verify a seeded state without UI scraping; the set/seed
+            // key lands with slice 3's worker trial). The conformance test
+            // pins this key by flow name. CAPPED like the clipboard payload:
+            // the store's size contract admits ~1MB snapshots, and an
+            // uncapped value would blow the Binder transaction buffer for
+            // EVERY get broadcast, not just this row.
+            .put("scheduledFoldersTruncated", (preferences.scheduledFoldersJson.first()?.length ?: 0) > SPI_STRING_CAP)
+            .put("scheduledFoldersJson", preferences.scheduledFoldersJson.first()
+                ?.let { it.take(SPI_STRING_CAP) } ?: JSONObject.NULL)
             .put("swipeActionMode", preferences.swipeActionMode.first())
             .put("themePreference", preferences.themePreference.first())
             .put("textScalePreference", preferences.textScalePreference.first())
@@ -189,6 +205,9 @@ internal class TestSpiOps(
         "memory_protection" to preferences::saveMemoryProtection,
         // TASK-274: consent gate for the exported automation receivers.
         "external_automation" to preferences::saveExternalAutomationEnabled,
+        // TASK-785: symmetric with the sibling gates; the BridgeApplication
+        // collector flips the provider component off any write, SPI included.
+        "open_transcribe" to preferences::saveOpenTranscribeEnabled,
         // TASK-681: the LAN-offload gate (device E2E drives the whole
         // enable + configure + select sequence over the SPI).
         "remote_enabled" to preferences::saveRemoteOmnivoiceEnabled,
@@ -239,6 +258,11 @@ internal class TestSpiOps(
         },
         // An unset SAF folder is null, not "": blank clears.
         "output_folder" to { preferences.saveOutputFolderUri(it.ifBlank { null }) },
+        // TASK-741: the folder-watch records + snapshots, raw JSON (the get
+        // row's writable twin; a scripted trial seeds the store directly.
+        // The tree GRANT still needs one real picker pass: a seeded uri
+        // without a persisted permission is scan-abandoned by design).
+        "scheduled_folders" to { preferences.saveScheduledFoldersJson(it.ifBlank { null }) },
         "language" to preferences::saveTranscriptionLanguage,
         "model_path" to preferences::saveModelPath,
         // TASK-681: the LAN-offload config triple.
@@ -327,6 +351,17 @@ internal class TestSpiOps(
                     null
                 }
             }
+            // TASK-740: the two-pass refinement model pin. Blank = inherit
+            // the active backend; any known backend id pins phase 2.
+            putUnique("refinement_model") { value, _ ->
+                if (value.isBlank() || isKnownBackend(value)) {
+                    preferences.saveRefinementModelBackendId(value)
+                    null
+                } else {
+                    "unknown backend '$value' (blank, a catalog id, '${LlmTranscriptionBackend.BACKEND_ID}', " +
+                        "'${RemoteOmnivoiceBackend.BACKEND_ID}' or '${ExternalModelRecord.BACKEND_ID_PREFIX}<record id>')"
+                }
+            }
             putUnique("sherpa_path") { value, entry ->
                 if (entry == null || entry !in BuiltInBackendIds.ALL) {
                     "sherpa_path requires entry=<catalog id> " +
@@ -350,6 +385,8 @@ internal class TestSpiOps(
     private val blankClearingKeys = setOf(
         "external_catalog_url", "output_folder", "signature_text",
         "punctuation_prompt", "default_prompt", "summary_prompt",
+        // TASK-740: blank is the pin's documented clear (inherit active).
+        "refinement_model",
     )
 
     private suspend fun set(key: String?, value: String?, entry: String?): String {
@@ -647,6 +684,9 @@ internal class TestSpiOps(
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024
+
+        /** Per-row string cap for large raw-JSON rows (binder rationale). */
+        const val SPI_STRING_CAP = 64 * 1024
 
         /** notifications op per-item cap, same binder rationale; generous for a paged transcript. */
         const val NOTIFICATION_TEXT_CAP = 64 * 1024

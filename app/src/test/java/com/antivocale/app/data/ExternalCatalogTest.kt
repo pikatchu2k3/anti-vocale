@@ -167,7 +167,8 @@ class ExternalCatalogTest {
         // + moonshine base uk/es/vi (TASK-619, maintainer "tieni": the light
         // NC-licensed tier accepted for the external catalog; pins hashed
         // from the downloaded artifacts)
-        assertEquals(29, entries.size)
+        // + arabic small v2 dialectal light option (TASK-770)
+        assertEquals(30, entries.size)
 
         // TASK-635/643: the omnilingual entry ships in the VERSIONED index
         // (the bundled asset); the unsuffixed index.json is the frozen legacy
@@ -215,6 +216,7 @@ class ExternalCatalogTest {
             Triple("moonshine-spanish.json", "MOONSHINE" to "", 3),
             Triple("moonshine-ukrainian.json", "MOONSHINE" to "", 3),
             Triple("moonshine-vietnamese.json", "MOONSHINE" to "", 3),
+            Triple("arabic-small.json", "WHISPER" to "", 3),
         ).forEach { (file, pin, fileCount) ->
             val obj = org.json.JSONObject(
                 java.io.File("src/main/assets/external-catalog/$file").readText())
@@ -251,15 +253,20 @@ class ExternalCatalogTest {
                 java.io.File("src/main/assets/external-catalog/$file").readText())
             assertEquals("$file language", lang, obj.getJSONArray("languages").getString(0))
         }
+        // TASK-770: TWO arabic entries now (the v1 turbo quality pick and
+        // the small v2 light option); both surface via "arabic" and "ar".
         val arabic = ExternalCatalog.filter(entries, "arabic")
-        assertEquals(1, arabic.size)
+        assertEquals(2, arabic.size)
         val byCode = ExternalCatalog.filter(entries, "ar")
         assertEquals(arabic, byCode)
         assertEquals(ModelFamily.WHISPER, arabic[0].family)
+        assertEquals(ModelFamily.WHISPER, arabic[1].family)
+
         // TASK-550: the fa code surfaces the Persian entry alone. The matcher
-        // prefix-matches name WORDS and language codes: no other entry may
-        // declare fa, and no name word here starts with "ar" or "fa"
-        // (matching "ar" would break the arabic isolation above).
+        // prefix-matches name WORDS and language codes: no OTHER entry may
+        // declare fa, and no name word OUTSIDE the two arabic entries starts
+        // with "ar" (the arabic pair matches "ar" BY DESIGN since TASK-770,
+        // so filter("ar") == filter("arabic") == both).
         val persian = ExternalCatalog.filter(entries, "fa")
         assertEquals(1, persian.size)
         assertEquals(ModelFamily.TRANSDUCER, persian[0].family)

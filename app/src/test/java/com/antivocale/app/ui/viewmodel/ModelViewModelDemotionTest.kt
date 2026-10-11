@@ -137,10 +137,19 @@ class ModelViewModelDemotionTest {
         return dir
     }
 
-    /** Polls (real time) until the DataStore's own IO scope lands the expected backend. */
+    /**
+     * Polls until the expected backend lands. TASK-766 root cause (measured
+     * 2026-10-06): the RAW-store read goes through a TestDispatcher-to-IO
+     * roundtrip that can serve stale snapshots for the whole deadline even
+     * while the store already holds the value (the failure dump read null in
+     * the assert and the SAME value milliseconds later in the catch). The
+     * CACHE flow is updated synchronously right after the edit in the same
+     * coroutine, so it is the reliable progress signal; the raw store is
+     * still asserted at the end.
+     */
     private fun awaitBackend(expected: String?) = runTest {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (dataStore.data.first()[backendKey] != expected &&
+        val deadline = System.currentTimeMillis() + 30_000
+        while (prefs.transcriptionBackend.first() != expected &&
             System.currentTimeMillis() < deadline) {
             Thread.sleep(20)
             runCurrent()
@@ -154,7 +163,7 @@ class ModelViewModelDemotionTest {
      * when the backend write has landed.
      */
     private fun awaitDemotedContains(expected: Boolean) = runTest {
-        val deadline = System.currentTimeMillis() + 5_000
+        val deadline = System.currentTimeMillis() + 30_000
         while (prefs.demotedBackends.first().contains("whisper") != expected &&
             System.currentTimeMillis() < deadline) {
             Thread.sleep(20)

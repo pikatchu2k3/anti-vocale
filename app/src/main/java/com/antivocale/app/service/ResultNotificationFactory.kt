@@ -1,5 +1,13 @@
 package com.antivocale.app.service
 
+import com.antivocale.app.data.PerAppPreferencesManager
+import com.antivocale.app.data.prefsOrDefault
+import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.transcription.TimedSegment
+import com.antivocale.app.util.SubtitleFormatter
+import com.antivocale.app.util.TranscriptFileSaver
+import androidx.core.app.NotificationManagerCompat
+import android.util.Log
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
@@ -49,6 +57,9 @@ data class ResultNotificationSpec(
     /** TASK-722: the auto-save failure reason when the export could not be
      *  written; null when saved, not configured, or the run predates it. */
     val saveFailureReason: String? = null,
+    /** GH #128: the display name of the SAF folder the export landed in;
+     *  success says WHERE, so a twin-folder mismatch reads right here. */
+    val savedFolderName: String? = null,
     val firstPostedAt: Long = System.currentTimeMillis(),
     /** True when rebuilding after a prev/next tap: suppresses re-alerting. */
     val repost: Boolean = false
@@ -271,6 +282,84 @@ class ResultNotificationFactory(private val context: Context) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
+    /**
+     * TASK-757: the ONE owner of the completed-run posting. Both service
+     * routes (InferenceService and the TranscriptionNotificationListener
+     * worker fallback) called verbatim copies of this body; every new
+     * status fact meant editing two signatures and two spec blocks. The
+     * signature spec resolves ONCE here (the twins each resolved it twice,
+     * which could pair a fresh text with a stale position).
+     *
+     * [originTag] preserves the caller's historical log tag so device-trial
+     * logcat greps keep matching.
+     */
+    suspend fun postResult(
+        preferencesManager: PreferencesManager,
+        perAppPreferencesManager: PerAppPreferencesManager,
+        annotatedTranscript: String,
+        segments: List<TimedSegment>,
+        saveResult: TranscriptFileSaver.SaveResult,
+        sourcePackage: String?,
+        taskId: String,
+        confidence: Float?,
+        detectedLanguage: String?,
+        isPartial: Boolean,
+        failedChunkCount: Int,
+        copiedToClipboard: Boolean,
+        streamedWithoutVad: Boolean,
+        refinedFrom: String?,
+        notRefined: Boolean,
+        repetitionSuspected: Boolean,
+        originTag: String,
+    ) {
+        // TASK-598 F5 + TASK-757 review: the caller passes the ALREADY
+        // annotated form (it derives it for the auto-copy arm); re-running
+        // annotatedOrStored on it degraded polished diarized runs back to
+        // the pre-polish cue wording, violating the 598 contract that
+        // copy, share, and the notification body share one derivation.
+        val text = annotatedTranscript
+        val prefs = perAppPreferencesManager.prefsOrDefault(sourcePackage)
+        val sig = TranscriptSignature.effectiveSpec(
+            preferencesManager, context.getString(R.string.signature_default_text))
+        val id = nextNotificationId()
+        val spec = ResultNotificationSpec(
+            transcriptionText = text,
+            signatureText = sig.text,
+            signaturePosition = sig.position,
+            taskId = taskId,
+            sourcePackage = sourcePackage,
+            confidence = confidence,
+            detectedLanguage = detectedLanguage,
+            isPartial = isPartial,
+            failedChunkCount = failedChunkCount,
+            notificationId = id,
+            copiedToClipboard = copiedToClipboard,
+            streamedWithoutVad = streamedWithoutVad,
+            refinedFrom = refinedFrom,
+            notRefined = notRefined,
+            repetitionSuspected = repetitionSuspected,
+            saveFailureReason = saveResult.failureOrNull(),
+            savedFolderName = saveResult.savedFolderOrNull(),
+            firstPostedAt = System.currentTimeMillis()
+        )
+        postIfPermitted(id, build(spec, prefs))
+        Log.i(originTag, "Showed result notification (${text.length} chars), source=$sourcePackage, showShare=${prefs.showShareAction} (id=$id)")
+    }
+
+    /**
+     * The guarded notify: the posting paths must not assume the
+     * POST_NOTIFICATIONS grant (lint is right even though a result
+     * notification's actions imply deliverability). The refresher and
+     * postResult share this ONE copy.
+     */
+    internal fun postIfPermitted(id: Int, notification: android.app.Notification) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            NotificationManagerCompat.from(context).notify(id, notification)
+        }
+    }
+
     fun build(spec: ResultNotificationSpec, prefs: AppNotificationPreferences): Notification {
         val text = spec.transcriptionText
         // One split pass: skip it entirely for unpageable oversized texts.
@@ -354,6 +443,11 @@ class ResultNotificationFactory(private val context: Context) {
             // warning that the text may be garbage leads the status facts).
             subTextParts.add(
                 context.getString(R.string.auto_save_failed, spec.saveFailureReason))
+        } else if (spec.savedFolderName != null) {
+            // GH #128: success names the destination folder, the fact that
+            // separates "written" from "written where you are not looking".
+            subTextParts.add(
+                context.getString(R.string.saved_to_folder, spec.savedFolderName))
         }
         val langLabel = spec.detectedLanguage?.let { lang ->
             LanguageNames.nativeLanguageName(lang)
@@ -466,11 +560,17 @@ class ResultNotificationFactory(private val context: Context) {
             putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_TEXT, spec.signatureText)
             putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_POSITION, spec.signaturePosition)
             putExtra(NotificationActionReceiver.EXTRA_PAGE_INDEX, pageIndex)
+            putExtra(NotificationActionReceiver.EXTRA_SAVED_FOLDER, spec.savedFolderName)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, spec.notificationId)
             putExtra(NotificationActionReceiver.EXTRA_FIRST_POSTED_AT, spec.firstPostedAt)
             putExtra(NotificationActionReceiver.EXTRA_SAVE_FAILURE, spec.saveFailureReason)
             putExtra(NotificationActionReceiver.EXTRA_IS_PARTIAL, spec.isPartial)
             putExtra(NotificationActionReceiver.EXTRA_FAILED_CHUNK_COUNT, spec.failedChunkCount)
+            putExtra(NotificationActionReceiver.EXTRA_REPETITION_SUSPECTED, spec.repetitionSuspected)
+            putExtra(NotificationActionReceiver.EXTRA_COPIED_TO_CLIPBOARD, spec.copiedToClipboard)
+            putExtra(NotificationActionReceiver.EXTRA_STREAMED_WITHOUT_VAD, spec.streamedWithoutVad)
+            spec.refinedFrom?.let { putExtra(NotificationActionReceiver.EXTRA_REFINED_FROM, it) }
+            putExtra(NotificationActionReceiver.EXTRA_NOT_REFINED, spec.notRefined)
             spec.taskId?.let { putExtra(NotificationActionReceiver.EXTRA_TASK_ID, it) }
             spec.sourcePackage?.let { putExtra(NotificationActionReceiver.EXTRA_SOURCE_PACKAGE, it) }
             spec.confidence?.let { putExtra(NotificationActionReceiver.EXTRA_CONFIDENCE, it) }
@@ -503,6 +603,7 @@ class ResultNotificationFactory(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "ResultNotificationFactory"
         // Mirror the services' launch-band constants so the same intent shape
         // stays a single PendingIntent whichever builder produced it.
         private const val RC_ERROR_LAUNCH_DEFAULT = 0
@@ -535,6 +636,8 @@ class ResultNotificationFactory(private val context: Context) {
          *   process killed by memory enforcement, once per kill)
          * - 1009: ModelShortcutActivity.SWITCH_NOTIFICATION_ID (TASK-552 the
          *   model-switch confirmation, self-replacing)
+         * - 1011: OpenTranscribeProviderService.NOTIFICATION_ID (TASK-785
+         *   the Open Transcribe provider's foreground notification)
          * - 2001..2100: ExtractionService download-progress band (per-jobKey hash)
          * - 2201..2300: TaskerRequestReceiver fallback band (sequential slots)
          * - 2401..2500: ShareReceiverActivity choice + share-error band

@@ -51,12 +51,23 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_CONFIDENCE = "confidence"
         const val EXTRA_DETECTED_LANGUAGE = "detected_language"
+        /** TASK-758: the status facts ride the page-repost intents too, so
+         *  the rebuilt notification keeps its subtext instead of shedding
+         *  every fact but the save lines. */
+        const val EXTRA_REPETITION_SUSPECTED = "repetition_suspected"
+        const val EXTRA_COPIED_TO_CLIPBOARD = "copied_to_clipboard"
+        const val EXTRA_STREAMED_WITHOUT_VAD = "streamed_without_vad"
+        const val EXTRA_REFINED_FROM = "refined_from"
+        const val EXTRA_NOT_REFINED = "not_refined"
         const val EXTRA_IS_PARTIAL = "is_partial"
         const val EXTRA_FAILED_CHUNK_COUNT = "failed_chunk_count"
         /** TASK-722: the auto-save failure reason baked into nav intents so
          *  the page-tap repost keeps the failure banner (the refresher
          *  rebuilds the spec from extras alone). */
         const val EXTRA_SAVE_FAILURE = "save_failure"
+        /** GH #128: the success twin of [EXTRA_SAVE_FAILURE]; the page-tap
+         *  repost keeps naming the destination folder. */
+        const val EXTRA_SAVED_FOLDER = "saved_folder"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -165,7 +176,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
             putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, TaskerRequestReceiver.REQUEST_TYPE_AUDIO)
             putExtra(TaskerRequestReceiver.EXTRA_PROMPT, intent.getStringExtra(TaskerRequestReceiver.EXTRA_PROMPT) ?: "")
             putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, filePath)
-            putExtra(InferenceService.EXTRA_SOURCE, "retranscribe")
+            putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_RETRANSCRIBE)
             intent.getStringExtra(EXTRA_SOURCE_PACKAGE)?.let {
                 putExtra(InferenceService.EXTRA_SOURCE_PACKAGE, it)
             }

@@ -36,11 +36,14 @@ class PreferencesManagerImpl(
         private val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
         private val TEXT_SCALE = stringPreferencesKey("text_scale")
         private val REFINEMENT_ENABLED = booleanPreferencesKey("refinement_enabled")
+        private val SETTINGS_TRANSCRIPTION_ADVANCED_EXPANDED =
+            booleanPreferencesKey("settings_transcription_advanced_expanded")
         private val SPEAKER_LABELS_ENABLED = booleanPreferencesKey("speaker_labels_enabled")
         // TASK-670 (GH #83): the named-labels privacy gate, default off.
         private val SPEAKER_ID_ENABLED = booleanPreferencesKey("speaker_id_enabled")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val TRANSCRIPTION_BACKEND = stringPreferencesKey("transcription_backend")
+        private val REFINEMENT_MODEL_BACKEND_ID = stringPreferencesKey("refinement_model_backend_id")
         private val SHERPA_MODEL_PATH_PREFIX = "sherpa_model_path_"
         /**
          * Data-store keys of the pre-consolidation per-model path preferences, mapped to
@@ -98,6 +101,8 @@ class PreferencesManagerImpl(
         private val MEMORY_PROTECTION = booleanPreferencesKey("memory_protection")
         // TASK-274: consent gate for the exported automation receivers.
         private val EXTERNAL_AUTOMATION_ENABLED = booleanPreferencesKey("external_automation_enabled")
+        // TASK-785: consent gate for the Open Transcribe provider service.
+        private val OPEN_TRANSCRIBE_ENABLED = booleanPreferencesKey("open_transcribe_enabled")
         private val VOICE_NOTE_IDENTITY_ENABLED = booleanPreferencesKey("voice_note_identity_enabled")
         // TASK-681: the LAN-offload (OmniVoice) consent gate and its config triple.
         private val REMOTE_OMNIVOICE_ENABLED = booleanPreferencesKey("remote_omnivoice_enabled")
@@ -109,6 +114,8 @@ class PreferencesManagerImpl(
         private val PARTIAL_TRANSCRIPTION_TEXT = stringPreferencesKey("partial_transcription_text")
         private val PARTIAL_TRANSCRIPTION_TIMESTAMP = longPreferencesKey("partial_transcription_timestamp")
         private val EXTERNAL_MODELS_JSON = stringPreferencesKey("external_models_json")
+        // TASK-741: the scheduled folder watch (records + dedup snapshots).
+        private val SCHEDULED_FOLDERS_JSON = stringPreferencesKey("scheduled_folders_json")
         // TASK-675: silent-model demotion set (backend ids).
         private val DEMOTED_BACKENDS = stringSetPreferencesKey("demoted_backends")
         // TASK-685: the Models-filter favorite; key absence = untouched.
@@ -125,6 +132,7 @@ class PreferencesManagerImpl(
         val themeMode: String = PreferencesManager.DEFAULT_THEME_MODE,
         val textScale: String = PreferencesManager.DEFAULT_TEXT_SCALE,
         val transcriptionBackend: String = PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
+        val refinementModelBackendId: String = "",
         val sherpaModelPaths: Map<String, String?> = emptyMap(),
         val customTransducerModelPath: String? = null,
         val customTransducerModelType: String = PreferencesManager.DEFAULT_CUSTOM_TRANSDUCER_MODEL_TYPE,
@@ -161,6 +169,7 @@ class PreferencesManagerImpl(
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         val memoryProtection: Boolean = PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         val externalAutomationEnabled: Boolean = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        val openTranscribeEnabled: Boolean = PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
         val voiceNoteIdentityEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         val remoteOmnivoiceEndpoint: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
@@ -168,7 +177,8 @@ class PreferencesManagerImpl(
         val remoteOmnivoiceModel: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL,
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         val languageChipEnabled: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
-        val externalModelsJson: String? = null
+        val externalModelsJson: String? = null,
+        val scheduledFoldersJson: String? = null
     )
 
     private fun Preferences.toCached() = CachedPreferences(
@@ -182,6 +192,7 @@ class PreferencesManagerImpl(
         themeMode = this[THEME_MODE] ?: PreferencesManager.DEFAULT_THEME_MODE,
         textScale = this[TEXT_SCALE] ?: PreferencesManager.DEFAULT_TEXT_SCALE,
         transcriptionBackend = this[TRANSCRIPTION_BACKEND] ?: PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND,
+        refinementModelBackendId = this[REFINEMENT_MODEL_BACKEND_ID] ?: "",
         sherpaModelPaths = LEGACY_MODEL_PATH_KEYS.entries.associate { (entryId, legacyKey) ->
             entryId to (this[sherpaModelPathKey(entryId)] ?: this[legacyKey])
         },
@@ -223,6 +234,7 @@ class PreferencesManagerImpl(
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         memoryProtection = this[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         externalAutomationEnabled = this[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
+        openTranscribeEnabled = this[OPEN_TRANSCRIBE_ENABLED] ?: PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
         voiceNoteIdentityEnabled = this[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         remoteOmnivoiceEndpoint = this[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
@@ -231,7 +243,8 @@ class PreferencesManagerImpl(
             ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_MODEL,
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         languageChipEnabled = this[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
-        externalModelsJson = this[EXTERNAL_MODELS_JSON]
+        externalModelsJson = this[EXTERNAL_MODELS_JSON],
+        scheduledFoldersJson = this[SCHEDULED_FOLDERS_JSON]
     )
 
     fun initialize() {
@@ -309,6 +322,16 @@ class PreferencesManagerImpl(
         }
     }
 
+    // TASK-588.1: default collapsed.
+    override val settingsTranscriptionAdvancedExpanded: Flow<Boolean> =
+        dataStore.data.map { it[SETTINGS_TRANSCRIPTION_ADVANCED_EXPANDED] ?: false }
+
+    override suspend fun saveSettingsTranscriptionAdvancedExpanded(expanded: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SETTINGS_TRANSCRIPTION_ADVANCED_EXPANDED] = expanded
+        }
+    }
+
     override val speakerLabelsEnabled: Flow<Boolean> =
         dataStore.data.map { it[SPEAKER_LABELS_ENABLED] ?: false }
 
@@ -350,6 +373,18 @@ class PreferencesManagerImpl(
         // identical value and every collector (ActiveModelRepository's flatMapLatest,
         // ModelViewModel's activeBackendId) would restart on it for nothing.
         .distinctUntilChanged()
+
+    override val refinementModelBackendId: Flow<String> =
+        dataStore.data.map { it[REFINEMENT_MODEL_BACKEND_ID] ?: "" }
+            .onStart { emit(cache.get().refinementModelBackendId) }
+            .distinctUntilChanged()
+
+    override suspend fun saveRefinementModelBackendId(backendId: String) {
+        dataStore.edit { preferences ->
+            preferences[REFINEMENT_MODEL_BACKEND_ID] = backendId
+        }
+        cache.updateAndGet { it.copy(refinementModelBackendId = backendId) }
+    }
 
     override suspend fun saveTranscriptionBackend(backendId: String) {
         dataStore.edit { preferences ->
@@ -802,6 +837,9 @@ class PreferencesManagerImpl(
     override val externalAutomationEnabled: Flow<Boolean> = dataStore.data.map { it[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED }
         .onStart { emit(cache.get().externalAutomationEnabled) }
 
+    override val openTranscribeEnabled: Flow<Boolean> = dataStore.data.map { it[OPEN_TRANSCRIBE_ENABLED] ?: PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED }
+        .onStart { emit(cache.get().openTranscribeEnabled) }
+
     override val voiceNoteIdentityEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED }
         .onStart { emit(cache.get().voiceNoteIdentityEnabled) }
 
@@ -922,6 +960,13 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(externalAutomationEnabled = enabled) }
     }
 
+    override suspend fun saveOpenTranscribeEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[OPEN_TRANSCRIBE_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(openTranscribeEnabled = enabled) }
+    }
+
     override suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[VOICE_NOTE_IDENTITY_ENABLED] = enabled
@@ -935,11 +980,23 @@ class PreferencesManagerImpl(
         // same value, and every downstream consumer re-decodes it. Skip the duplicates.
         .distinctUntilChanged()
 
+    override val scheduledFoldersJson: Flow<String?> = dataStore.data.map { it[SCHEDULED_FOLDERS_JSON] }
+        .onStart { emit(cache.get().scheduledFoldersJson) }
+        .distinctUntilChanged()
+
     override suspend fun saveExternalModelsJson(json: String) {
         dataStore.edit { preferences ->
             preferences[EXTERNAL_MODELS_JSON] = json
         }
         cache.updateAndGet { it.copy(externalModelsJson = json) }
+    }
+
+    override suspend fun saveScheduledFoldersJson(json: String?) {
+        dataStore.edit { preferences ->
+            if (json == null) preferences.remove(SCHEDULED_FOLDERS_JSON)
+            else preferences[SCHEDULED_FOLDERS_JSON] = json
+        }
+        cache.updateAndGet { it.copy(scheduledFoldersJson = json) }
     }
 
     // TASK-675: the demotion set is read-modify-written INSIDE the edit

@@ -60,6 +60,8 @@ internal class FakePreferencesManager : PreferencesManager {
     val _memoryProtection = MutableStateFlow(false)
     // TASK-274: consent gate for the exported automation receivers.
     val _externalAutomationEnabled = MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED)
+    // TASK-785: consent gate for the Open Transcribe provider service.
+    val _openTranscribeEnabled = MutableStateFlow(PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED)
     val _voiceNoteIdentityEnabled = MutableStateFlow(PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED)
     // TASK-681: the LAN-offload (OmniVoice) gate and its config triple.
     val _remoteOmnivoiceEnabled = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED)
@@ -69,6 +71,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _compactResultActions = MutableStateFlow(PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
     val _languageChipEnabled = MutableStateFlow(PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED)
     val _externalModelsJson = MutableStateFlow<String?>(null)
+    val _scheduledFoldersJson = MutableStateFlow<String?>(null)
     val _partialTranscriptionText = MutableStateFlow<String?>(null)
     val _pendingBackendLoad = MutableStateFlow<String?>(null)
     override val pendingBackendLoad: Flow<String?> get() = _pendingBackendLoad
@@ -125,6 +128,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
     override val memoryProtection: Flow<Boolean> get() = _memoryProtection
     override val externalAutomationEnabled: Flow<Boolean> get() = _externalAutomationEnabled
+    override val openTranscribeEnabled: Flow<Boolean> get() = _openTranscribeEnabled
     override val voiceNoteIdentityEnabled: Flow<Boolean> get() = _voiceNoteIdentityEnabled
     override val remoteOmnivoiceEnabled: Flow<Boolean> get() = _remoteOmnivoiceEnabled
     override val remoteOmnivoiceEndpoint: Flow<String> get() = _remoteOmnivoiceEndpoint
@@ -151,6 +155,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val compactResultActions: Flow<Boolean> get() = _compactResultActions
     override val languageChipEnabled: Flow<Boolean> get() = _languageChipEnabled
     override val externalModelsJson: Flow<String?> get() = _externalModelsJson
+    override val scheduledFoldersJson: Flow<String?> get() = _scheduledFoldersJson
     override val partialTranscriptionText: Flow<String?> get() = _partialTranscriptionText
     override val partialTranscriptionTimestamp: Flow<Long?> get() = _partialTranscriptionTimestamp
 
@@ -193,10 +198,12 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
     override suspend fun saveMemoryProtection(enabled: Boolean) { _memoryProtection.value = enabled }
     override suspend fun saveExternalAutomationEnabled(enabled: Boolean) { _externalAutomationEnabled.value = enabled }
+    override suspend fun saveOpenTranscribeEnabled(enabled: Boolean) { _openTranscribeEnabled.value = enabled }
     override suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean) { _voiceNoteIdentityEnabled.value = enabled }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
     override suspend fun saveLanguageChipEnabled(enabled: Boolean) { _languageChipEnabled.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }
+    override suspend fun saveScheduledFoldersJson(json: String?) { _scheduledFoldersJson.value = json }
     override suspend fun savePartialTranscriptionState(text: String) {
         _partialTranscriptionText.value = text
         _partialTranscriptionTimestamp.value = System.currentTimeMillis()
@@ -223,6 +230,20 @@ internal class FakePreferencesManager : PreferencesManager {
     // GH #43
     val _refinementEnabled = MutableStateFlow(false)
     override val refinementEnabled: Flow<Boolean> = _refinementEnabled
+
+    // TASK-740: the two-pass refinement model pin (empty = inherit active).
+    val _refinementModelBackendId = MutableStateFlow("")
+    override val refinementModelBackendId: Flow<String> = _refinementModelBackendId
+    override suspend fun saveRefinementModelBackendId(backendId: String) {
+        _refinementModelBackendId.value = backendId
+    }
+
+    // TASK-588.1: the advanced-reveal state (default collapsed, like prod).
+    val _transcriptionAdvancedExpanded = MutableStateFlow(false)
+    override val settingsTranscriptionAdvancedExpanded: Flow<Boolean> = _transcriptionAdvancedExpanded
+    override suspend fun saveSettingsTranscriptionAdvancedExpanded(expanded: Boolean) {
+        _transcriptionAdvancedExpanded.value = expanded
+    }
     override suspend fun saveRefinementEnabled(enabled: Boolean) {
         _refinementEnabled.value = enabled
     }

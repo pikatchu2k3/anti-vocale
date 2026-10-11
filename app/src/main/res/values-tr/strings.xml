@@ -12,7 +12,7 @@
 
     <!-- Model selection -->
     <string name="select_model">Model Dosyası Seç</string>
-    <string name="select_model_from_device">Dosya seç</string>
+    <string name="select_model_from_device">Bir .litertlm dosyası seç</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">Modeli Yükle</string>
@@ -125,7 +125,7 @@
     <string name="transcript_capped_autosave_hint">Tam transkript otomatik kayıtta: Ayarlar → Klasöre kaydet</string>
     <string name="transcript_capped_autosave_saved">Tam transkript otomatik olarak klasörünüze kaydedildi</string>
     <string name="export_settings_title">Otomatik kaydet ve dışa aktar</string>
-    <string name="export_settings_description">Kaydedilen transkriptler için klasör ve dosya biçimi seçin</string>
+    <string name="export_settings_description">İsteğe bağlı: her transkripsiyonu seçtiğiniz klasöre, seçtiğiniz biçimde yazar. Her şey her zaman Geçmiş sekmesinde de kalır.</string>
     <string name="error_folder_not_writable">Bu klasör dosya alamaz. Cihaz depolama alanından bir klasör seçin (Downloads kısayolu değil).</string>
     <string name="language_phone_option">Telefon dili (%1$s)</string>
     <string name="today">Bugün</string>
@@ -170,12 +170,11 @@
     <string name="whisper_extract_confirm_message">Model dosyası zaten indirildi. Bu, kullanım için dosyayı ayıklar.</string>
 
     <!-- Qwen3-ASR model -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 dil)</string>
-    <string name="qwen3_asr_description">52 dil • Zayıf İtalyanca doğruluğu</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d dil)</string>
+    <string name="qwen3_asr_description">%1$d dil</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • 52 dil • Zayıf İtalyanca doğruluğu</string>
+    <string name="qwen3_asr_0_6b_description">~938MB • %1$d dil</string>
     <string name="qwen3_asr_download_confirm_title">%1$s indirilsin mi?</string>
-    <string name="qwen3_asr_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Qwen3-ASR 52 dili destekler ancak İtalyanca doğruluğu zayıftır.</string>
     <string name="qwen3_asr_download">Qwen3-ASR indir</string>
     <string name="qwen3_asr_delete_message">Qwen3-ASR modeli silinsin mi?</string>
     <string name="qwen3_asr_downloaded">%1$s başarıyla indirildi</string>
@@ -184,7 +183,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (akış)</string>
-    <string name="nemotron_description">~640MB • Akış transdüseri • Deneysel İtalyanca kalitesi</string>
+    <string name="nemotron_description">~640MB • Akış transdüseri</string>
     <string name="nemotron_download_confirm_title">%1$s indirilsin mi?</string>
     <string name="nemotron_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Nemotron 3.5, çok dilli bir akış ASR modelidir.</string>
     <string name="nemotron_download">Nemotron indir</string>
@@ -291,6 +290,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">Harici otomasyon (Tasker)</string>
     <string name="external_automation_description">Diğer uygulamaların otomasyon API\'si (örnek: Tasker) aracılığıyla transkripsiyon başlatmasına izin verir. Varsayılan olarak kapalıdır.</string>
+    <string name="open_transcribe_title">Open Transcribe API (deneysel)</string>
+    <string name="open_transcribe_description">Forkgram gibi diğer uygulamaların Anti-Vocale\'i çevrimdışı transkript aracı olarak kullanmasına izin verir. Varsayılan olarak kapalıdır.</string>
+    <string name="opentranscribe_notification_text">Başka bir uygulama için ses transkripsiyonu</string>
     <string name="external_automation_disabled">Harici otomasyon devre dışı. Ayarlar > Gelişmiş > Harici otomasyon bölümünden etkinleştirin.</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">Otomasyon kılavuzu</string>
@@ -315,10 +317,10 @@
     <string name="faq_card_trouble_title">Bir şey ters gitti</string>
     <string name="faq_card_trouble_body">Sonuç gelmiyorsa üretici uygulamayı arka planda dondurmuş olabilir: hata bildirimindeki pil önerisini izleyin. Başarısız sonuç bir rapor kaydı tutar.</string>
     <string name="no_app_to_open_link">Bağlantıyı açmak için uygulama bulunamadı</string>
-    <string name="remote_omnivoice_name">LAN devri (OmniVoice)</string>
-    <string name="remote_offload_title">LAN devri (deneysel)</string>
-    <string name="remote_offload_description">Uzun veya ağır transkripsiyonları Wi-Fi ağınızdaki kendi OmniVoice sunucunuza devreder. Etkinleştirildiğinde Model sekmesinden seçin.</string>
-    <string name="remote_offload_disclosure">Bu özellik etkinken ve seçiliyken, bu transkripsiyonların sesi yalnızca aşağıya girdiğiniz sunucu adresine, kendi ağınız üzerinden gönderilir. Geri kalan her şey bu cihazda transkribe edilir. Varsayılan olarak kapalıdır: siz açmadıkça telefonunuzdan hiçbir şey çıkmaz.</string>
+    <string name="remote_omnivoice_name">Uzak aktarım</string>
+    <string name="remote_offload_title">Uzak aktarım (deneysel)</string>
+    <string name="remote_offload_description">Uzun veya ağır transkripsiyonları seçtiğin OpenAI uyumlu bir sunucuya devret. Etkinleştirildiğinde Modeller sekmesinden seç.</string>
+    <string name="remote_offload_disclosure">Bu etkin ve seçiliyken, o transkripsiyonların sesi yalnızca aşağıya girdiğin sunucu adresine gönderilir; sunucu nerede olursa olsun: kendi ağında ya da internette. Geri kalan her şey bu cihazda yazıya dökülür. Varsayılan olarak kapalı: sen açmadıkça telefonundan hiçbir şey çıkmaz.</string>
     <string name="remote_offload_endpoint_label">Sunucu adresi</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">API anahtarı</string>
@@ -389,11 +391,13 @@
     <string name="cancel_extract">Ayıklamayı İptal Et</string>
     <string name="extract_model">Ayıkla</string>
     <string name="use_model">Modeli Kullan</string>
+    <string name="models_active_model_line">Kullanımda: %1$s</string>
     <string name="active_badge">Etkin</string>
     <string name="model_selected_message">%1$s seçildi</string>
     <string name="model_use_missing_files">%1$s için model dosyaları eksik veya tamamlanmamış. Model sekmesinden varyantı yeniden indirin.</string>
     <string name="model_demoted_notice">Otomatik olarak seçilmez: bu model konuşma varken metin üretmedi. Ona bir şans daha vermek için yeniden seçin.</string>
     <string name="delete">Sil</string>
+    <string name="variant_more_actions">Diğer eylemler</string>
     <string name="download">İndir</string>
     <string name="model_update_button">Güncelle</string>
     <string name="gemma_update_confirm_title">%1$s güncelle</string>
@@ -427,7 +431,7 @@
     <!-- Settings Tab - Section Titles -->
     <string name="settings_section_transcription">Metin Çıkarma</string>
     <string name="settings_section_appearance">Görünüm</string>
-    <string name="settings_section_advanced">Gelişmiş</string>
+    <string name="settings_section_advanced">Sistem ve entegrasyonlar</string>
     <string name="settings_section_feedback">Geri Bildirim &amp; Hakkında</string>
     <string name="settings_feedback_send_title">Geri bildirim gönder / Sorun bildir</string>
     <string name="settings_feedback_send_description">Ayrıntıları önceden doldurulmuş olarak e-posta uygulamanızı açar</string>
@@ -502,7 +506,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">Otomatik Kaldırma</string>
-    <string name="timeout_description">Model boşta kaldığında kaldırılır ve bir sonraki kullanımda otomatik olarak geri yüklenir.</string>
+    <string name="timeout_description">Uygulama boştayken belleği boşaltır ve sistemi uygulamanın kapatma olasılığını düşürür; model sonraki kullanımda yeniden yüklenir.</string>
     <string name="timeout_1_minute">1 dakika</string>
     <string name="timeout_1_hour">1 saat</string>
     <plurals name="timeout_minutes">
@@ -564,7 +568,7 @@
     <string name="summarize_status">Yapay zekâ ile özetleniyor…</string>
     <string name="summary_default_prompt">Bu transkripti 2-3 cümleyle, transkriptin dilinde özetle. İsimleri ve sayıları koru. Sadece özeti yaz.</string>
     <string name="vad_title">Sessizliği Kırp (VAD)</string>
-    <string name="vad_description">Metin çıkarmadan önce sesli mesajlardaki sessiz kısımları kaldırır. İşleme süresini azaltır ve doğruluğu artırır.</string>
+    <string name="vad_description">Metin çıkarmadan önce sessiz bölümleri keser. Genellikle daha hızlıdır; doğruluk üzerindeki etkisi modele bağlıdır.</string>
     <string name="progressive_title">Aşamalı Görüntüleme</string>
     <string name="progressive_description">Kaydın bitmesini beklemeden, metin çıkarma ilerledikçe metni gösterir.</string>
     <string name="early_preview_title">Erken Önizleme</string>
@@ -572,6 +576,7 @@
     <string name="early_preview_badge">Önizleme</string>
     <string name="early_preview_requires_progressive">Aşamalı görüntüleme gerektirir</string>
     <string name="auto_save_failed">Otomatik kaydetme başarısız (%1$s)</string>
+    <string name="saved_to_folder">Şuraya kaydedildi: %1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Varsayılan Komut</string>
@@ -752,7 +757,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 dil, değişken</string>
+    <string name="speed_comparison_qwen3_quality">%1$d dil, değişken</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Hızlı</string>
@@ -933,7 +938,7 @@
     <string name="model_info_notes_whisper_medium">Doğruluk ve kaynak kullanımı arasında iyi denge.</string>
     <string name="model_info_best_for_distil_it">En iyi İtalyanca doğruluk (4.3%% WER)</string>
     <string name="model_info_notes_distil_it">Yalnızca İtalyanca. İtalyanca sesli mesajlar için en yüksek doğruluk. Hızdan çok doğruluğa öncelik verin.</string>
-    <string name="model_info_best_for_qwen3">52 dilli otomatik algılama</string>
+    <string name="model_info_best_for_qwen3">59 dilli otomatik algılama</string>
     <string name="model_info_notes_qwen3">En geniş dil kapsamı. Not: 30 saniyeden uzun sesleri keser. Yalnızca ARM64 cihazlar.</string>
     <string name="model_info_best_for_parakeet">En hızlı metin çıkarma (Whisper\'dan 17,6 kat hızlı, 5.4%% WER)</string>
     <string name="model_info_notes_parakeet">Ses uzunluğu sınırı yok. VAD gerekmez. Hızı öncelik eden kullanıcılar için en iyisi.</string>
@@ -962,9 +967,9 @@
     <string name="external_none_imported">İçe aktarılan harici model yok</string>
     <string name="external_section_title">Harici modeller</string>
     <string name="model_advanced_section">Gelişmiş</string>
-    <string name="model_advanced_description">Model dosyalarını el ile içe aktar</string>
-    <string name="external_import_folder">Klasör seç</string>
-    <string name="external_import_url">URL\'den içe aktar</string>
+    <string name="model_advanced_description">Harici içe aktarımlar ve Gemma indirmeleri</string>
+    <string name="external_import_folder">Klasörden içe aktar</string>
+    <string name="external_import_url">Bağlantıdan içe aktar</string>
     <string name="external_url_hint">HuggingFace deposu veya katalog girdisi JSON URL\'si</string>
     <string name="external_import">İçe Aktar</string>
     <string name="external_importing">Model içe aktarılıyor…</string>
@@ -992,8 +997,8 @@
     <string name="external_decode_language">Kod çözme dili</string>
     <string name="external_decode_auto">Otomatik algıla</string>
     <string name="external_family">Model ailesi</string>
-    <string name="external_family_transducer">Transdüser (çevrimdışı NeMo/Zipformer)</string>
-    <string name="external_family_transducer_help">Kodlayıcı + kod çözücü + birleştirici + token dosyaları bekler</string>
+    <string name="external_family_transducer">Transdüser</string>
+    <string name="external_family_transducer_help">Çevrimdışı NeMo/Zipformer. Kodlayıcı + kod çözücü + birleştirici + token dosyaları bekler</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Kodlayıcı + kod çözücü + token dosyaları bekler</string>
     <string name="external_family_ctc">CTC</string>
@@ -1076,7 +1081,6 @@
     <string name="feedback_label_truncated">kısaltılmış</string>
     <string name="a11y_expand">genişlet</string>
     <string name="a11y_collapse">daralt</string>
-    <string name="a11y_back">Geri</string>
     <string name="litertlm_importing">İçe aktarılıyor…</string>
     <string name="model_ram_warning">Bu cihazda %1$s için yeterli bellek olmayabilir. Yükleme başarısız olabilir; daha hafif modeller daha güvenli.</string>
     <string name="error_oom_transcription">Bu sesi transkribe etmek için yeterli bellek yok. Daha kısa bir dosya, daha küçük bir model deneyin veya diğer uygulamaları kapatın. Denemeyi tamamen önlemek için Ayarlar > Gelişmiş bölümünden bellek korumasını açın.</string>
@@ -1167,7 +1171,7 @@
     <string name="performance_settings_title">Performans ve bellek</string>
     <string name="performance_settings_summary">İş parçacıkları, sağlayıcı, bellek koruması ve tanılama</string>
     <string name="automation_settings_title">Otomasyon ve yük aktarma</string>
-    <string name="automation_settings_summary">Tasker alıcıları, broadcast kılavuzu ve LAN aktarımı</string>
+    <string name="automation_settings_summary">Tasker alıcıları, broadcast kılavuzu ve uzak aktarım</string>
     <string name="settings_group_appearance">Görünüm</string>
     <string name="settings_group_history">Kayıtlar</string>
     <string name="settings_group_decoding">Kod çözme ve önizleme</string>
@@ -1193,4 +1197,31 @@
     <string name="model_shortcut_switch_label">%1$s öğesine geç</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">Bu transkripte noktalama, büyük harfler ve paragraf sonları ekle. Çevirme, özetleme ve hiçbir kelimeyi ekleme, çıkarma, sırasını değiştirme veya düzeltme: kelime dizisi tamamen yazıldığı gibi kalmalı. Yalnızca biçimlendirilmiş transkripti ver.</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">Gelişmiş seçenekler (%1$d)</string>
+    <string name="refinement_model_title">Refine modeli</string>
+    <string name="refinement_model_description">İkinci geçişin kullandığı model. Etkin modeli kullanmak için devral\'da bırakın.</string>
+    <string name="refinement_model_inherit">Etkin modeli devral</string>
+    <string name="export_model_bundle">Modeli çevrimdışı aktarım için paylaş</string>
+    <string name="external_import_bundle">Aktarım paketi içe aktar</string>
+    <string name="external_models_intro">Bu bölümde alternatif modeller bulunur: az bellekli telefonlar için küçük sürümler ve belirli dillere göre optimize edilmiş modeller. Birçoğu bizim sürdürdüğümüz topluluk kataloğundan gelir; ama uygulamayı üçüncü taraf bir kataloğa yönlendirebilir veya kendi kataloğunuzu barındırabilirsiniz.</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">Gemma modeli ekle (LiteRT)</string>
+    <string name="gemma_entry_title">Gemma indirmeleri</string>
+    <string name="gemma_entry_subtitle">Resmî Gemma modellerine göz at ve indir</string>
+    <string name="external_section_subtitle">Kendinizin eklediği model dosyaları (klasör, URL veya aktarım paketi) ve Gemma LiteRT-LM indirmeleri; yerleşik kataloğun yanında çalışır.</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">Zamanlanmış klasör izleme</string>
+    <string name="folder_watch_description">Seçtiğiniz klasörleri izler ve yeni ses dosyalarını otomatik olarak yazıya döker. Taramalar sistem izin verdiğinde çalışır; agresif pil tasarrufu onları geciktirebilir, manuel tarama her zaman işe yarar.</string>
+    <string name="folder_watch_add">Bir klasörü izle</string>
+    <string name="folder_watch_empty">Henüz izlenen klasör yok.</string>
+    <string name="folder_watch_scan_now">Şimdi tara</string>
+    <string name="folder_watch_remove">Kaldır</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">Her saat</item>
+        <item quantity="other">Her %1$d saat</item>
+    </plurals>
+    <string name="folder_watch_period_label">Tarama aralığı</string>
+    <string name="folder_watch_grant_failed">Bu klasöre erişim korunamadığı için eklenmedi. Lütfen yeniden seçin.</string>
 </resources>

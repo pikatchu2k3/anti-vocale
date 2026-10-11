@@ -9,7 +9,7 @@
 
     <!-- Model selection -->
     <string name="select_model">Modelldatei auswählen</string>
-    <string name="select_model_from_device">Datei auswählen</string>
+    <string name="select_model_from_device">.litertlm-Datei auswählen</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">Modell laden</string>
@@ -104,7 +104,7 @@
     <string name="transcript_capped_autosave_hint">Vollständiges Transkript per Auto-Speichern: Einstellungen → Automatisch speichern</string>
     <string name="transcript_capped_autosave_saved">Vollständiges Transkript automatisch in Ihrem Ordner gespeichert</string>
     <string name="export_settings_title">Auto-Speichern &amp; Export</string>
-    <string name="export_settings_description">Ordner und Dateiformat für gespeicherte Transkripte wählen</string>
+    <string name="export_settings_description">Optional: jede Transkription wird zusätzlich in den gewählten Ordner im gewählten Format gespeichert. Alles bleibt immer auch im Verlauf-Tab.</string>
     <string name="error_folder_not_writable">Dieser Ordner kann keine Dateien empfangen. Wählen Sie einen Ordner vom Gerätespeicher (nicht den Downloads-Kurzlink).</string>
     <string name="language_phone_option">Telefonsprache (%1$s)</string>
     <string name="today">Heute</string>
@@ -149,12 +149,11 @@
     <string name="whisper_extract_confirm_message">Die Modelldatei ist bereits heruntergeladen. Sie wird jetzt zur Verwendung entpackt.</string>
 
     <!-- Qwen3-ASR model -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 Sprachen)</string>
-    <string name="qwen3_asr_description">52 Sprachen • Schwache Genauigkeit für Italienisch</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d Sprachen)</string>
+    <string name="qwen3_asr_description">%1$d Sprachen</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938 MB • 52 Sprachen • Schwache Genauigkeit für Italienisch</string>
+    <string name="qwen3_asr_0_6b_description">~938 MB • %1$d Sprachen</string>
     <string name="qwen3_asr_download_confirm_title">%1$s herunterladen?</string>
-    <string name="qwen3_asr_download_confirm_message">Dies lädt etwa %1$d MB herunter. Qwen3-ASR unterstützt 52 Sprachen mit schwacher Genauigkeit für Italienisch.</string>
     <string name="qwen3_asr_download">Qwen3-ASR herunterladen</string>
     <string name="qwen3_asr_delete_message">Qwen3-ASR-Modell löschen?</string>
     <string name="qwen3_asr_downloaded">%1$s erfolgreich heruntergeladen</string>
@@ -163,7 +162,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (Streaming)</string>
-    <string name="nemotron_description">~640 MB • Streaming-Transducer • Experimentelle Qualität für Italienisch</string>
+    <string name="nemotron_description">~640 MB • Streaming-Transducer</string>
     <string name="nemotron_download_confirm_title">%1$s herunterladen?</string>
     <string name="nemotron_download_confirm_message">Dies lädt etwa %1$d MB herunter. Nemotron 3.5 ist ein mehrsprachiges Streaming-ASR-Modell.</string>
     <string name="nemotron_download">Nemotron herunterladen</string>
@@ -270,6 +269,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">Externe Automatisierung (Tasker)</string>
     <string name="external_automation_description">Ermöglicht anderen Apps, über die Automatisierungs-API Transkriptionen zu starten (z. B. Tasker). Standardmäßig aus.</string>
+    <string name="open_transcribe_title">Open-Transcribe-API (experimentell)</string>
+    <string name="open_transcribe_description">Erlaubt anderen Apps wie Forkgram, Anti-Vocale als Offline-Transkribierer zu nutzen. Standardmäßig deaktiviert.</string>
+    <string name="opentranscribe_notification_text">Audio-Transkription für eine andere App</string>
     <string name="external_automation_disabled">Externe Automatisierung ist deaktiviert. Aktivieren Sie sie unter Einstellungen > Erweitert > Externe Automatisierung.</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">Automatisierungs-Anleitung</string>
@@ -294,10 +296,10 @@
     <string name="faq_card_trouble_title">Etwas ist schiefgelaufen</string>
     <string name="faq_card_trouble_body">Kommt kein Ergebnis, hat der Hersteller die App im Hintergrund eingefroren: folge dem Akku-Hinweis in der Fehlerbenachrichtigung. Ein fehlgeschlagene Ergebnis behält einen Report-Eintrag mit allen Diagnosedaten.</string>
     <string name="no_app_to_open_link">Keine App zum Öffnen des Links gefunden</string>
-    <string name="remote_omnivoice_name">LAN-Auslagerung (OmniVoice)</string>
-    <string name="remote_offload_title">LAN-Auslagerung (experimentell)</string>
-    <string name="remote_offload_description">Lagert lange oder schwere Transkriptionen an Ihren eigenen OmniVoice-Server in Ihrem WLAN aus. Wenn aktiviert, wählen Sie ihn im Modell-Tab aus.</string>
-    <string name="remote_offload_disclosure">Wenn dies aktiviert und ausgewählt ist, wird das Audio dieser Transkriptionen nur an die unten eingegebene Serveradresse in Ihrem eigenen Netzwerk gesendet. Alles andere wird auf diesem Gerät transkribiert. Standardmäßig deaktiviert: Nichts verlässt Ihr Telefon, solange Sie dies nicht einschalten.</string>
+    <string name="remote_omnivoice_name">Remote-Offload</string>
+    <string name="remote_offload_title">Remote-Offload (experimentell)</string>
+    <string name="remote_offload_description">Lange oder schwere Transkriptionen an einen kompatiblen OpenAI-Server deiner Wahl auslagern. Wenn aktiviert, im Tab Modelle auswählen.</string>
+    <string name="remote_offload_disclosure">Wenn dies aktiviert und ausgewählt ist, wird das Audio dieser Transkriptionen nur an die unten eingegebene Serveradresse gesendet, egal wo dieser Server läuft: im eigenen Netzwerk oder irgendwo im Internet. Alles andere wird auf diesem Gerät transkribiert. Standardmäßig deaktiviert: Nichts verlässt dein Telefon, bis du es aktivierst.</string>
     <string name="remote_offload_endpoint_label">Serveradresse</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">API-Schlüssel</string>
@@ -362,11 +364,13 @@
     <string name="cancel_extract">Entpacken abbrechen</string>
     <string name="extract_model">Entpacken</string>
     <string name="use_model">Modell verwenden</string>
+    <string name="models_active_model_line">Aktiv: %1$s</string>
     <string name="active_badge">Aktiv</string>
     <string name="model_selected_message">%1$s ausgewählt</string>
     <string name="model_use_missing_files">Die Modelldateien für %1$s fehlen oder sind unvollständig. Lade die Variante im Tab \"Modell\" erneut herunter.</string>
     <string name="model_demoted_notice">Wird nicht automatisch gewählt: Dieses Modell hat bei vorhandener Sprache keinen Text geliefert. Wähle es erneut, um ihm eine neue Chance zu geben.</string>
     <string name="delete">Löschen</string>
+    <string name="variant_more_actions">Weitere Aktionen</string>
     <string name="download">Herunterladen</string>
     <string name="model_update_button">Aktualisieren</string>
     <string name="gemma_update_confirm_title">%1$s aktualisieren</string>
@@ -400,7 +404,7 @@
     <!-- Settings Tab - Section Titles -->
     <string name="settings_section_transcription">Transkription</string>
     <string name="settings_section_appearance">Erscheinungsbild</string>
-    <string name="settings_section_advanced">Erweitert</string>
+    <string name="settings_section_advanced">System &amp; Integrationen</string>
     <string name="settings_section_feedback">Feedback &amp; Über</string>
     <string name="settings_feedback_send_title">Feedback senden / Problem melden</string>
     <string name="settings_feedback_send_description">Öffnet deine E-Mail-App mit den vorausgefüllten Details</string>
@@ -475,7 +479,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">Automatisches Entladen</string>
-    <string name="timeout_description">Das Modell wird nach Inaktivität entladen und bei der nächsten Nutzung automatisch neu geladen.</string>
+    <string name="timeout_description">Gibt im Leerlauf Speicher frei und macht es unwahrscheinlicher, dass das System die App beendet; das Modell lädt bei der nächsten Nutzung neu.</string>
     <string name="timeout_1_minute">1 Minute</string>
     <string name="timeout_1_hour">1 Stunde</string>
 
@@ -533,7 +537,7 @@
     <string name="summarize_status">Wird mit KI zusammengefasst…</string>
     <string name="summary_default_prompt">Fasse diese Transkription in 2-3 Sätzen zusammen, in der Sprache der Transkription. Behalte Namen und Zahlen. Gib nur die Zusammenfassung aus.</string>
     <string name="vad_title">Stille entfernen (VAD)</string>
-    <string name="vad_description">Entfernt stille Abschnitte aus Sprachnachrichten vor der Transkription. Reduziert die Verarbeitungszeit und verbessert die Genauigkeit.</string>
+    <string name="vad_description">Entfernt stille Abschnitte vor der Transkription. Meist schneller; die Wirkung auf die Genauigkeit hängt vom Modell ab.</string>
     <string name="progressive_title">Progressive Anzeige</string>
     <string name="progressive_description">Zeigt den Text schon während der Transkription an, statt auf das Ende der Aufnahme zu warten.</string>
     <string name="early_preview_title">Frühe Vorschau</string>
@@ -541,6 +545,7 @@
     <string name="early_preview_badge">Vorschau</string>
     <string name="early_preview_requires_progressive">Benötigt die progressive Anzeige</string>
     <string name="auto_save_failed">Automatisches Speichern fehlgeschlagen (%1$s)</string>
+    <string name="saved_to_folder">Gespeichert in %1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Standard-Prompt</string>
@@ -721,7 +726,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 Sprachen, variabel</string>
+    <string name="speed_comparison_qwen3_quality">%1$d Sprachen, variabel</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Schnell</string>
@@ -890,7 +895,7 @@
     <string name="model_info_notes_whisper_medium">Guter Ausgleich zwischen Genauigkeit und Ressourcenverbrauch.</string>
     <string name="model_info_best_for_distil_it">Beste Genauigkeit für Italienisch (4,3%% WER)</string>
     <string name="model_info_notes_distil_it">Nur Italienisch. Höchste Genauigkeit für italienische Sprachnachrichten. Priorisiert Genauigkeit über Geschwindigkeit.</string>
-    <string name="model_info_best_for_qwen3">Automatische Erkennung in 52 Sprachen</string>
+    <string name="model_info_best_for_qwen3">Automatische Erkennung in 59 Sprachen</string>
     <string name="model_info_notes_qwen3">Breiteste Sprachabdeckung. Hinweis: schneidet Audio über 30 Sekunden ab. Nur ARM64-Geräte.</string>
     <string name="model_info_best_for_parakeet">Schnellste Transkription (17,6x schneller als Whisper, 5,4%% WER)</string>
     <string name="model_info_notes_parakeet">Keine Begrenzung der Audiolänge. VAD nicht nötig. Am besten für Nutzer, denen Geschwindigkeit wichtig ist.</string>
@@ -919,9 +924,9 @@
     <string name="external_none_imported">Keine externen Modelle importiert</string>
     <string name="external_section_title">Externe Modelle</string>
     <string name="model_advanced_section">Erweitert</string>
-    <string name="model_advanced_description">Modelldateien manuell importieren</string>
-    <string name="external_import_folder">Ordner auswählen</string>
-    <string name="external_import_url">Von URL importieren</string>
+    <string name="model_advanced_description">Externe Importe und Gemma-Downloads</string>
+    <string name="external_import_folder">Aus einem Ordner importieren</string>
+    <string name="external_import_url">Über einen Link importieren</string>
     <string name="external_url_hint">HuggingFace-Repo oder URL einer Katalog-Eintrag-JSON</string>
     <string name="external_import">Importieren</string>
     <string name="external_importing">Modell wird importiert…</string>
@@ -949,8 +954,8 @@
     <string name="external_decode_language">Dekodierungssprache</string>
     <string name="external_decode_auto">Automatisch erkennen</string>
     <string name="external_family">Modellfamilie</string>
-    <string name="external_family_transducer">Transducer (Offline-NeMo/Zipformer)</string>
-    <string name="external_family_transducer_help">Erwartet Dateien für Encoder + Decoder + Joiner + Tokens</string>
+    <string name="external_family_transducer">Transducer</string>
+    <string name="external_family_transducer_help">Offline-NeMo/Zipformer. Erwartet Dateien für Encoder + Decoder + Joiner + Tokens</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Erwartet Dateien für Encoder + Decoder + Tokens</string>
     <string name="external_family_ctc">CTC</string>
@@ -1076,7 +1081,6 @@
     <string name="feedback_label_truncated">gekürzt</string>
     <string name="a11y_expand">ausklappen</string>
     <string name="a11y_collapse">einklappen</string>
-    <string name="a11y_back">Zurück</string>
     <string name="litertlm_importing">Import läuft…</string>
     <string name="model_ram_warning">%1$s hat auf diesem Gerät möglicherweise nicht genug Speicher. Das Laden könnte fehlschlagen oder abstürzen; leichtere Modelle sind sicherer.</string>
     <string name="error_oom_transcription">Nicht genug Speicher, um dieses Audio zu transkribieren. Versuche eine kürzere Datei, ein kleineres Modell, oder schließe andere Apps. Um den Versuch ganz zu vermeiden, aktiviere Speicherschutz in Einstellungen > Erweitert.</string>
@@ -1167,7 +1171,7 @@
     <string name="performance_settings_title">Leistung und Speicher</string>
     <string name="performance_settings_summary">Threads, Anbieter, Speicherschutz und Diagnose</string>
     <string name="automation_settings_title">Automatisierung und Auslagerung</string>
-    <string name="automation_settings_summary">Tasker-Empfänger, Broadcast-Anleitung und LAN-Auslagerung</string>
+    <string name="automation_settings_summary">Tasker-Empfänger, Broadcast-Anleitung und Remote-Offload</string>
     <string name="settings_group_appearance">Erscheinungsbild</string>
     <string name="settings_group_history">Verlauf</string>
     <string name="settings_group_decoding">Dekodierung und Vorschau</string>
@@ -1193,4 +1197,31 @@
     <string name="model_shortcut_switch_label">Wechseln zu %1$s</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">Füge dieser Transkription Zeichensetzung, Großschreibung und Absatzumbrüche hinzu. Übersetze nicht, fasse nicht zusammen und füge kein Wort hinzu, entferne, ordne oder korrigiere keines: die Wortfolge muss genau wie geschrieben bleiben. Gib nur die formatierte Transkription aus.</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">Erweiterte Optionen (%1$d)</string>
+    <string name="refinement_model_title">Verfeinerungsmodell</string>
+    <string name="refinement_model_description">Das Modell des zweiten Durchlaufs. Auf erben lassen, um das aktive Modell zu verwenden.</string>
+    <string name="refinement_model_inherit">Aktives Modell erben</string>
+    <string name="export_model_bundle">Modell für Offline-Übertragung teilen</string>
+    <string name="external_import_bundle">Übertragungspaket importieren</string>
+    <string name="external_models_intro">Dieser Bereich enthält alternative Modelle: kleine für Telefone mit wenig Speicher und Modelle, die auf einzelne Sprachen optimiert sind. Viele stammen aus dem von uns gepflegten Community-Katalog; du kannst die App aber auch auf einen Katalog von Drittanbietern richten oder einen eigenen hosten.</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">Gemma-Modell hinzufügen (LiteRT)</string>
+    <string name="gemma_entry_title">Gemma-Downloads</string>
+    <string name="gemma_entry_subtitle">Offizielle Gemma-Modelle durchsuchen und herunterladen</string>
+    <string name="external_section_subtitle">Modelldateien, die du selbst hinzufügst (Ordner, URL oder Übertragungsbundle), sowie die Gemma-LiteRT-LM-Downloads; sie laufen neben dem integrierten Katalog.</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">Geplante Ordnerüberwachung</string>
+    <string name="folder_watch_description">Überwacht ausgewählte Ordner und transkribiert neue Audiodateien automatisch. Scans laufen, wenn das System es zulässt; aggressive Akkusparer können sie verzögern, der manuelle Scan funktioniert immer.</string>
+    <string name="folder_watch_add">Ordner überwachen</string>
+    <string name="folder_watch_empty">Noch keine Ordner überwacht.</string>
+    <string name="folder_watch_scan_now">Jetzt scannen</string>
+    <string name="folder_watch_remove">Entfernen</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">Jede Stunde</item>
+        <item quantity="other">Alle %1$d Std.</item>
+    </plurals>
+    <string name="folder_watch_period_label">Scan-Intervall</string>
+    <string name="folder_watch_grant_failed">Der Zugriff auf diesen Ordner konnte nicht dauerhaft gespeichert werden, er wurde daher nicht hinzugefügt. Bitte erneut auswählen.</string>
 </resources>

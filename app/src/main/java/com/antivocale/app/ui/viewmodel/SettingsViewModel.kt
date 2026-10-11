@@ -20,6 +20,7 @@ import com.antivocale.app.data.HuggingFaceTokenManager
 import com.antivocale.app.data.ModelDiscovery
 import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.data.ActiveModelRepository
+import com.antivocale.app.data.InstalledBackend
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.ShortcutIconStore
 import com.antivocale.app.transcription.BackendRegistry
@@ -84,6 +85,8 @@ class SettingsViewModel @Inject constructor(
     val huggingFaceAuthManager: HuggingFaceAuthManager,
     private val huggingFaceApiClient: HuggingFaceApiClient,
     val perAppPreferencesManager: PerAppPreferencesManager,
+    // TASK-741: the scheduled folder watch (records + snapshots).
+    private val scheduledFolderStore: com.antivocale.app.data.ScheduledFolderStore,
     val transcriptionCalibrator: TranscriptionCalibrator,
     private val backendManager: TranscriptionBackendManager,
     private val llmManager: LlmManager,
@@ -129,6 +132,8 @@ class SettingsViewModel @Inject constructor(
                 modelConfigured = !preferencesManager.modelPath.first().isNullOrBlank(),
                 punctuationPrompt = preferencesManager.punctuationPrompt.first(),
                 summaryPrompt = preferencesManager.summaryPrompt.first(),
+                transcriptionAdvancedExpanded =
+                    preferencesManager.settingsTranscriptionAdvancedExpanded.first(),
         )
     }
 
@@ -136,6 +141,8 @@ class SettingsViewModel @Inject constructor(
         val modelConfigured: Boolean,
         val punctuationPrompt: String,
         val summaryPrompt: String,
+        /** TASK-588.1: seeds the advanced-reveal state (no first-frame flash). */
+        val transcriptionAdvancedExpanded: Boolean,
     )
 
     val gemmaConfigured: StateFlow<Boolean> = preferencesManager.modelPath
@@ -379,6 +386,9 @@ class SettingsViewModel @Inject constructor(
             // null means strictly "tour never completed". The replay hole
             // closes (a replayed tour after a locale switch cannot silently
             // filter) and the guard becomes immune to default-value drift.
+            // Maintainer direction (2026-10-08): this PHONE-LANGUAGE seed
+            // stays (certain information); only the first-note DETECTION
+            // seed was removed from the orchestrator.
             if (preferencesManager.modelFilterLanguage.first() == null) {
                 preferencesManager.saveModelFilterLanguage(
                     Language.onboardingFavoriteSeed(interfaceLanguage) ?: "")
@@ -405,6 +415,41 @@ class SettingsViewModel @Inject constructor(
     val refinementEnabled: StateFlow<Boolean> = _refinementEnabled.asStateFlow()
     private val _refinementAvailable = MutableStateFlow(false)
     val refinementAvailable: StateFlow<Boolean> = _refinementAvailable.asStateFlow()
+
+    // TASK-740.1: the installed backends for the refine-model picker (the
+    // repository owns the derivation; the dropdown adds the inherit option).
+    private val _installedBackends = MutableStateFlow<List<InstalledBackend>>(emptyList())
+    val installedBackends: StateFlow<List<InstalledBackend>> = _installedBackends.asStateFlow()
+
+    private val _refinementModelBackendId = MutableStateFlow("")
+    val refinementModelBackendId: StateFlow<String> = _refinementModelBackendId.asStateFlow()
+
+    /** TASK-740.1: the FAST arm's backend id (excluded from the refine picker). */
+    private val _streamingBackendId = MutableStateFlow<String?>(null)
+    val streamingBackendId: StateFlow<String?> = _streamingBackendId.asStateFlow()
+    fun saveRefinementModelBackendId(backendId: String) {
+        viewModelScope.launch {
+            try {
+                preferencesManager.saveRefinementModelBackendId(backendId)
+                _refinementModelBackendId.value = backendId
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save refinement model pin", e)
+            }
+        }
+    }
+
+    // TASK-588.1: the TRANSCRIPTION section's advanced-block reveal. Seeded
+    // from the warmed prefs (a plain false would flash the block collapsed
+    // for one frame for expanded users (the TASK-485 class)), and the setter
+    // sets the state synchronously before the DataStore write so the expand
+    // never waits on disk.
+    private val _transcriptionAdvancedExpanded =
+        MutableStateFlow(warmedPrefs.transcriptionAdvancedExpanded)
+    val transcriptionAdvancedExpanded: StateFlow<Boolean> = _transcriptionAdvancedExpanded.asStateFlow()
+    fun setTranscriptionAdvancedExpanded(expanded: Boolean) {
+        _transcriptionAdvancedExpanded.value = expanded
+        viewModelScope.launch { preferencesManager.saveSettingsTranscriptionAdvancedExpanded(expanded) }
+    }
 
     // GH #83: speaker labeling after transcription.
     private val _speakerLabelsEnabled = MutableStateFlow(false)
@@ -531,6 +576,14 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED
         )
 
+    /** TASK-785: the Open Transcribe provider gate. */
+    val openTranscribeEnabled: StateFlow<Boolean> = preferencesManager.openTranscribeEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED
+        )
+
     /** TASK-735: the voice-note identity listener's app-level gate. */
     val voiceNoteIdentityEnabled: StateFlow<Boolean> = preferencesManager.voiceNoteIdentityEnabled
         .stateIn(
@@ -542,6 +595,17 @@ class SettingsViewModel @Inject constructor(
     fun saveExternalAutomationEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveExternalAutomationEnabled(enabled)
+        }
+    }
+
+    /**
+     * TASK-785: a plain preference write; the BridgeApplication collector
+     * on the flow flips the provider component, so every writer of the
+     * gate is covered without paired-write discipline.
+     */
+    fun saveOpenTranscribeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveOpenTranscribeEnabled(enabled)
         }
     }
 
@@ -757,6 +821,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesManager.refinementEnabled.collect { _refinementEnabled.value = it }
         }
+        // TASK-588.1: the advanced-block reveal state.
+        viewModelScope.launch {
+            preferencesManager.settingsTranscriptionAdvancedExpanded.collect {
+                _transcriptionAdvancedExpanded.value = it
+            }
+        }
+        // TASK-740.1: the refine-model pin + the installed set.
+        viewModelScope.launch {
+            preferencesManager.refinementModelBackendId.collect { _refinementModelBackendId.value = it }
+        }
+        viewModelScope.launch {
+            activeModelRepository.installedBackendsFlow.collect { _installedBackends.value = it }
+        }
         // GH #83: speaker labeling toggle
         viewModelScope.launch {
             preferencesManager.speakerLabelsEnabled.collect { _speakerLabelsEnabled.value = it }
@@ -786,10 +863,11 @@ class SettingsViewModel @Inject constructor(
                     preferencesManager.sherpaModelPath(streamingEntry.id),
                 ) { selected, _ -> selected }
                     .collect { selected ->
-                        val installed =
+                        val installedId =
                             com.antivocale.app.transcription.SherpaModelManager
-                                .installedStreamingEntryId(getApplication<Application>()) != null
-                        _refinementAvailable.value = installed && streamingEntry.id != selected
+                                .installedStreamingEntryId(getApplication<Application>())
+                        _streamingBackendId.value = installedId
+                        _refinementAvailable.value = installedId != null && streamingEntry.id != selected
                     }
             }
         }
@@ -919,6 +997,57 @@ class SettingsViewModel @Inject constructor(
             preferencesManager.saveOutputFolderUri(uri)
         }
     }
+
+    // ------------------------------------------------------------------
+    // TASK-741 (GH #125): the scheduled folder watch. Every mutation pairs
+    // the store write with the scheduler reconcile (the pairing the slice-3
+    // review demanded); a missed pairing self-heals at the next app start.
+    // ------------------------------------------------------------------
+
+    val scheduledFolders: StateFlow<List<com.antivocale.app.data.WatchedFolder>> =
+        scheduledFolderStore.foldersFlow.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList(),
+        )
+
+    /** The one launch prologue every folder-watch mutation shares. */
+    private fun launchFolderWatch(block: suspend (android.app.Application) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) { block(getApplication()) }
+    }
+
+    fun addWatchedFolder(uri: Uri) = launchFolderWatch { app ->
+        val name = com.antivocale.app.util.TreeUris.displayName(app, uri)
+        // The targeted reconcile: enqueue the changed folder, not the full sync.
+        com.antivocale.app.work.ScheduledFolderScheduler.enqueueFolder(
+            app, scheduledFolderStore.add(
+                com.antivocale.app.data.WatchedFolder(treeUri = uri.toString(), displayName = name),
+            ).first { it.treeUri == uri.toString() },
+        )
+    }
+
+    fun removeWatchedFolder(treeUri: String) = launchFolderWatch { app ->
+        val remaining = scheduledFolderStore.remove(treeUri)
+        com.antivocale.app.work.ScheduledFolderScheduler.cancel(app, treeUri)
+        // Give the grant slot back (the platform caps persisted grants):
+        // only when no OTHER record still watches the same tree.
+        runCatching { android.net.Uri.parse(treeUri) }.getOrNull()?.let { uri ->
+            if (remaining.none { it.treeUri == treeUri }) {
+                com.antivocale.app.util.TreeUris.releasePersistableReadGrant(app, uri)
+            }
+        }
+    }
+
+    fun updateWatchedFolderPeriod(treeUri: String, periodHours: Int) = launchFolderWatch { app ->
+        runCatching { scheduledFolderStore.updatePeriod(treeUri, periodHours) }
+            .onFailure { Log.w(TAG, "Bad folder-watch period: $periodHours", it) }
+            .getOrNull()
+            ?.firstOrNull { it.treeUri == treeUri }
+            ?.let { com.antivocale.app.work.ScheduledFolderScheduler.enqueueFolder(app, it) }
+    }
+
+    fun scanWatchedFolderNow(treeUri: String) = launchFolderWatch { app ->
+        com.antivocale.app.work.ScheduledFolderScheduler.scanNow(app, treeUri)
+    }
+
 
     /**
      * GH #92: saves the auto-save file format (a [SubtitleFormatter.Format] name).

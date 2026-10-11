@@ -19,12 +19,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.net.Uri
 import com.antivocale.app.transcription.ModelFamilyDetector
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -35,6 +38,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -59,6 +63,9 @@ import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.CatalogVariantUi
+import com.antivocale.app.transcription.titleCountArg
+import com.antivocale.app.transcription.descriptionCountArg
+import com.antivocale.app.transcription.titleFormatArg
 import com.antivocale.app.transcription.Language
 import androidx.compose.ui.graphics.Color
 import com.antivocale.app.util.DeviceCompatibility
@@ -76,10 +83,12 @@ import com.antivocale.app.ui.components.CardTitleRow
 import com.antivocale.app.ui.components.DownloadButtonState
 import com.antivocale.app.ui.components.DownloadProgressView
 import com.antivocale.app.ui.components.InfoIconButton
+import com.antivocale.app.ui.components.VariantOverflowMenu
 import com.antivocale.app.ui.components.LanguageFilterBar
 import com.antivocale.app.ui.components.ModelVariantCard
 import com.antivocale.app.ui.components.ModelVariantCardState
 import com.antivocale.app.ui.components.UnloadModelButton
+import com.antivocale.app.ui.components.UseModelButton
 import com.antivocale.app.ui.components.BenchmarkDialog
 import com.antivocale.app.ui.components.DeleteConfirmationDialog
 import com.antivocale.app.ui.components.DownloadConfirmationDialog
@@ -87,6 +96,8 @@ import com.antivocale.app.ui.components.ModelInfoOverlay
 import com.antivocale.app.benchmark.BenchmarkState
 import com.antivocale.app.ui.viewmodel.BenchmarkViewModel
 import com.antivocale.app.ui.viewmodel.ModelViewModel
+import com.antivocale.app.ui.components.countAwareString
+import com.antivocale.app.ui.components.countAwareStringResource
 import com.antivocale.app.util.FeedbackHelper
 
 /**
@@ -124,6 +135,7 @@ fun ModelTab(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val activeBackendId by viewModel.activeBackendId.collectAsState()
+    val activeModelLabel by viewModel.activeModelLabel.collectAsState()
     val downloadUiState by viewModel.downloadUiState.collectAsState()
     val catalogStates by viewModel.catalogStates.collectAsState()
 
@@ -179,6 +191,59 @@ fun ModelTab(
             importFolder(picked, family)
         }
     }
+    // TASK-742 (GH #124): the offline-transfer share. The chosen target URI
+    // and the pending export (model dir + metadata) are remembered; the
+    // launcher callback streams the bundle into the user-picked file.
+    // TASK-742 (GH #124): the offline-transfer IMPORT. OpenDocument picks
+    // the .zip; the VM verifies (sha256, format) into a staging dir and
+    // registers through the normal import core.
+    val bundleImportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { picked ->
+            // TASK-761: no persistable grant at all. The picker's transient
+            // grant covers this one-shot read (the old callback-side take
+            // was never released and burned grant slots).
+            viewModel.importExternalFromBundle(context, picked)
+        }
+    }
+
+    // TASK-742 (GH #124): the offline-transfer share. The remembered
+    // pending write streams the bundle once the user picks a target.
+    // TASK-763: the pending export travels as SAVEABLE primitives, not a
+    // lambda (a config change while the picker is open used to null a
+    // remembered lambda and drop the picked target silently). The variant
+    // keys on its stable dirName; unresolvable state fails soft.
+    var pendingExportDir by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingExportEntryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingExportDirName by rememberSaveable { mutableStateOf<String?>(null) }
+    val bundleExportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val dirPath = pendingExportDir
+        val entryId = pendingExportEntryId
+        val dirName = pendingExportDirName
+        pendingExportDir = null; pendingExportEntryId = null; pendingExportDirName = null
+        if (uri != null && dirPath != null && entryId != null && dirName != null) {
+            val entry = BundledCatalog.byId(entryId)
+            val variant = entry?.variants?.firstOrNull { it.dirName == dirName }
+            if (entry == null || variant == null) {
+                android.util.Log.w("ModelTab", "pending bundle export dropped: entry/variant no longer resolve")
+            } else {
+                viewModel.exportBundle(
+                    uri, java.io.File(dirPath), entry,
+                    CatalogVariantUi.of(entry.id, variant.name))
+            }
+        }
+    }
+    fun launchBundleExport(dir: java.io.File, entry: CatalogEntry, variant: CatalogVariantUi) {
+        // TASK-761: the ViewModel owns the write (viewModelScope + IO).
+        pendingExportDir = dir.path
+        pendingExportEntryId = entry.id
+        pendingExportDirName = variant.dirName
+        bundleExportPicker.launch(exportFileName(entry.id, variant.variantName))
+    }
+
     val externalFolderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -186,12 +251,7 @@ fun ModelTab(
             // Some third-party/OEM pickers return a grant without the
             // persistable flag; the unguarded call would throw directly in
             // the callback (SettingsTab guards the identical call).
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    picked,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }.onFailure { android.util.Log.w("ModelTab", "persistable grant failed for $picked", it) }
+            com.antivocale.app.util.TreeUris.takePersistableReadGrant(context, picked)
             detectedExternalFamily = null
             ambiguousPick = null
             // A rapid re-pick must not race the previous detect probe; the
@@ -523,6 +583,8 @@ fun ModelTab(
         )
     }
 
+    var showGemmaDownloads by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -547,6 +609,33 @@ fun ModelTab(
             selectedLanguageCode = filterLanguageCode,
             onLanguageSelected = { viewModel.setModelFilterLanguage(it) }
         )
+
+        // TASK-786: states the active model once, right under the filter;
+        // the dot pairs with the external cards' badge (catalog cards carry
+        // the "Active" pill).
+        activeModelLabel?.let { name ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    Icons.Default.RadioButtonChecked,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = stringResource(R.string.models_active_model_line, name),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
 
         // GH #70: curated "For your language" elevation. The language comes
         // from the UI configuration (the per-app locale when one is set, else
@@ -601,6 +690,7 @@ fun ModelTab(
                     viewModel = viewModel,
                     benchmarkViewModel = benchmarkViewModel,
                     entry = entry,
+                    onExportBundle = ::launchBundleExport,
                     state = catalogStates[entry.id] ?: ModelViewModel.ModelEntryUiState(),
                     activeBackendId = activeBackendId,
                     isTranscribing = isTranscribing,
@@ -609,19 +699,6 @@ fun ModelTab(
                     onInfoClick = { modelInfoVariant = it }
                 )
             }
-        }
-
-        // Download models section - Gemma LLM models (advanced features)
-        if (!showCuratedSection && visibleGemmaVariants.isNotEmpty()) {
-            ModelDownloadSection(
-                viewModel = viewModel,
-                context = context,
-                onNavigateToSettings = onNavigateToSettings,
-                activeModelName = uiState.modelName,
-                visibleVariants = visibleGemmaVariants,
-                guardedModelSwitch = guardedSwitch,
-                onInfoClick = { modelInfoVariant = it }
-            )
         }
 
         // TASK-681: the LAN-offload configured-service card. Not a catalog
@@ -659,6 +736,17 @@ fun ModelTab(
                 advancedExpanded = true
             }
         }
+        // TASK-746 (review F1): the Gemma downloads now live behind this
+        // collapse, so a download in flight (or failed) must expand it: the
+        // progress/cancel/error UI otherwise composes nowhere, and the
+        // error auto-scroll above scrolls to a collapsed button. Fires on
+        // the transition only; the user can collapse again freely.
+        val gemmaDownloadActive =
+            downloadUiState.variantDownloadStates.values.any { it.isDownloading } ||
+                downloadUiState.downloadError != null
+        LaunchedEffect(gemmaDownloadActive) {
+            if (gemmaDownloadActive) advancedExpanded = true
+        }
         Column(modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = { advancedExpanded = !advancedExpanded },
@@ -687,12 +775,78 @@ fun ModelTab(
                 Text(
                     stringResource(R.string.external_section_title),
                     style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
                 )
+                // TASK-745: what "external" means, stated where the word
+                // appears (the maintainer's morning trial).
+                Text(
+                    stringResource(R.string.external_section_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                // Maintainer direction (2026-10-07 road test): a section
+                // lead-in, ABOVE the import flows, so "the list below"
+                // covers them, the imported models, and the catalog dialog
+                // the link import opens (as a list caption under the
+                // buttons it described a dialog that sits above it).
+                Text(
+                    text = stringResource(R.string.external_models_intro),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+
+                // TASK-775: the Gemma downloads live in a sub-page; the
+                // entry card is the compact pointer (maintainer direction).
+                if (visibleGemmaVariants.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        onClick = { showGemmaDownloads = true },
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Memory, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.gemma_entry_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold)
+                                // TASK-779: the entry says what it opens.
+                                Text(
+                                    text = stringResource(R.string.gemma_entry_subtitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (gemmaDownloadActive) {
+                                    Text(
+                                        text = stringResource(R.string.downloading),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
 
                 // LiteRT-LM (Gemma): same double-container structure as ONNX Sherpa.
                 // SAF (OpenDocument) grants its own URI access, no storage permission
-                // needed (TASK-301).
+                // needed (TASK-301). TASK-746: the Gemma download section joins
+                // its ecosystem's card here (the maintainer's direction): the
+                // .litertlm downloads are not catalog entries, so the external
+                // group is where they live; the download machinery is unchanged.
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     colors = CardDefaults.cardColors(
@@ -702,7 +856,9 @@ fun ModelTab(
                     Column(modifier = Modifier.padding(16.dp)) {
                         CardTitleRow(
                             icon = Icons.Default.Memory,
-                            title = "LiteRT-LM",
+                            // TASK-779: was the hardcoded "LiteRT-LM", jargon
+                            // to anyone outside the project.
+                            title = stringResource(R.string.litert_card_title),
                             iconTint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
@@ -711,18 +867,14 @@ fun ModelTab(
                             onClick = { viewModel.openFilePicker() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.select_model_from_device))
+                            ImportActionLabel(Icons.Default.FolderOpen, R.string.select_model_from_device)
                         }
                         OutlinedButton(
                             onClick = { showLitertLmUrlDialog = true },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                             enabled = !uiState.litertLmImporting
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.litertlm_import_from_url))
+                            ImportActionLabel(Icons.Default.CloudDownload, R.string.litertlm_import_from_url)
                         }
                         if (uiState.litertLmImporting) {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -746,6 +898,19 @@ fun ModelTab(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Maintainer direction (2026-10-07 road test): the intro text
+                // leads the sherpa block itself (above the family selector
+                // and import actions), so "this section" covers the
+                // imports, the imported models, and the catalog dialog the
+                // link import opens. As the whole section's caption it sat
+                // above the Gemma entry, which is neither small nor
+                // language-specific.
+                Text(
+                    text = stringResource(R.string.external_models_intro),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
                 // ONNX (sherpa): the section Card carries the header; no
                 // separate label needed here.
                 ExternalModelsSection(
@@ -757,7 +922,12 @@ fun ModelTab(
                     detectedFamily = detectedExternalFamily,
                     selection = externalImport,
                     onSelectionChange = { externalImport = it; detectedExternalFamily = null },
-                    onDeleteRequest = { externalToDelete = it }
+                    onDeleteRequest = { externalToDelete = it },
+                    onImportBundle = { bundleImportPicker.launch(arrayOf("application/zip")) },
+                    onBenchmark = { record ->
+                        benchmarkViewModel.startBenchmark(
+                            record.backendId, record.dir, record.displayName)
+                    },
                 )
 
                 if (ambiguousPick != null) {
@@ -810,6 +980,46 @@ fun ModelTab(
 
         // Extra spacer to ensure downloading card can be fully scrolled into view
         Spacer(modifier = Modifier.height(200.dp))
+        }
+
+        // TASK-775: the Gemma downloads sub-page. A sibling of the
+        // scrollable Column inside this Box: stacked on top (Box z-order),
+        // bounded constraints (no nested-scroll crash). The pass-through
+        // switch is a compromise: the guard stays on the main tab.
+        if (showGemmaDownloads) {
+            androidx.activity.compose.BackHandler { showGemmaDownloads = false }
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                ) {
+                    com.antivocale.app.ui.components.SettingsSubPageHeader(
+                        // TASK-779: matches the entry card that opens this
+                        // page ("Gemma downloads"); the inner section card
+                        // keeps its own "Gemma Models" title.
+                        titleRes = R.string.gemma_entry_title,
+                        onBack = { showGemmaDownloads = false },
+                    )
+                    if (visibleGemmaVariants.isNotEmpty()) {
+                        ModelDownloadSection(
+                            viewModel = viewModel,
+                            context = context,
+                            onNavigateToSettings = onNavigateToSettings,
+                            activeModelName = uiState.modelName,
+                            visibleVariants = visibleGemmaVariants,
+                            guardedModelSwitch = { it() },
+                            onInfoClick = { modelInfoVariant = it },
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(200.dp))
+                }
+            }
         }
 
         SnackbarHost(
@@ -1068,6 +1278,8 @@ private fun CuratedCommunityCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Button(
+                // NOTE: languages ride the entry JSON itself (importFromEntryJson
+                // reads entry.languages); these params only reach repo imports.
                 onClick = { viewModel.importExternalFromUrl(entry.entryUrl, entry.family) },
                 enabled = importState !is ModelViewModel.ExternalImportState.Importing,
             ) {
@@ -1100,17 +1312,14 @@ private fun RemoteOmnivoiceServiceCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
-        Row(
+        // TASK-774: the button gets its own row below the text; the old
+        // same-row layout stole horizontal space from the description.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Lan,
                     contentDescription = null,
@@ -1119,7 +1328,7 @@ private fun RemoteOmnivoiceServiceCard(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.remote_omnivoice_name),
                         style = MaterialTheme.typography.titleMedium,
@@ -1130,21 +1339,28 @@ private fun RemoteOmnivoiceServiceCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                if (isActive) {
                     Text(
-                        text = stringResource(R.string.remote_offload_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = stringResource(R.string.active_badge),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
-            if (isActive) {
-                Text(
-                    text = stringResource(R.string.active_badge),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                OutlinedButton(onClick = onUse, enabled = !isTranscribing) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.remote_offload_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!isActive) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onUse,
+                    enabled = !isTranscribing,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
                     Text(stringResource(R.string.use_model))
                 }
             }
@@ -1293,6 +1509,8 @@ private fun CatalogModelSection(
     viewModel: ModelViewModel,
     benchmarkViewModel: BenchmarkViewModel,
     entry: CatalogEntry,
+    /** TASK-742: the bundle-export hook (launcher arm + remembered target). */
+    onExportBundle: ((java.io.File, CatalogEntry, CatalogVariantUi) -> Unit)? = null,
     state: ModelViewModel.ModelEntryUiState,
     activeBackendId: String,
     isTranscribing: Boolean,
@@ -1313,6 +1531,13 @@ private fun CatalogModelSection(
         ?.let { CatalogStringKeys.resolve(it) }
         ?: CatalogVariantUi.of(entry.id).titleResId
     val entryDescriptionResId = (entry.description as? CatalogDisplay.Resource)?.key?.let { CatalogStringKeys.resolve(it) }
+    // TASK-760: catalog displays may format the entry's language count; the
+    // value DERIVES from the catalog here instead of riding the string as a
+    // hand-pinned literal that drifts on model updates (the 52/53/59 split).
+    // TASK-767: the flag-to-count policy lives in titleCountArg/
+    // descriptionCountArg; the arms resolve through countAwareStringResource.
+    val entryTitleCountArg = remember(entry) { entry.titleCountArg() }
+    val entryDescriptionCountArg = remember(entry) { entry.descriptionCountArg() }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1338,7 +1563,11 @@ private fun CatalogModelSection(
                 ) {
                     Icon(
                         imageVector = when {
-                            state.downloadedVariants.isNotEmpty() -> Icons.Default.CheckCircle
+                            // TASK-786: a shelf reads "models live here";
+                            // never a check (the radio dot is the only
+                            // selection mark in the tab). AutoMirrored: the
+                            // spines must flip for RTL locales.
+                            state.downloadedVariants.isNotEmpty() -> Icons.AutoMirrored.Filled.LibraryBooks
                             state.isAnyDownloading -> Icons.Default.CloudDownload
                             else -> if (entry.isStreaming) Icons.Default.GraphicEq else Icons.Default.Translate
                         },
@@ -1353,13 +1582,13 @@ private fun CatalogModelSection(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = stringResource(entryTitleResId),
+                            text = countAwareStringResource(entryTitleResId, entryTitleCountArg),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         if (entryDescriptionResId != null) {
                             Text(
-                                text = stringResource(entryDescriptionResId),
+                                text = countAwareStringResource(entryDescriptionResId, entryDescriptionCountArg),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1452,8 +1681,21 @@ private fun CatalogModelSection(
                             benchmarkViewModel.startBenchmark(
                                 entry.id,
                                 path,
-                                context.getString(variant.titleResId)
+                                context.countAwareString(variant.titleResId, variant.titleFormatArg())
                             )
+                        }
+                    },
+                    // TASK-742: offer the bundle share only for a present dir
+                    onExportClick = onExportBundle?.takeIf {
+                        // Only TRANSFERABLE entries offer the bundle: a
+                        // modelType with no import family (qwen3, the
+                        // online Nemotron, the LLM) cannot land as an
+                        // external import on the receiving device.
+                        com.antivocale.app.data.ModelBundleCodec
+                            .importFamilyForModelType(entry.modelType) != null
+                    }?.let { hook ->
+                        entryDirFor(context, entry.id, variant.variantName)?.let { dir ->
+                            { hook(dir, entry, variant) }
                         }
                     },
                     onInfoClick = { onInfoClick(variant) }
@@ -1466,8 +1708,10 @@ private fun CatalogModelSection(
     // Download confirmation dialog (extraction-aware: a downloaded-but-unextracted
     // Whisper tar prompts to extract instead of re-downloading).
     if (state.showDownloadDialog) {
-        val selectedName = state.selectedVariant?.let { stringResource(CatalogVariantUi.of(entry.id, it).titleResId) }
-            ?: stringResource(entryTitleResId)
+        val selectedName = state.selectedVariant?.let {
+            val v = CatalogVariantUi.of(entry.id, it)
+            countAwareStringResource(v.titleResId, v.titleFormatArg())
+        } ?: countAwareStringResource(entryTitleResId, entryTitleCountArg)
         val isExtract = state.selectedVariant != null && state.variantsNeedingExtraction.contains(state.selectedVariant)
         val sizeMb = state.selectedVariant?.let { CatalogVariantUi.of(entry.id, it).estimatedSizeMB.toInt() } ?: 0
         // TASK-427: advise before the download, from the same budget the
@@ -1499,7 +1743,9 @@ private fun CatalogModelSection(
     // Delete confirmation dialog
     if (state.showDeleteDialog) {
         val variant = state.variantToDelete?.let { CatalogVariantUi.of(entry.id, it) }
-        val variantDisplayName = variant?.let { stringResource(it.titleResId) } ?: stringResource(entryTitleResId)
+        val variantDisplayName = variant?.let {
+            countAwareStringResource(it.titleResId, it.titleFormatArg())
+        } ?: countAwareStringResource(entryTitleResId, entryTitleCountArg)
         val isVariantActive = isEntryActive && variant != null && savedPath?.endsWith(variant.dirName) == true
         DeleteConfirmationDialog(
             modelName = variantDisplayName,
@@ -1641,6 +1887,7 @@ private fun CanaryLanguageDropdown(
             readOnly = true,
             label = { Text(stringResource(R.string.external_decode_language)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1688,6 +1935,7 @@ private fun LanguageEndonymDropdown(
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1710,6 +1958,15 @@ private fun LanguageEndonymDropdown(
  * shared family selector with its conditional options panel. The two standing notices
  * (single-pass risk, wrong-family crash) ride along every card.
  */
+/** TASK-779: the icon + 8dp + label content every import action button
+ *  shares (one owner of the spacing idiom, five former inline copies). */
+@Composable
+private fun ImportActionLabel(icon: ImageVector, labelRes: Int) {
+    Icon(icon, contentDescription = null)
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(stringResource(labelRes))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExternalModelsSection(
@@ -1722,6 +1979,11 @@ private fun ExternalModelsSection(
     onSelectionChange: (ExternalImportUiState) -> Unit,
     detectedFamily: ModelFamily? = null,
     onDeleteRequest: (ExternalModelRecord) -> Unit,
+    /** TASK-742: opens the bundle (.zip) import picker. */
+    onImportBundle: () -> Unit = {},
+    /** 2026-10-08: benchmark rides the kebab (the BenchmarkViewModel now
+     *  has an external-record branch building ExternalConfig). */
+    onBenchmark: ((ExternalModelRecord) -> Unit)? = null,
 ) {
     val records by viewModel.externalModels.collectAsState()
     // TASK-675: the honest one-line reason travels to external cards too.
@@ -1774,6 +2036,10 @@ private fun ExternalModelsSection(
                     readOnly = true,
                     label = { Text(stringResource(R.string.external_family)) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                    // TASK-755: a wrapped value grew the field vertically
+                    // (the maintainer's report); every read-only dropdown in
+                    // this file carries the same one-line guard.
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth().menuAnchor()
                 )
                 ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
@@ -1848,6 +2114,7 @@ private fun ExternalModelsSection(
                         readOnly = true,
                         label = { Text(stringResource(R.string.external_ctc_subtype)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ctcExpanded) },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
                     ExposedDropdownMenu(expanded = ctcExpanded, onDismissRequest = { ctcExpanded = false }) {
@@ -1892,23 +2159,33 @@ private fun ExternalModelsSection(
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth()) {
+            // TASK-779 (maintainer road test): the import actions stack
+            // vertically, one full-width row each, with task-oriented
+            // labels; the 744 two-per-row split still ellipsized the
+            // labels on narrow screens and named nothing the user does.
             Button(
                 onClick = folderPicker,
                 enabled = importState !is ModelViewModel.ExternalImportState.Importing,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(stringResource(R.string.external_import_folder))
+                ImportActionLabel(Icons.Default.FolderOpen, R.string.external_import_folder)
             }
-            Spacer(modifier = Modifier.width(8.dp))
             OutlinedButton(
                 onClick = { urlDialogOpen = true },
                 enabled = importState !is ModelViewModel.ExternalImportState.Importing,
-                modifier = Modifier.weight(1f)
-            ) { Text(stringResource(R.string.external_import_url)) }
-        }
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                ImportActionLabel(Icons.Default.Link, R.string.external_import_url)
+            }
+            // TASK-742 (GH #124): the offline-transfer bundle import
+            // (a bundle another device exported through Share/Export).
+            OutlinedButton(
+                onClick = onImportBundle,
+                enabled = importState !is ModelViewModel.ExternalImportState.Importing,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                ImportActionLabel(Icons.Default.Inventory2, R.string.external_import_bundle)
+            }
 
 
         ExternalImportStateView(importState)
@@ -1916,7 +2193,14 @@ private fun ExternalModelsSection(
         // Gap between the import buttons/state and the first card
         if (records.isNotEmpty()) Spacer(modifier = Modifier.height(8.dp))
 
-        records.forEachIndexed { index, record ->
+        // Maintainer direction (2026-10-08): the imported list reads in
+        // alphabetical order, like a catalog, not in import order.
+        // Case-insensitive (mixed-case names would split at the capitals)
+        // and remembered (the section recomposes on unrelated state).
+        val sortedRecords = remember(records) {
+            records.sortedBy { it.displayName.lowercase() }
+        }
+        sortedRecords.forEachIndexed { index, record ->
             if (index > 0) Spacer(modifier = Modifier.height(8.dp))
             ExternalModelCard(
                 record = record,
@@ -1924,6 +2208,12 @@ private fun ExternalModelsSection(
                 demoted = record.backendId in demotedBackendIds,
                 onUse = { viewModel.useExternalModel(record) },
                 onDelete = { onDeleteRequest(record) },
+                // A quarantined record can never resolve a benchmark: hide
+                // the entry instead of erroring on tap. (A dir-missing
+                // record still shows it: the loader fails with a readable
+                // "directory not found" reason.)
+                onBenchmark = onBenchmark?.takeIf { !record.quarantined }
+                    ?.let { cb -> { cb(record) } },
             )
         }
 
@@ -2184,6 +2474,7 @@ private fun ExternalModelCard(
     demoted: Boolean = false,
     onUse: () -> Unit,
     onDelete: () -> Unit,
+    onBenchmark: (() -> Unit)? = null,
 ) {
     // Same container, padding, and button-row pattern as ModelVariantCard:
     // surface color, 12dp inner padding, buttons aligned End with 8dp spacing.
@@ -2215,9 +2506,17 @@ private fun ExternalModelCard(
                         // TASK-386: plain comma join instead of the middot chain:
                         // " · " was announced as "middle dot" by TalkBack in some locales.
                         Text(
-                            (listOf(record.typeLabel,
-                                com.antivocale.app.util.formatFileSize(record.sizeBytes)) +
-                                listOfNotNull(record.languages.joinToString(", ").takeIf { it.isNotEmpty() }))
+                            // Maintainer direction (2026-10-08): size first
+                            // (the deciding fact before a download/use),
+                            // then the family, then languages when known.
+                            (listOf(com.antivocale.app.util.formatFileSize(record.sizeBytes),
+                                record.typeLabel) +
+                                listOfNotNull(record.languages.joinToString(", ") { code ->
+                                    // Display names like every other language
+                                    // surface (the filter dropdown; code
+                                    // review F7).
+                                    com.antivocale.app.util.LanguageNames.nativeLanguageName(code)
+                                }.takeIf { record.languages.isNotEmpty() }))
                                 .joinToString(", "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2225,8 +2524,11 @@ private fun ExternalModelCard(
                     }
                 }
                 if (isActive) {
+                    // TASK-786: the radio dot marks the active external
+                    // model and the in-use line; catalog cards carry the
+                    // "Active" pill instead (text wins where there is room).
                     Icon(
-                        Icons.Default.CheckCircle,
+                        Icons.Default.RadioButtonChecked,
                         contentDescription = stringResource(R.string.active_badge),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -2242,31 +2544,22 @@ private fun ExternalModelCard(
                 )
             }
 
-            // Action buttons: same arrangement as ModelVariantCard
+            // Action buttons: same arrangement as ModelVariantCard since the
+            // 2026-10-08 road test (Use primary, the rest behind the kebab).
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
             ) {
                 if (!isActive) {
-                    // TASK-381: 48dp minimum touch target for icon-only button
-                    Button(
-                        onClick = onUse,
-                        modifier = Modifier.heightIn(min = 48.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = stringResource(R.string.use_model))
-                    }
+                    // 2026-10-08 road test: weight(1f) like the base cards' Use,
+                    // so the button shape matches across the two card families.
+                    UseModelButton(onClick = onUse, modifier = Modifier.weight(1f))
                 }
-                // TASK-381: 48dp minimum touch target for icon-only button
-                OutlinedButton(
-                    onClick = onDelete,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
-                }
+                VariantOverflowMenu(
+                    onBenchmarkClick = onBenchmark,
+                    onDeleteClick = onDelete,
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -2378,11 +2671,15 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                         )
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         // Qwen3-ASR (broadest language coverage)
+                        val qwen3LanguageCount = BundledCatalog
+                            .byId(BuiltInBackendIds.QWEN3_ASR)?.languages?.size
+                            ?: error("bundled catalog is missing qwen3-asr")
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_qwen3_name),
                             size = stringResource(R.string.speed_comparison_qwen3_size),
                             speed = stringResource(R.string.speed_comparison_qwen3_speed),
-                            quality = stringResource(R.string.speed_comparison_qwen3_quality)
+                            quality = stringResource(
+                                R.string.speed_comparison_qwen3_quality, qwen3LanguageCount)
                         )
                         // GigaAM v3 (Russian)
                         ComparisonRow(
@@ -2469,3 +2766,17 @@ private fun AudioLimitLabel(limit: AudioLimit) {
         color = MaterialTheme.colorScheme.primary
     )
 }
+
+
+// ---- TASK-742 (GH #124): bundle-export helpers ----
+
+/** The installed dir of a catalog variant, or null when absent. */
+private fun entryDirFor(
+    context: android.content.Context,
+    entryId: String,
+    variantName: String,
+): java.io.File? =
+    SherpaModelDownloader.of(entryId).getModelPath(context, variantName)?.let { java.io.File(it) }
+
+private fun exportFileName(entryId: String, variantName: String?): String =
+    "antivocale-model-$entryId-${variantName ?: "default"}.zip"

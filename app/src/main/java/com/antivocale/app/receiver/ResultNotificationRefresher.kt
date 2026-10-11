@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.data.PerAppPreferencesManager
+import com.antivocale.app.data.prefsOrDefault
 import com.antivocale.app.service.ResultNotificationFactory
 import com.antivocale.app.service.ResultNotificationSpec
 import com.antivocale.app.service.TranscriptPager
@@ -45,16 +46,9 @@ object ResultNotificationRefresher {
             (current + 1).coerceAtMost(pageCount - 1)
         }
         val sourcePackage = intent.getStringExtra(NotificationActionReceiver.EXTRA_SOURCE_PACKAGE)
-        val prefs = try {
-            if (sourcePackage != null) {
-                PerAppPreferencesManager(appContext).getCurrentPreferences(sourcePackage)
-            } else {
-                AppNotificationPreferences.default()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to get per-app preferences for $sourcePackage, using defaults", e)
-            AppNotificationPreferences.default()
-        }
+        // TASK-757: the ONE per-app-prefs-with-defaults read (the data-layer
+        // extension postResult also uses).
+        val prefs = PerAppPreferencesManager(appContext).prefsOrDefault(sourcePackage)
         val spec = ResultNotificationSpec(
             transcriptionText = text,
             // TASK-650 F7: while this process has resolved the signature at
@@ -79,9 +73,18 @@ object ResultNotificationRefresher {
             detectedLanguage = intent.getStringExtra(NotificationActionReceiver.EXTRA_DETECTED_LANGUAGE),
             isPartial = intent.getBooleanExtra(NotificationActionReceiver.EXTRA_IS_PARTIAL, false),
             failedChunkCount = intent.getIntExtra(NotificationActionReceiver.EXTRA_FAILED_CHUNK_COUNT, 0),
-            // TASK-722: keep the failure banner across page reposts (the
-            // other status facts predate this extra pattern).
+            // TASK-722: keep the failure banner across page reposts.
             saveFailureReason = intent.getStringExtra(NotificationActionReceiver.EXTRA_SAVE_FAILURE),
+            savedFolderName = intent.getStringExtra(NotificationActionReceiver.EXTRA_SAVED_FOLDER),
+            // TASK-758: the status facts survive the page repost. The
+            // booleans default false, so a notification posted before the
+            // extras existed still sheds its facts on the FIRST repost
+            // after updating (accepted: one tap, once, at update time).
+            repetitionSuspected = intent.getBooleanExtra(NotificationActionReceiver.EXTRA_REPETITION_SUSPECTED, false),
+            copiedToClipboard = intent.getBooleanExtra(NotificationActionReceiver.EXTRA_COPIED_TO_CLIPBOARD, false),
+            streamedWithoutVad = intent.getBooleanExtra(NotificationActionReceiver.EXTRA_STREAMED_WITHOUT_VAD, false),
+            refinedFrom = intent.getStringExtra(NotificationActionReceiver.EXTRA_REFINED_FROM),
+            notRefined = intent.getBooleanExtra(NotificationActionReceiver.EXTRA_NOT_REFINED, false),
             pageIndex = target,
             notificationId = notificationId,
             firstPostedAt = intent.getLongExtra(
@@ -95,11 +98,7 @@ object ResultNotificationRefresher {
         // explicitly: the receiver only fires from a notification action tap
         // (implying notifications were deliverable), but lint is right that the
         // code path itself must not assume the grant.
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                appContext, android.Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            NotificationManagerCompat.from(appContext).notify(notificationId, notification)
-        }
+        ResultNotificationFactory(appContext).postIfPermitted(notificationId, notification)
         Log.i(TAG, "Paged result notification to page ${target + 1}/$pageCount (id=$notificationId)")
     }
 }

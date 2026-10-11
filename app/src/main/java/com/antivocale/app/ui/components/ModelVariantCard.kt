@@ -5,16 +5,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.antivocale.app.R
 import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.transcription.ModelVariant
+import com.antivocale.app.transcription.descriptionFormatArg
+import com.antivocale.app.transcription.titleFormatArg
 import com.antivocale.app.util.formatFileSize
 
 // ==================== Download Button State ====================
@@ -103,6 +111,8 @@ fun ModelVariantCard(
     onUpdateClick: () -> Unit = {},
     onDeleteClick: () -> Unit = {},
     onBenchmarkClick: (() -> Unit)? = null,
+    /** TASK-742: share the model as an offline transfer bundle; null hides it. */
+    onExportClick: (() -> Unit)? = null,
     onInfoClick: (() -> Unit)? = null
 ) {
     Card(
@@ -130,7 +140,10 @@ fun ModelVariantCard(
                 ) {
                     Icon(
                         imageVector = when {
-                            state.isDownloaded -> Icons.Default.CheckCircle
+                            // TASK-786: a download glyph for the on-disk
+                            // state; never a check (the radio dot alone
+                            // marks the active model).
+                            state.isDownloaded -> Icons.Default.DownloadDone
                             state.isDownloading -> Icons.Default.CloudDownload
                             else -> Icons.Default.Storage
                         },
@@ -149,7 +162,8 @@ fun ModelVariantCard(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = stringResource(state.variant.titleResId),
+                                text = countAwareStringResource(
+                                    state.variant.titleResId, state.variant.titleFormatArg()),
                                 style = MaterialTheme.typography.titleSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -172,7 +186,8 @@ fun ModelVariantCard(
                             }
                         }
                         Text(
-                            text = stringResource(state.variant.descriptionResId),
+                            text = countAwareStringResource(
+                                state.variant.descriptionResId, state.variant.descriptionFormatArg()),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -216,7 +231,8 @@ fun ModelVariantCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                horizontalArrangement = if (state.isActive) Arrangement.End else Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (state.buttonState) {
                     is DownloadButtonState.Downloading -> {
@@ -230,37 +246,19 @@ fun ModelVariantCard(
                         }
                     }
                     is DownloadButtonState.Downloaded -> {
+                        // Maintainer direction evolution: 2026-10-06 kept Use
+                        // and Benchmark primary with Share/Delete in the
+                        // kebab; the 2026-10-07 road test moved Benchmark
+                        // into the kebab too (with Use hidden on the active
+                        // card, the weighted Benchmark swallowed the row).
                         if (!state.isActive) {
-                            // TASK-381: 48dp minimum touch target for icon-only button
-                            Button(
-                                onClick = onUseClick,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Icon(Icons.Default.Check, contentDescription = stringResource(R.string.use_model))
-                            }
+                            UseModelButton(onClick = onUseClick, modifier = Modifier.weight(1f))
                         }
-                        if (onBenchmarkClick != null) {
-                            // TASK-381: 48dp minimum touch target for icon-only button
-                            OutlinedButton(
-                                onClick = onBenchmarkClick,
-                                modifier = Modifier.heightIn(min = 48.dp)
-                            ) {
-                                Icon(Icons.Default.Speed, contentDescription = stringResource(R.string.benchmark_button))
-                            }
-                        }
-                        // TASK-381: 48dp minimum touch target for icon-only button
-                        OutlinedButton(
-                            onClick = onDeleteClick,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
-                        }
+                        VariantOverflowMenu(
+                            onBenchmarkClick = onBenchmarkClick,
+                            onExportClick = onExportClick,
+                            onDeleteClick = onDeleteClick,
+                        )
                     }
                     is DownloadButtonState.PartiallyDownloaded -> {
                         // PartialDownloadSection above already shows Resume/Clear buttons
@@ -287,16 +285,10 @@ fun ModelVariantCard(
                     }
                     is DownloadButtonState.UpdateAvailable -> {
                         if (!state.isActive) {
-                            // TASK-381: 48dp minimum touch target for icon-only button
-                            Button(
-                                onClick = onUseClick,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Icon(Icons.Default.Check, contentDescription = stringResource(R.string.use_model))
-                            }
+                            // weight(1f): the labelled Use shares this row
+                            // with Update and Delete and must not push them
+                            // off the card in long locales (it ellipsizes).
+                            UseModelButton(onClick = onUseClick, modifier = Modifier.weight(1f))
                         }
                         OutlinedButton(
                             onClick = onUpdateClick,
@@ -530,12 +522,14 @@ internal fun PartialDownloadSection(
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.download_resume))
+                    Text(stringResource(R.string.download_resume),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 OutlinedButton(
                     onClick = onClearClick
                 ) {
-                    Text(stringResource(R.string.download_clear_partial))
+                    Text(stringResource(R.string.download_clear_partial),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -552,5 +546,63 @@ fun InfoIconButton(onClick: () -> Unit) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
         )
+    }
+}
+
+/** One icon + label row of an overflow menu. */
+@Composable
+private fun MenuEntry(
+    labelRes: Int,
+    icon: ImageVector,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(stringResource(labelRes)) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = tint) },
+        onClick = onClick,
+    )
+}
+
+/**
+ * The kebab overflow for model cards (maintainer direction 2026-10-06,
+ * extended 2026-10-07/08): Benchmark (when provided), Edit languages
+ * (external cards only), Share/Export, and Delete live here instead of
+ * taking a button slot each on the action row. Keeps the row clean
+ * (Use + kebab) at any width.
+ */
+@Composable
+internal fun VariantOverflowMenu(
+    onBenchmarkClick: (() -> Unit)? = null,
+    onExportClick: (() -> Unit)? = null,
+    onDeleteClick: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.variant_more_actions),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            onBenchmarkClick?.let { benchmark ->
+                MenuEntry(R.string.benchmark_button, Icons.Default.Speed) {
+                    expanded = false; benchmark()
+                }
+            }
+            onExportClick?.let { export ->
+                MenuEntry(R.string.export_model_bundle, Icons.Default.Share) {
+                    expanded = false; export()
+                }
+            }
+            MenuEntry(R.string.delete, Icons.Default.Delete, tint = MaterialTheme.colorScheme.error) {
+                expanded = false; onDeleteClick()
+            }
+        }
     }
 }

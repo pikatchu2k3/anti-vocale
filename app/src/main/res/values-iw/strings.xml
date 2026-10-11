@@ -9,7 +9,7 @@
 
     <!-- Model selection -->
     <string name="select_model">בחירת קובץ מודל</string>
-    <string name="select_model_from_device">בחירת קובץ</string>
+    <string name="select_model_from_device">בחירת קובץ .litertlm</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">טעינת מודל</string>
@@ -123,7 +123,7 @@
     <string name="transcript_capped_autosave_hint">תמליל מלא בשמירה אוטומטית: הגדרות → שמור לתיקייה</string>
     <string name="transcript_capped_autosave_saved">התמליל המלא נשמר אוטומטית לתיקייה שלך</string>
     <string name="export_settings_title">שמירה אוטומטית וייצוא</string>
-    <string name="export_settings_description">בחר תיקייה ופורמט קובץ לתמלילים שמורים</string>
+    <string name="export_settings_description">אופציונלי: כותב גם כל תמליל לתיקייה שתבחרו, בפורמט שתבחרו. הכול נשאר תמיד גם בלשונית ההיסטוריה.</string>
     <string name="error_folder_not_writable">תיקייה זו לא יכולה לקבל קבצים. בחר תיקייה מאחסון המכשיר (לא מקיצור הדרך של הורדות).</string>
     <string name="language_phone_option">שפת הטלפון (%1$s)</string>
     <string name="today">היום</string>
@@ -168,12 +168,11 @@
     <string name="whisper_extract_confirm_message">קובץ המודל כבר הורד. פעולה זו תחלץ אותו לשימוש.</string>
 
     <!-- Qwen3-ASR model -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 שפות)</string>
-    <string name="qwen3_asr_description">52 שפות • דיוק נמוך באיטלקית</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d שפות)</string>
+    <string name="qwen3_asr_description">%1$d שפות</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • 52 שפות • דיוק נמוך באיטלקית</string>
+    <string name="qwen3_asr_0_6b_description">~938MB • %1$d שפות</string>
     <string name="qwen3_asr_download_confirm_title">להוריד את %1$s?</string>
-    <string name="qwen3_asr_download_confirm_message">פעולה זו תוריד כ-%1$dMB. Qwen3-ASR תומך ב-52 שפות עם דיוק נמוך באיטלקית.</string>
     <string name="qwen3_asr_download">הורדת Qwen3-ASR</string>
     <string name="qwen3_asr_delete_message">למחוק את מודל Qwen3-ASR?</string>
     <string name="qwen3_asr_downloaded">%1$s הורד בהצלחה</string>
@@ -182,7 +181,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (סטרימינג)</string>
-    <string name="nemotron_description">~640MB • טרנסדוסר בסטרימינג • איכות איטלקית ניסיונית</string>
+    <string name="nemotron_description">~640MB • טרנסדוסר בסטרימינג</string>
     <string name="nemotron_download_confirm_title">להוריד את %1$s?</string>
     <string name="nemotron_download_confirm_message">פעולה זו תוריד כ-%1$dMB. Nemotron 3.5 הוא מודל ASR רב-לשוני בסטרימינג.</string>
     <string name="nemotron_download">הורדת Nemotron</string>
@@ -290,6 +289,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">אוטומציה חיצונית (Tasker)</string>
     <string name="external_automation_description">מאפשר לאפליקציות אחרות להתחיל תמלול דרך API האוטומציה (למשל Tasker). כבוי כברירת מחדל.</string>
+    <string name="open_transcribe_title">‏API של Open Transcribe (ניסיוני)‏</string>
+    <string name="open_transcribe_description">מאפשר לאפליקציות אחרות, כמו Forkgram, להשתמש ב-Anti-Vocale כמתמלל לא מקוון. כבוי כברירת מחדל.</string>
+    <string name="opentranscribe_notification_text">תמלול אודיו עבור אפליקציה אחרת</string>
     <string name="external_automation_disabled">אוטומציה חיצונית כבויה. הפעל אותה בהגדרות > מתקדם > אוטומציה חיצונית.</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">מדריך אוטומציה</string>
@@ -314,10 +316,10 @@
     <string name="faq_card_trouble_title">משהו השתבש</string>
     <string name="faq_card_trouble_body">אם תוצאה לא מגיעה, ייתכן שיצרן הטלפון הקפיא את האפליקציה ברקע: עקבו אחרי עצת הסוללה בהתראת השגיאה. תוצאה שנכשלה שומרת רשומת דיווח.</string>
     <string name="no_app_to_open_link">לא נמצאה אפליקציה לפתיחת הקישור</string>
-    <string name="remote_omnivoice_name">העברה לשרת LAN (OmniVoice)</string>
-    <string name="remote_offload_title">העברה לשרת LAN (ניסיוני)</string>
-    <string name="remote_offload_description">מעביר תמלולים ארוכים או כבדים לשרת ה-OmniVoice שלכם ברשת ה-Wi-Fi. לאחר ההפעלה בחרו אותו בלשונית המודלים.</string>
-    <string name="remote_offload_disclosure">כשהתכונה מופעלת ונבחרת, האודיו של אותם תמלולים נשלח רק אל כתובת השרת שתזינו למטה, ברשת שלכם. כל השאר מתומלל על המכשיר הזה. כבויה כברירת מחדל: שום דבר לא יוצא מהטלפון אלא אם תפעילו.</string>
+    <string name="remote_omnivoice_name">האצה מרחוק</string>
+    <string name="remote_offload_title">האצה מרחוק (ניסיוני)</string>
+    <string name="remote_offload_description">האצלת תמלילים ארוכים או כבדים לשרת תואם OpenAI שתבחרו. כשמופעל, בחרו אותו בלשונית המודלים.</string>
+    <string name="remote_offload_disclosure">כשהתכונה מופעלת ונבחרה, האודיו של אותם תמלילים נשלח רק אל כתובת השרת שתזינו למטה, בכל מקום שהשרת נמצא בו: ברשת הביתית או באינטרנט. כל השאר מתומלל במכשיר זה. כבוי כברירת מחדל: שום דבר לא עוזב את הטלפון עד שתפעילו.</string>
     <string name="remote_offload_endpoint_label">כתובת השרת</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">מפתח API</string>
@@ -389,11 +391,13 @@
     <string name="cancel_extract">ביטול חילוץ</string>
     <string name="extract_model">חילוץ</string>
     <string name="use_model">שימוש במודל</string>
+    <string name="models_active_model_line">בשימוש: %1$s</string>
     <string name="active_badge">פעיל</string>
     <string name="model_selected_message">%1$s נבחר</string>
     <string name="model_use_missing_files">קבצי המודל של %1$s חסרים או חלקיים. הורד מחדש את הגרסה מהלשונית מודלים.</string>
     <string name="model_demoted_notice">לא נבחר אוטומטית: המודל הזה לא הניב טקסט למרות שהיה דיבור. בחרו בו שוב כדי לתת לו הזדמנות נוספת.</string>
     <string name="delete">מחיקה</string>
+    <string name="variant_more_actions">פעולות נוספות</string>
     <string name="download">הורדה</string>
     <string name="model_update_button">עדכון</string>
     <string name="gemma_update_confirm_title">עדכון %1$s</string>
@@ -427,7 +431,7 @@
     <!-- Settings Tab - Section Titles -->
     <string name="settings_section_transcription">תמלול</string>
     <string name="settings_section_appearance">עיצוב</string>
-    <string name="settings_section_advanced">מתקדם</string>
+    <string name="settings_section_advanced">מערכת ושילובים</string>
     <string name="settings_section_feedback">משוב &amp; אודות</string>
     <string name="settings_feedback_send_title">שליחת משוב / דיווח על בעיה</string>
     <string name="settings_feedback_send_description">פותח את אפליקציית הדוא״ל שלך עם הפרטים מלאים מראש</string>
@@ -502,7 +506,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">פריקה אוטומטית</string>
-    <string name="timeout_description">המודל נפרק לאחר זמן חוסר פעילות וחוזר בשימוש הבא.</string>
+    <string name="timeout_description">משחרר זיכרון כשהאפליקציה לא פעילה ומקטין את הסיכוי שהמערכת תסגור אותה; המודל ייטען מחדש בשימוש הבא.</string>
     <string name="timeout_1_minute">דקה אחת</string>
     <string name="timeout_1_hour">שעה אחת</string>
     <plurals name="timeout_minutes">
@@ -565,7 +569,7 @@
     <string name="summarize_status">מסכם עם AI…</string>
     <string name="summary_default_prompt">סכם את התמלול הזה בשניים עד שלושה משפטים, בשפת התמליל. שמור על שמות ומספרים. החזר רק את הסיכום.</string>
     <string name="vad_title">הסרת שקט (VAD)</string>
-    <string name="vad_description">מסיר קטעי שקט מהודעות קוליות לפני התמלול. מקצר את זמן העיבוד ומשפר את הדיוק.</string>
+    <string name="vad_description">חותך קטעי שקט לפני התמלול. כמעט תמיד מהיר יותר; ההשפעה על הדיוק תלויה במודל.</string>
     <string name="progressive_title">הצגה מדורגת</string>
     <string name="progressive_description">מציג טקסט בזמן שהתמלול מתקדם, במקום לחכות שההקלטה תסתיים.</string>
     <string name="early_preview_title">תצוגה מקדימה מוקדמת</string>
@@ -573,6 +577,7 @@
     <string name="early_preview_badge">תצוגה מקדימה</string>
     <string name="early_preview_requires_progressive">דורש תצוגה מתקדמת</string>
     <string name="auto_save_failed">השמירה האוטומטית נכשלה (%1$s)</string>
+    <string name="saved_to_folder">נשמר ב־%1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">פרומפט ברירת מחדל</string>
@@ -753,7 +758,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 שפות, משתנה</string>
+    <string name="speed_comparison_qwen3_quality">%1$d שפות, משתנה</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">מהיר</string>
@@ -939,7 +944,7 @@
     <string name="model_info_notes_whisper_medium">איזון טוב בין דיוק לצריכת משאבים.</string>
     <string name="model_info_best_for_distil_it">דיוק האיטלקית הטוב ביותר (4.3%% WER)</string>
     <string name="model_info_notes_distil_it">איטלקית בלבד. הדיוק הגבוה ביותר להודעות קוליות באיטלקית. מעדיף דיוק על פני מהירות.</string>
-    <string name="model_info_best_for_qwen3">זיהוי אוטומטי ב-52 שפות</string>
+    <string name="model_info_best_for_qwen3">זיהוי אוטומטי ב-59 שפות</string>
     <string name="model_info_notes_qwen3">כיסוי השפות הרחב ביותר. שים לב: קוטע אודיו שאורכו מעל 30 שניות. למכשירי ARM64 בלבד.</string>
     <string name="model_info_best_for_parakeet">התמלול המהיר ביותר (פי 17.6 מהר יותר מ-Whisper, 5.4%% WER)</string>
     <string name="model_info_notes_parakeet">ללא מגבלת אורך אודיו. VAD אינו נחוץ. הטוב ביותר למי שמעדיף מהירות.</string>
@@ -968,9 +973,9 @@
     <string name="external_none_imported">לא יובאו מודלים חיצוניים</string>
     <string name="external_section_title">מודלים חיצוניים</string>
     <string name="model_advanced_section">מתקדם</string>
-    <string name="model_advanced_description">ייבוא ידני של קובצי מודל</string>
-    <string name="external_import_folder">בחירת תיקייה</string>
-    <string name="external_import_url">ייבוא מכתובת URL</string>
+    <string name="model_advanced_description">ייבוא חיצוני והורדות Gemma</string>
+    <string name="external_import_folder">ייבוא מתיקייה</string>
+    <string name="external_import_url">ייבוא מקישור</string>
     <string name="external_url_hint">מאגר HuggingFace או כתובת URL של רשומת קטלוג JSON</string>
     <string name="external_import">ייבוא</string>
     <string name="external_importing">מייבא מודל…</string>
@@ -998,8 +1003,8 @@
     <string name="external_decode_language">שפת פענוח</string>
     <string name="external_decode_auto">זיהוי אוטומטי (בלי שפה קבועה)</string>
     <string name="external_family">משפחת מודל</string>
-    <string name="external_family_transducer">טרנסדוסר (NeMo/Zipformer לא מקוון)</string>
-    <string name="external_family_transducer_help">מצפה לקבצי encoder + decoder + joiner + tokens</string>
+    <string name="external_family_transducer">טרנסדוסר</string>
+    <string name="external_family_transducer_help">מצפה לקבצי encoder + decoder + joiner + tokens (NeMo/Zipformer לא מקוון)</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">מצפה לקבצי encoder + decoder + tokens</string>
     <string name="external_family_ctc">CTC</string>
@@ -1083,7 +1088,6 @@
     <string name="feedback_label_truncated">קוצר</string>
     <string name="a11y_expand">הרחבה</string>
     <string name="a11y_collapse">צמצום</string>
-    <string name="a11y_back">חזרה</string>
     <string name="litertlm_importing">מייבא…</string>
     <string name="model_ram_warning">ייתכן שאין ל%1$s מספיק זיכרון במכשיר זה. הטעינה עלולה להיכשל או לקרוס; מודלים קלים יותר בטוחים יותר.</string>
     <string name="error_oom_transcription">אין מספיק זיכרון לתמלל את האודיו הזה. נסה קובץ קצר יותר, מודל קטן יותר, או סגור אפליקציות אחרות. כדי להימנע מהניסיון לחלוטין, הפעל הגנת זיכרון בהגדרות > מתקדם.</string>
@@ -1177,7 +1181,7 @@
     <string name="performance_settings_title">ביצועים וזיכרון</string>
     <string name="performance_settings_summary">תהליכונים, ספק, הגנת זיכרון ואבחון</string>
     <string name="automation_settings_title">אוטומציה והאצה חוצה</string>
-    <string name="automation_settings_summary">מקלטי Tasker, מדריך broadcast והעברה ל-LAN</string>
+    <string name="automation_settings_summary">מקלטי Tasker, מדריך broadcast והאצה מרחוק</string>
     <string name="settings_group_appearance">מראה ותחושה</string>
     <string name="settings_group_history">היסטוריה</string>
     <string name="settings_group_decoding">פענוח ותצוגה מקדימה</string>
@@ -1203,4 +1207,32 @@
     <string name="model_shortcut_switch_label">מעבר אל %1$s</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">הוסף לתמליל הזה פיסוק, אותיות גדולות ומעברי פסקה. אל תתרגם, אל תסכם ואל תוסיף, תסיר, תשנה סדר או תתקן אף מילה: רצף המילים חייב להישאר בדיוק כפי שנכתב. החזר רק את התמליל המעוצב.</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">אפשרויות מתקדמות (%1$d)</string>
+    <string name="refinement_model_title">מודל החידוד</string>
+    <string name="refinement_model_description">המודל ששלב השני משתמש בו. השאר על ירושה כדי להשתמש במודל הפעיל.</string>
+    <string name="refinement_model_inherit">רשת מודל פעיל</string>
+    <string name="export_model_bundle">שיתוף המודל להעברה ללא רשת</string>
+    <string name="external_import_bundle">ייבוא חבילת העברה</string>
+    <string name="external_models_intro">המדור הזה מכיל מודלים חלופיים: גרסאות קטנות לטלפונים עם זיכרון מועט ומודלים הממוטבים לשפות ספציפיות. רבים מגיעים מקטלוג הקהילה שאנחנו מנהלים, אבל אפשר גם להפנות את האפליקציה לקטלוג של ספק חיצוני או לארח קטלוג משלכם.</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">הוספת מודל Gemma (LiteRT)</string>
+    <string name="gemma_entry_title">הורדות Gemma</string>
+    <string name="gemma_entry_subtitle">עיינו והורידו את מודלי Gemma הרשמיים</string>
+    <string name="external_section_subtitle">קובצי מודל שאתם מוסיפים בעצמכם (תיקייה, כתובת או חבילת העברה) בתוספת הורדות Gemma LiteRT-LM; פועלים לצד הקטלוג המובנה.</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">מעקב מתוזמן אחר תיקיות</string>
+    <string name="folder_watch_description">עוקב אחר תיקיות שתבחר ומתעתק קובצי שמע חדשים אוטומטית. הסריקות פועלות כשהמערכת מתירה; חיסכון סוללה אגרסיבי עלול לעכב אותן, והסריקה הידנית תמיד עובדת.</string>
+    <string name="folder_watch_add">עקוב אחר תיקייה</string>
+    <string name="folder_watch_empty">אין עדיין תיקיות במעקב.</string>
+    <string name="folder_watch_scan_now">סרוק עכשיו</string>
+    <string name="folder_watch_remove">הסר</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">כל שעה</item>
+        <item quantity="two">כל %1$d שעות</item>
+        <item quantity="other">כל %1$d שעות</item>
+    </plurals>
+    <string name="folder_watch_period_label">מרווח סריקה</string>
+    <string name="folder_watch_grant_failed">לא הייתה אפשרות לשמור על גישה לתיקייה, ולכן היא לא נוספה. נסו לבחור אותה שוב.</string>
 </resources>

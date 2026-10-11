@@ -12,7 +12,6 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.antivocale.app.R
 import com.antivocale.app.MainActivity
@@ -75,7 +74,6 @@ class InferenceService : Service(), TranscriptionListener {
         // hash can land on a constant's value, and PendingIntent matching
         // ignores extras, so a collision silently overwrites the other intent
         // (the slot-band comment in InferenceEnqueue documents the same class).
-        private const val RC_HASH_BASE = 1000
 
         const val EXTRA_SOURCE = "source"
         const val EXTRA_SOURCE_PACKAGE = "source_package"
@@ -85,6 +83,26 @@ class InferenceService : Service(), TranscriptionListener {
 
         /** TASK-500: the History browse FAB; not a share request. */
         const val SOURCE_BROWSE = "browse"
+
+        /** TASK-741: the scheduled folder watch worker; not a share request. */
+        const val SOURCE_FOLDER_WATCH = "folder_watch"
+
+        /** The History re-run arm (chip and notification actions). */
+        const val SOURCE_RETRANSCRIBE = "retranscribe"
+
+        /** The on-device model benchmark screen. */
+        const val SOURCE_BENCHMARK = "benchmark"
+
+        /** Sources that never get a Tasker-style reply broadcast: every
+         *  in-app origin has no legitimate listener, so the reply would be
+         *  a world-visible broadcast carrying the full transcript (the
+         *  TASK-274(f) exfiltration argument, which holds for all of them).
+         *  Tasker requests carry NO source (null), which is why null still
+         *  replies: that is the one origin with a listener. */
+        private val NON_REPLY_SOURCES = setOf(
+            SOURCE_SHARE, SOURCE_BROWSE, SOURCE_FOLDER_WATCH,
+            SOURCE_RETRANSCRIBE, SOURCE_BENCHMARK,
+        )
 
         const val EXTRA_SHARED_URI = "shared_uri"
         const val EXTRA_MIME_TYPE = "mime_type"
@@ -665,7 +683,8 @@ class InferenceService : Service(), TranscriptionListener {
         isShareRequest: Boolean,
         isNoModelError: Boolean,
         durationMs: Long,
-        isMemoryFailure: Boolean
+        isMemoryFailure: Boolean,
+        isDecodeError: Boolean
     ) {
         sendErrorReply(taskId, errorCode, errorMessage)
         forgetRequester(taskId)
@@ -702,7 +721,7 @@ class InferenceService : Service(), TranscriptionListener {
 
     private fun sendSuccessReply(taskId: String, resultText: String) {
         val request = requesterByTask[taskId]
-        if (request?.source == "share") return
+        if (request?.source in NON_REPLY_SOURCES) return
         val replyIntent = Intent(TaskerRequestReceiver.ACTION_TASKER_REPLY).apply {
             putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
             putExtra(TaskerRequestReceiver.EXTRA_STATUS, TaskerRequestReceiver.STATUS_SUCCESS)
@@ -714,7 +733,7 @@ class InferenceService : Service(), TranscriptionListener {
 
     private fun sendErrorReply(taskId: String, errorCode: String, errorMessage: String) {
         val request = requesterByTask[taskId]
-        if (request?.source == "share") return
+        if (request?.source in NON_REPLY_SOURCES) return
         val replyIntent = Intent(TaskerRequestReceiver.ACTION_TASKER_REPLY).apply {
             putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
             putExtra(TaskerRequestReceiver.EXTRA_STATUS, TaskerRequestReceiver.STATUS_ERROR)
@@ -769,29 +788,29 @@ class InferenceService : Service(), TranscriptionListener {
 
     // ---- Auto-save to folder (issue #14) ----
 
-    /** @return the auto-save failure reason for the result notification
-     *  subtext, or null when saved/not configured (TASK-722: never silent). */
+    /** @return the auto-save [TranscriptFileSaver.SaveResult] for the result
+     *  notification (TASK-722's failure reason and GH #128's destination
+     *  folder ride it). */
     private suspend fun saveTranscriptToFileIfEnabled(
         text: String,
         sourcePackage: String?,
         segments: List<TimedSegment>,
         failedChunkCount: Int
-    ): String? {
-        val result = withContext(Dispatchers.IO) {
+    ): TranscriptFileSaver.SaveResult {
+        return withContext(Dispatchers.IO) {
+            // ONE resolution: two reads could pair a fresh signature text
+            // with a stale position when a preference edit lands between them.
+            val sig = TranscriptSignature.effectiveSpec(
+                preferencesManager, getString(R.string.signature_default_text))
             TranscriptFileSaver.saveAuto(
                 this@InferenceService,
                 preferencesManager.outputFolderUri.first(),
                 preferencesManager.transcriptExportFormat.first(),
                 text, segments, failedChunkCount, sourcePackage,
-                signature = TranscriptSignature.effectiveSpec(
-                    preferencesManager, getString(R.string.signature_default_text)).let { it.text },
-                signaturePosition = TranscriptSignature.effectiveSpec(
-                    preferencesManager, getString(R.string.signature_default_text)).position,
+                signature = sig.text,
+                signaturePosition = sig.position,
             )
         }
-        // TASK-722: the failure reason rides the result notification; the
-        // saver already logged the concrete failing step.
-        return result.failureOrNull()
     }
 
     // ---- Notifications ----
@@ -924,65 +943,6 @@ class InferenceService : Service(), TranscriptionListener {
 
         notificationManager.notify(NOTIFICATION_ID, builder.build())
         Log.i(TAG, "Updated notification with queue hint: $queuedCount queued")
-    }
-
-    private suspend fun showResultNotification(
-        transcriptionText: String,
-        sourcePackage: String?,
-        taskId: String,
-        confidence: Float?,
-        detectedLanguage: String?,
-        isPartial: Boolean = false,
-        failedChunkCount: Int = 0,
-        copiedToClipboard: Boolean = false,
-        streamedWithoutVad: Boolean = false,
-        refinedFrom: String? = null,
-        notRefined: Boolean = false,
-        repetitionSuspected: Boolean = false,
-        segments: List<TimedSegment>,
-        saveFailure: String? = null,
-    ) {
-        // TASK-598 F5: the notification's whole text (body, copy, share,
-        // page rebuilds) derives the speaker-annotated form when the run
-        // carries labels, the same derivation as the History surfaces and
-        // the auto-save TXT arm; raw transcript when it does not.
-        val text = SubtitleFormatter.annotatedOrStored(transcriptionText, segments)
-        val prefs = if (sourcePackage != null) {
-            try {
-                perAppPreferencesManager.getCurrentPreferences(sourcePackage)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to get per-app preferences for $sourcePackage, using defaults", e)
-                com.antivocale.app.data.AppNotificationPreferences.default()
-            }
-        } else {
-            com.antivocale.app.data.AppNotificationPreferences.default()
-        }
-
-        val id = ResultNotificationFactory.nextNotificationId()
-        val spec = ResultNotificationSpec(
-            transcriptionText = text,
-            signatureText = TranscriptSignature.effectiveSpec(
-                preferencesManager, getString(R.string.signature_default_text)).let { it.text },
-            signaturePosition = TranscriptSignature.effectiveSpec(
-                preferencesManager, getString(R.string.signature_default_text)).position,
-            taskId = taskId,
-            sourcePackage = sourcePackage,
-            confidence = confidence,
-            detectedLanguage = detectedLanguage,
-            isPartial = isPartial,
-            failedChunkCount = failedChunkCount,
-            notificationId = id,
-            copiedToClipboard = copiedToClipboard,
-            streamedWithoutVad = streamedWithoutVad,
-            refinedFrom = refinedFrom,
-            notRefined = notRefined,
-            repetitionSuspected = repetitionSuspected,
-            saveFailureReason = saveFailure,
-            firstPostedAt = System.currentTimeMillis()
-        )
-        val notification = resultNotificationFactory.build(spec, prefs)
-        notificationManager.notify(id, notification)
-        Log.i(TAG, "Showed result notification (${text.length} chars), source=$sourcePackage, showShare=${prefs.showShareAction} (id=$id)")
     }
 
     private fun showErrorNotification(errorMessage: String, isMemoryFailure: Boolean) {

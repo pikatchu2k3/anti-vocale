@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+
+import com.antivocale.app.transcription.Language
 import com.antivocale.app.data.download.DownloadConfig
 import com.antivocale.app.data.download.DownloadedModelIntegrity
 import com.antivocale.app.data.download.details
@@ -18,13 +20,27 @@ import java.security.MessageDigest
 import javax.inject.Singleton
 
 /**
- * The two import entries the ViewModel drives, as a minimal injectable seam so UI-layer
+ * The import entries the ViewModel drives, as a minimal injectable seam so UI-layer
  * tests can verify argument forwarding without SAF or network machinery (TASK-331 Task 12).
  * Implemented by [ExternalModelImporter] and faked in ModelViewModelExternalImportTest.
  * TASK-513 adds [listTreeFileNames], a listing concern (family detection in
- * the import dialog) that rides along rather than a third import entry.
+ * the import dialog) that rides along rather than a separate import entry.
  */
 interface ExternalModelImportOperations {
+    /** TASK-742: register an already-verified local directory as a record.
+     *  [displayName] overrides the src-derived name (the bundle's manifest
+     *  carries the exporter's name; without it a re-import would rename a
+     *  properly named record to the staging directory's name). */
+    suspend fun importFromDirectory(
+        src: File,
+        modelType: String? = null,
+        family: ModelFamily = ModelFamily.TRANSDUCER,
+        options: Map<String, String> = emptyMap(),
+        languages: List<String> = emptyList(),
+        streaming: Boolean = false,
+        displayName: String? = null,
+    ): ExternalModelRecord
+
     suspend fun importFromTreeUri(
         context: Context,
         treeUri: Uri,
@@ -245,18 +261,22 @@ class ExternalModelImporter(
         return importCore(children, modelType, displayName, family, options, languages, streaming)
     }
 
-    /** Direct-file import: tests and tooling. The Task 9 migration does NOT use this
-     *  (it hand-computes pins over the already-copied TASK-313 directory). */
-    suspend fun importFromDirectory(
+    /** Direct-file import: the TASK-742 bundle registration and tests.
+     *  The Task 9 migration does NOT use this (it hand-computes pins over
+     *  the already-copied TASK-313 directory). The displayName override
+     *  carries the bundle manifest's name so a re-import never renames a
+     *  properly named record to the staging dir's name. */
+    override suspend fun importFromDirectory(
         src: File,
-        modelType: String? = null,
-        family: ModelFamily = ModelFamily.TRANSDUCER,
-        options: Map<String, String> = emptyMap(),
-        languages: List<String> = emptyList(),
-        streaming: Boolean = false,
+        modelType: String?,
+        family: ModelFamily,
+        options: Map<String, String>,
+        languages: List<String>,
+        streaming: Boolean,
+        displayName: String?,
     ): ExternalModelRecord {
         val children = src.listFiles()?.filter { it.isFile }?.map(::FileSource) ?: emptyList()
-        return importCore(children, modelType, src.name, family, options, languages, streaming)
+        return importCore(children, modelType, displayName ?: src.name, family, options, languages, streaming)
     }
 
     /**
@@ -550,6 +570,14 @@ class ExternalModelImporter(
         // copy instead (otherwise the re-import would "succeed" while leaving the
         // record pointing at nothing, and the fresh copy would be deleted).
         val sizeBytes = targetDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        // Road test 2026-10-08: EVERY import path (repo URL, folder, entry
+        // JSON with no languages field) derives its languages from the
+        // record's own display name when nothing declares them; one choke
+        // point, on the same trimmed name the record carries (code review:
+        // wiring only the repo branch left folder imports of the same model
+        // forever blank).
+        val effectiveLanguages =
+            languages.ifEmpty { Language.deriveLanguageHintsFromName(displayName.trim()) }
         val existing = store.records().firstOrNull { it.files == pins }
         if (existing != null) {
             val existingDirValid = File(existing.dir).exists()
@@ -560,7 +588,7 @@ class ExternalModelImporter(
                 displayName = displayName.trim(),
                 family = family,
                 modelType = modelType,
-                languages = languages,
+                languages = effectiveLanguages,
                 options = options,
                 // Refresh the URL only when the re-import CARRIES one: a folder
                 // re-import over a URL-imported record must not erase its
@@ -580,7 +608,7 @@ class ExternalModelImporter(
             dir = targetDir.absolutePath,
             family = family,
             modelType = modelType,
-            languages = languages,
+            languages = effectiveLanguages,
             source = source,
             sourceUrl = sourceUrl,
             options = options,

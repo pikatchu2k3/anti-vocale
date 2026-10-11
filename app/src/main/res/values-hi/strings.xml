@@ -9,7 +9,7 @@
 
     <!-- Model selection -->
     <string name="select_model">मॉडल फ़ाइल चुनें</string>
-    <string name="select_model_from_device">फ़ाइल चुनें</string>
+    <string name="select_model_from_device">.litertlm फ़ाइल चुनें</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">मॉडल लोड करें</string>
@@ -103,7 +103,7 @@
     <string name="transcript_capped_autosave_hint">पूरा ट्रांसक्रिप्ट ऑटो-सेव में: सेटिंग्स → फ़ोल्डर में सहेजें</string>
     <string name="transcript_capped_autosave_saved">पूरा ट्रांसक्रिप्ट आपके फ़ोल्डर में स्वतः सहेजा गया</string>
     <string name="export_settings_title">ऑटो-सेव और एक्सपोर्ट</string>
-    <string name="export_settings_description">सहेजी गई ट्रांसक्रिप्ट के लिए फ़ोल्डर और फ़ाइल स्वरूप चुनें</string>
+    <string name="export_settings_description">वैकल्पिक: हर ट्रांसक्रिप्शन आपकी चुनी फ़ोल्डर में, आपके चुने फ़ॉर्मैट में भी लिखता है। सब कुछ हमेशा इतिहास टैब में भी रहता है।</string>
     <string name="error_folder_not_writable">यह फ़ोल्डर फ़ाइलें प्राप्त नहीं कर सकता। डिवाइस स्टोरेज से फ़ोल्डर चुनें (Downloads शॉर्टकट नहीं)।</string>
     <string name="language_phone_option">फ़ोन भाषा (%1$s)</string>
     <string name="today">आज</string>
@@ -148,12 +148,11 @@
     <string name="whisper_extract_confirm_message">मॉडल फ़ाइल पहले से डाउनलोड है। इससे इसे इस्तेमाल के लिए निकाला जाएगा।</string>
 
     <!-- Qwen3-ASR model -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 भाषाएं)</string>
-    <string name="qwen3_asr_description">52 भाषाएं • इतालवी सटीकता कमज़ोर</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d भाषाएं)</string>
+    <string name="qwen3_asr_description">%1$d भाषाएं</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • 52 भाषाएं • इतालवी सटीकता कमज़ोर</string>
+    <string name="qwen3_asr_0_6b_description">~938MB • %1$d भाषाएं</string>
     <string name="qwen3_asr_download_confirm_title">%1$s डाउनलोड करें?</string>
-    <string name="qwen3_asr_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। Qwen3-ASR 52 भाषाओं को सपोर्ट करता है लेकिन इतालवी के लिए सटीकता कम है।</string>
     <string name="qwen3_asr_download">Qwen3-ASR डाउनलोड करें</string>
     <string name="qwen3_asr_delete_message">Qwen3-ASR मॉडल मिटाएं?</string>
     <string name="qwen3_asr_downloaded">%1$s सफलतापूर्वक डाउनलोड हुआ</string>
@@ -162,7 +161,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (स्ट्रीमिंग)</string>
-    <string name="nemotron_description">~640MB • स्ट्रीमिंग ट्रांसड्यूसर • प्रयोगात्मक इतालवी क्वालिटी</string>
+    <string name="nemotron_description">~640MB • स्ट्रीमिंग ट्रांसड्यूसर</string>
     <string name="nemotron_download_confirm_title">%1$s डाउनलोड करें?</string>
     <string name="nemotron_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। Nemotron 3.5 एक स्ट्रीमिंग बहुभाषी ASR मॉडल है।</string>
     <string name="nemotron_download">Nemotron डाउनलोड करें</string>
@@ -269,6 +268,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">बाहरी ऑटोमेशन (Tasker)</string>
     <string name="external_automation_description">दूसरे ऐप्स को ऑटोमेशन API (जैसे Tasker) से ट्रांसक्रिप्शन शुरू करने देता है। डिफ़ॉल्ट रूप से बंद है।</string>
+    <string name="open_transcribe_title">Open Transcribe API (प्रयोगात्मक)</string>
+    <string name="open_transcribe_description">Forkgram जैसे अन्य ऐप्स को Anti-Vocale को ऑफ़लाइन ट्रांसक्राइबर के रूप में उपयोग करने देता है। डिफ़ॉल्ट रूप से बंद है।</string>
+    <string name="opentranscribe_notification_text">दूसरे ऐप के लिए ऑडियो ट्रांसक्रिप्शन</string>
     <string name="external_automation_disabled">बाहरी ऑटोमेशन बंद है। इसे सेटिंग > अतिरिक्त सेटिंग > बाहरी ऑटोमेशन में चालू करें।</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">ऑटोमेशन गाइड</string>
@@ -293,10 +295,10 @@
     <string name="faq_card_trouble_title">कुछ गड़बड़ हो गई</string>
     <string name="faq_card_trouble_body">परिणाम न आए तो फ़ोन निर्माता ने ऐप को बैकग्राउंड में फ़्रीज़ किया हो सकता है: ग़लती की नोटिफिकेशन में बैटरी सलाह देखें। असफल परिणाम रिपोर्ट प्रविष्टी रखता है।</string>
     <string name="no_app_to_open_link">लिंक खोलने के लिए कोई ऐप नहीं मिला</string>
-    <string name="remote_omnivoice_name">LAN ऑफ़लोड (OmniVoice)</string>
-    <string name="remote_offload_title">LAN ऑफ़लोड (प्रायोगिक)</string>
-    <string name="remote_offload_description">लंबी या भारी ट्रांसक्रिप्शन को अपने Wi-Fi नेटवर्क पर चलने वाले अपने OmniVoice सर्वर को भेजता है। सक्षम होने पर इसे Model टैब में चुनें।</string>
-    <string name="remote_offload_disclosure">जब यह सक्षम और चुना गया हो, तो उन ट्रांसक्रिप्शन का ऑडियो केवल नीचे दर्ज किए गए सर्वर पते पर, आपके अपने नेटवर्क में भेजा जाता है। बाकी सब कुछ इसी डिवाइस पर ट्रांसक्राइब होता है। यह डिफ़ॉल्ट रूप से बंद है: जब तक आप इसे चालू न करें, फ़ोन से कुछ भी बाहर नहीं जाता।</string>
+    <string name="remote_omnivoice_name">रिमोट ऑफ़लोड</string>
+    <string name="remote_offload_title">रिमोट ऑफ़लोड (प्रायोगिक)</string>
+    <string name="remote_offload_description">लंबी या भारी प्रतिलिपियाँ आपके चुने हुए OpenAI-संगत सर्वर को सौंपें। सक्षम होने पर इसे मॉडल टैब में चुनें।</string>
+    <string name="remote_offload_disclosure">जब यह सक्षम और चुना गया है, उन प्रतिलिपियों का ऑडियो केवल नीचे दर्ज किए गए सर्वर पते पर भेजा जाता है, वह सर्वर जहाँ भी हो: आपके नेटवर्क में या इंटरनेट पर। बाकी सब इसी डिवाइस पर लिप्यंतरित होता है। यह डिफ़ॉल्ट रूप से बंद है: जब तक आप चालू न करें, फ़ोन से कुछ भी बाहर नहीं जाता।</string>
     <string name="remote_offload_endpoint_label">सर्वर पता</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">API कुंजी</string>
@@ -361,11 +363,13 @@
     <string name="cancel_extract">निकालना रद्द करें</string>
     <string name="extract_model">निकालें</string>
     <string name="use_model">मॉडल इस्तेमाल करें</string>
+    <string name="models_active_model_line">उपयोग में: %1$s</string>
     <string name="active_badge">सक्रिय</string>
     <string name="model_selected_message">%1$s चुना गया</string>
     <string name="model_use_missing_files">%1$s की मॉडल फ़ाइलें ग़ायब या अधूरी हैं। मॉडल टैब से उस वैरिएंट को फिर से डाउनलोड करें।</string>
     <string name="model_demoted_notice">अब यह मॉडल अपने आप नहीं चुना जाता: भाषण मौजूद होने पर भी इसने कोई टेक्स्ट नहीं बनाया। इसे फिर से चुनकर इसे एक और मौका दें।</string>
     <string name="delete">मिटाएं</string>
+    <string name="variant_more_actions">और कार्य</string>
     <string name="download">डाउनलोड करें</string>
     <string name="model_update_button">अपडेट करें</string>
     <string name="gemma_update_confirm_title">%1$s अपडेट करें</string>
@@ -399,7 +403,7 @@
     <!-- Settings Tab - Section Titles -->
     <string name="settings_section_transcription">ट्रांसक्रिप्शन</string>
     <string name="settings_section_appearance">दिखावट</string>
-    <string name="settings_section_advanced">अतिरिक्त सेटिंग</string>
+    <string name="settings_section_advanced">सिस्टम और एकीकरण</string>
     <string name="settings_section_feedback">सुझाव और जानकारी</string>
     <string name="settings_feedback_send_title">सुझाव भेजें / समस्या की रिपोर्ट करें</string>
     <string name="settings_feedback_send_description">विवरण पहले से भरे हुए आपका मेल ऐप खोलता है</string>
@@ -474,7 +478,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">ऑटो-अनलोड</string>
-    <string name="timeout_description">निष्क्रियता पर मॉडल अनलोड हो जाता है और अगली बार इस्तेमाल पर अपने आप वापस आ जाता है।</string>
+    <string name="timeout_description">ऐप निष्क्रिय होने पर मेमोरी खाली करता है और सिस्टम के ऐप को बंद करने की संभावना घटाता है; अगली बार उपयोग पर मॉडल फिर लोड होता है।</string>
     <string name="timeout_1_minute">1 मिनट</string>
     <string name="timeout_1_hour">1 घंटा</string>
 
@@ -532,7 +536,7 @@
     <string name="summarize_status">AI से सारांश बन रहा है…</string>
     <string name="summary_default_prompt">इस ट्रांसक्रिप्शन का सारांश 2-3 वाक्यों में दें, ट्रांसक्रिप्शन की भाषा में। नाम और संख्याएँ बनाए रखें। केवल सारांश ही लिखें।</string>
     <string name="vad_title">मौन हटाएं (VAD)</string>
-    <string name="vad_description">ट्रांसक्रिप्शन से पहले वॉइस मैसेज के ख़ामोश हिस्से हटाएं। प्रोसेसिंग समय घटता है और सटीकता बेहतर होती है।</string>
+    <string name="vad_description">ट्रांसक्रिप्शन से पहले ख़ामोश हिस्से काटता है। लगभग हमेशा तेज़; सटीकता पर असर मॉडल पर निर्भर करता है।</string>
     <string name="progressive_title">प्रगतिशील डिस्प्ले</string>
     <string name="progressive_description">रिकॉर्डिंग खत्म होने का इंतज़ार किए बिना, ट्रांसक्रिप्शन के साथ-साथ टेक्स्ट दिखाएं।</string>
     <string name="early_preview_title">शीघ्र पूर्वावलोकन</string>
@@ -540,6 +544,7 @@
     <string name="early_preview_badge">पूर्वावलोकन</string>
     <string name="early_preview_requires_progressive">प्रगतिशील डिस्प्ले आवश्यक है</string>
     <string name="auto_save_failed">स्वतः सहेजना विफल (%1$s)</string>
+    <string name="saved_to_folder">%1$s में सहेजा गया</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">डिफ़ॉल्ट प्रॉम्प्ट</string>
@@ -720,7 +725,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 भाषाएं, अनिश्चित</string>
+    <string name="speed_comparison_qwen3_quality">%1$d भाषाएं, अनिश्चित</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">तेज़</string>
@@ -889,7 +894,7 @@
     <string name="model_info_notes_whisper_medium">सटीकता और संसाधन इस्तेमाल का अच्छा संतुलन।</string>
     <string name="model_info_best_for_distil_it">सबसे बेहतर इतालवी सटीकता (4.3%% WER)</string>
     <string name="model_info_notes_distil_it">सिर्फ़ इतालवी। इतालवी वॉइस मैसेज के लिए सर्वोच्च सटीकता। गति से ज़्यादा सटीकता मायने रखती है।</string>
-    <string name="model_info_best_for_qwen3">52-भाषा ऑटो-डिटेक्शन</string>
+    <string name="model_info_best_for_qwen3">59-भाषा ऑटो-डिटेक्शन</string>
     <string name="model_info_notes_qwen3">सबसे व्यापक भाषा कवरेज। नोट: 30 सेकंड से लंबा ऑडियो काट देता है। सिर्फ़ ARM64 डिवाइस।</string>
     <string name="model_info_best_for_parakeet">सबसे तेज़ ट्रांसक्रिप्शन (Whisper से 17.6 गुना तेज़, 5.4%% WER)</string>
     <string name="model_info_notes_parakeet">ऑडियो लंबाई की कोई सीमा नहीं। VAD ज़रूरी नहीं। गति प्राथमिकता वाले उपयोगकर्ताओं के लिए सबसे बेहतर।</string>
@@ -918,9 +923,9 @@
     <string name="external_none_imported">कोई बाहरी मॉडल इंपोर्ट नहीं हुआ</string>
     <string name="external_section_title">बाहरी मॉडल</string>
     <string name="model_advanced_section">अतिरिक्त सेटिंग</string>
-    <string name="model_advanced_description">मॉडल फ़ाइलें मैन्युअल रूप से इंपोर्ट करें</string>
-    <string name="external_import_folder">फ़ोल्डर चुनें</string>
-    <string name="external_import_url">URL से इंपोर्ट करें</string>
+    <string name="model_advanced_description">बाहरी इंपोर्ट और Gemma डाउनलोड</string>
+    <string name="external_import_folder">फ़ोल्डर से आयात करें</string>
+    <string name="external_import_url">लिंक से आयात करें</string>
     <string name="external_url_hint">HuggingFace रेपो या कैटलॉग-एंट्री JSON URL</string>
     <string name="external_import">इंपोर्ट करें</string>
     <string name="external_importing">मॉडल इंपोर्ट हो रहा है…</string>
@@ -948,8 +953,8 @@
     <string name="external_decode_language">डिकोड भाषा</string>
     <string name="external_decode_auto">स्वतः पहचान</string>
     <string name="external_family">मॉडल फ़ैमिली</string>
-    <string name="external_family_transducer">ट्रांसड्यूसर (ऑफ़लाइन NeMo/Zipformer)</string>
-    <string name="external_family_transducer_help">एनकोडर + डिकोडर + जॉइनर + टोकन फ़ाइलें चाहिए</string>
+    <string name="external_family_transducer">ट्रांसड्यूसर</string>
+    <string name="external_family_transducer_help">ऑफ़लाइन NeMo/Zipformer. एनकोडर + डिकोडर + जॉइनर + टोकन फ़ाइलें चाहिए</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">एनकोडर + डिकोडर + टोकन फ़ाइलें चाहिए</string>
     <string name="external_family_ctc">CTC</string>
@@ -1075,7 +1080,6 @@
     <string name="feedback_label_truncated">छोटा किया गया</string>
     <string name="a11y_expand">विस्तार</string>
     <string name="a11y_collapse">संकुचित</string>
-    <string name="a11y_back">पीछे</string>
     <string name="litertlm_importing">इंपोर्ट हो रहा है…</string>
     <string name="model_ram_warning">इस डिवाइस पर %1$s के लिए पर्याप्त मेमोरी नहीं हो सकती। लोड विफल हो सकता है; हल्के मॉडल सुरक्षित हैं।</string>
     <string name="error_oom_transcription">इस ऑडियो को ट्रांसक्रिप्ट करने के लिए पर्याप्त मेमोरी नहीं है। छोटी फ़ाइल, हल्का मॉडल आज़माएं, या अन्य ऐप बंद करें। यह कोशिश पूरी तरह टालने के लिए सेटिंग्स > उन्नत में मेमोरी सुरक्षा चालू करें।</string>
@@ -1166,7 +1170,7 @@
     <string name="performance_settings_title">प्रदर्शन और मेमोरी</string>
     <string name="performance_settings_summary">थ्रेड, प्रोवाइडर, मेमोरी सुरक्षा और डायग्नोस्टिक्स</string>
     <string name="automation_settings_title">स्वचालन और ऑफलोड</string>
-    <string name="automation_settings_summary">टास्कर रिसीवर, ब्रॉडकास्ट गाइड और LAN ऑफलोड</string>
+    <string name="automation_settings_summary">Tasker रिसीवर, ब्रॉडकास्ट गाइड और रिमोट ऑफ़लोड</string>
     <string name="settings_group_appearance">रूप और अनुभव</string>
     <string name="settings_group_history">इतिहास</string>
     <string name="settings_group_decoding">डिकोडिंग और पूर्वावलोकन</string>
@@ -1192,4 +1196,31 @@
     <string name="model_shortcut_switch_label">%1$s पर स्विच करें</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">इस प्रतिलिपि में विराम चिह्न, बड़े अक्षर और अनुच्छेद विभाजन जोड़ें। अनुवाद न करें, सारांश न दें, और कोई शब्द न जोड़ें, न हटाएं, न उसका क्रम बदलें और न ठीक करें: शब्दों का क्रम ठीक वैसा ही रहना चाहिए जैसा लिखा गया है। केवल प्रारूपित प्रतिलिपि ही दें।</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">उन्नत विकल्प (%1$d)</string>
+    <string name="refinement_model_title">परिशोधन मॉडल</string>
+    <string name="refinement_model_description">दूसरे चरण द्वारा उपयोग किया जाने वाला मॉडल। सक्रिय मॉडल का उपयोग करने के लिए इनहेरिट पर छोड़ें।</string>
+    <string name="refinement_model_inherit">सक्रिय मॉडल इनहेरिट करें</string>
+    <string name="export_model_bundle">ऑफ़लाइन ट्रांसफ़र के लिए मॉडल साझा करें</string>
+    <string name="external_import_bundle">ट्रांसफ़र बंडल आयात करें</string>
+    <string name="external_models_intro">इस सेक्शन में वैकल्पिक मॉडल हैं: कम मेमोरी वाले फ़ोन के लिए छोटे संस्करण, और खास भाषाओं के लिए अनुकूलित मॉडल। कई हमारे संचालित कम्युनिटी कैटलॉग से आते हैं, लेकिन आप ऐप को किसी तृतीय-पक्ष कैटलॉग पर भी इशारा कर सकते हैं या अपना कैटलॉग होस्ट कर सकते हैं।</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">Gemma मॉडल जोड़ें (LiteRT)</string>
+    <string name="gemma_entry_title">Gemma डाउनलोड</string>
+    <string name="gemma_entry_subtitle">आधिकारिक Gemma मॉडल देखें और डाउनलोड करें</string>
+    <string name="external_section_subtitle">आपके अपने जोड़े हुए मॉडल फ़ाइलें (फ़ोल्डर, URL या ट्रांसफ़र बंडल) और Gemma LiteRT-LM डाउनलोड; बिल्ट-इन कैटलॉग के साथ चलती हैं।</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">शेड्यूल्ड फ़ोल्डर निगरानी</string>
+    <string name="folder_watch_description">आपके चुने फ़ोल्डरों पर नज़र रखता है और नई ऑडियो फ़ाइलों को स्वतः ट्रांसक्रिप्ट करता है। स्कैन तब चलते हैं जब सिस्टम अनुमति देता है; आक्रामक बैटरी सेवर उन्हें टाल सकते हैं, और मैनुअल स्कैन हमेशा काम करता है।</string>
+    <string name="folder_watch_add">फ़ोल्डर निगरानी शुरू करें</string>
+    <string name="folder_watch_empty">अभी कोई फ़ोल्डर निगरानी में नहीं है।</string>
+    <string name="folder_watch_scan_now">अभी स्कैन करें</string>
+    <string name="folder_watch_remove">हटाएँ</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">हर %1$d घंटा</item>
+        <item quantity="other">हर %1$d घंटे</item>
+    </plurals>
+    <string name="folder_watch_period_label">स्कैन अंतराल</string>
+    <string name="folder_watch_grant_failed">उस फ़ोल्डर तक पहुँच बनाए नहीं रखी जा सकी, इसलिए उसे जोड़ा नहीं गया। कृपया उसे फिर से चुनें।</string>
 </resources>

@@ -27,6 +27,7 @@ class SettingsSearchRegistryTest {
         punctuationPromptForced: Boolean = false,
         summarizeOn: Boolean = false,
         batteryExemptionOffered: Boolean = false,
+        refinementOn: Boolean = false,
         speakerIdEnabled: Boolean = false,
         transcriptionHintRes: Int? = null,
     ) = SettingsSearchState(
@@ -36,6 +37,7 @@ class SettingsSearchRegistryTest {
         punctuationPromptForced = punctuationPromptForced,
         summarizeOn = summarizeOn,
         batteryExemptionOffered = batteryExemptionOffered,
+        refinementOn = refinementOn,
         speakerIdEnabled = speakerIdEnabled,
         transcriptionHintRes = transcriptionHintRes,
     )
@@ -48,6 +50,63 @@ class SettingsSearchRegistryTest {
 
     private fun res(id: SettingsSearchId, state: SettingsSearchState): List<Int> =
         SETTINGS_SEARCH_CARDS.first { card -> card.id == id }.res(state)
+
+
+    // ---- TASK-588.2: the advanced reveal's membership and stable count ----
+
+    @Test
+    fun `the advanced flag marks exactly the reveal's ten cards`() {
+        val advanced = SETTINGS_SEARCH_CARDS.filter { it.advanced }.map { it.id }.toSet()
+        assertEquals(
+            setOf(
+                SettingsSearchId.PROGRESSIVE, SettingsSearchId.EARLY_PREVIEW,
+                SettingsSearchId.PUNCTUATION_MODE, SettingsSearchId.PUNCTUATION_PROMPT,
+                SettingsSearchId.SUMMARY_PROMPT, SettingsSearchId.DEFAULT_PROMPT,
+                SettingsSearchId.DIARIZATION_HUB, SettingsSearchId.SIGNATURE,
+                SettingsSearchId.INTERRUPTED_RUN_NOTIFICATIONS, SettingsSearchId.KEEP_ALIVE_TIMEOUT,
+                SettingsSearchId.REFINEMENT_MODEL,
+            ),
+            advanced,
+        )
+        // and they are all TRANSCRIPTION cards
+        assertTrue(advanced.all { id ->
+            SETTINGS_SEARCH_CARDS.first { it.id == id }.section == SettingsSearchSection.TRANSCRIPTION
+        })
+    }
+
+    @Test
+    fun `the folded count follows the section gates and ignores inner toggles`() {
+        fun folded(state: SettingsSearchState) = SETTINGS_SEARCH_CARDS.count {
+            it.advanced &&
+                it.section == SettingsSearchSection.TRANSCRIPTION &&
+                it.outerSectionGate(state)
+        }
+        // gemma configured, ASR backend: 6 always + punctuation pair + summary prompt
+        assertEquals(10, folded(state(gemmaConfigured = true, isLlmBackend = false)))
+        // no gemma: the six unconditional cards alone
+        assertEquals(7, folded(state(gemmaConfigured = false, isLlmBackend = false)))
+        // LLM backend: 6 + the default-prompt hub
+        assertEquals(8, folded(state(gemmaConfigured = false, isLlmBackend = true)))
+        // STABILITY: inner toggles never move the folded count
+        assertEquals(
+            folded(state(gemmaConfigured = true, summarizeOn = false)),
+            folded(state(gemmaConfigured = true, summarizeOn = true)),
+        )
+        assertEquals(
+            folded(state(gemmaConfigured = true, punctuationPromptForced = false)),
+            folded(state(gemmaConfigured = true, punctuationPromptForced = true)),
+        )
+    }
+    @Test
+    fun `the refine-model card rides the two-pass availability gate`() {
+        // TASK-740.1: visible only when the two-pass is on AND can run, and
+        // advanced (behind the TRANSCRIPTION reveal).
+        val id = SettingsSearchId.REFINEMENT_MODEL
+        val card = SETTINGS_SEARCH_CARDS.first { it.id == id }
+        assertTrue(card.advanced)
+        assertTrue(id in visibleIds(SettingsSearchSection.TRANSCRIPTION, state(refinementOn = true)))
+        assertTrue(id !in visibleIds(SettingsSearchSection.TRANSCRIPTION, state(refinementOn = false)))
+    }
 
     @Test
     fun `every id has exactly one registry entry`() {
@@ -78,7 +137,8 @@ class SettingsSearchRegistryTest {
         val members = mapOf(
             SettingsSearchGroup.DECODING to listOf(
                 SettingsSearchId.VAD, SettingsSearchId.PROGRESSIVE,
-                SettingsSearchId.EARLY_PREVIEW, SettingsSearchId.REFINEMENT),
+                SettingsSearchId.EARLY_PREVIEW, SettingsSearchId.REFINEMENT,
+                SettingsSearchId.REFINEMENT_MODEL),
             SettingsSearchGroup.GEMMA_TEXT to listOf(
                 SettingsSearchId.PUNCTUATION_MODE, SettingsSearchId.PUNCTUATION_PROMPT,
                 SettingsSearchId.SUMMARIZE, SettingsSearchId.SUMMARY_PROMPT,
@@ -328,12 +388,15 @@ class SettingsSearchRegistryTest {
     }
 
     @Test
-    fun `the automation hub carries all three children's vocabulary`() {
+    fun `the automation hub carries all the children's vocabulary`() {
         val hub = SETTINGS_SEARCH_CARDS.first { it.id == SettingsSearchId.AUTOMATION_HUB }
         val vocab = hub.res(state())
         assertTrue(vocab.contains(R.string.external_automation_title))
         assertTrue(vocab.contains(R.string.automation_guide_title))
         assertTrue(vocab.contains(R.string.remote_offload_title))
+        // TASK-741: the folder watch is the fourth child.
+        assertTrue(vocab.contains(R.string.folder_watch_title))
+        assertTrue(vocab.contains(R.string.folder_watch_description))
     }
 
     @Test

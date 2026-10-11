@@ -260,7 +260,13 @@ object ModelCatalogJson {
         is String -> CatalogDisplay.Literal(raw)
         is JSONObject -> {
             val key = raw.optString("resourceKey", "")
-            if (key.isNotBlank()) CatalogDisplay.Resource(key)
+            if (key.isNotBlank()) CatalogDisplay.Resource(
+                key,
+                // TASK-760: the display string formats the entry's language
+                // COUNT (%1$d); the render sites derive it from the catalog
+                // instead of a hand-pinned literal that drifts on updates.
+                raw.optBoolean("countPlaceholder", false),
+            )
             else CatalogDisplay.Literal(raw.optString("text", ""))
         }
         null -> null
@@ -281,7 +287,7 @@ object ModelCatalogJson {
  * (the exact text from the user's JSON, shown regardless of locale).
  */
 sealed interface CatalogDisplay {
-    data class Resource(val key: String) : CatalogDisplay
+    data class Resource(val key: String, val countPlaceholder: Boolean = false) : CatalogDisplay
     data class Literal(val text: String) : CatalogDisplay
 }
 
@@ -424,6 +430,16 @@ data class CatalogEntry(
      */
     fun variantForDirName(dirName: String): CatalogVariant =
         variants.firstOrNull { it.dirName == dirName } ?: defaultVariant
+
+    /**
+     * TASK-785: the variant resolved from a SAVED model path (its last
+     * segment is the model dir, named after the variant), falling back to
+     * the default when the path is null or names no declared variant. The
+     * saved-path couplet the language policy and the Open Transcribe
+     * capabilities derivation share.
+     */
+    fun variantForSavedPath(modelPath: String?): CatalogVariant =
+        modelPath?.let { variantForDirName(java.io.File(it).name) } ?: defaultVariant
 
     /** The default variant: flags.defaultVariant if declared, else the first. */
     val defaultVariant: CatalogVariant get() = flags.defaultVariant?.let(::variant) ?: variants.first()

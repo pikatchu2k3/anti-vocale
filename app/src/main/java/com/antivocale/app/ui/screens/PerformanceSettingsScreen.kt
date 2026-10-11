@@ -9,23 +9,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +49,7 @@ import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.data.TranscriptionCalibrator.CalibrationProfile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.antivocale.app.ui.components.SettingsSubPageHeader
 
 /**
  * The performance-and-memory secondary page (maintainer decision
@@ -74,7 +71,6 @@ import kotlinx.coroutines.launch
  * all five children's (none of these children is state-gated, so the
  * union is static).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PerformanceSettingsScreen(
     viewModel: SettingsViewModel,
@@ -110,166 +106,152 @@ fun PerformanceSettingsScreen(
         mutableStateOf<List<CalibrationProfile>>(emptyList())
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.performance_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.back)
-                        )
-                    }
-                }
+    // TASK-748: the sub-pages' shared chrome (plain Column + back-header
+    // Row, no Scaffold); the host tab already applies the status-bar inset.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+            .verticalScroll(scrollState)
+            .onGloballyPositioned { scrollContentRootY = it.positionInRoot().y.toInt() }
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SettingsSubPageHeader(titleRes = R.string.performance_settings_title, onBack = onBack)
+        val threadTitle = stringResource(R.string.thread_count_title)
+        SectionCard(
+            icon = Icons.Default.Memory,
+            title = threadTitle,
+            description = stringResource(R.string.thread_count_description)
+        ) {
+            SettingsDropdown(
+                currentValue = threadCount,
+                // The manual range deliberately exceeds the auto default's cap of 4
+                options = (1..8).toList(),
+                currentValueDisplay = if (threadCount == autoDetectedThreads)
+                    stringResource(R.string.thread_count_auto, autoDetectedThreads)
+                else
+                    stringResource(R.string.thread_count_value, threadCount),
+                optionDisplay = { threads ->
+                    if (threads == autoDetectedThreads)
+                        stringResource(R.string.thread_count_auto, threads)
+                    else
+                        stringResource(R.string.thread_count_value, threads)
+                },
+                onOptionSelected = { viewModel.saveThreadCount(it) },
+                label = threadTitle
             )
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .onGloballyPositioned { scrollContentRootY = it.positionInRoot().y.toInt() }
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            val threadTitle = stringResource(R.string.thread_count_title)
-            SectionCard(
-                icon = Icons.Default.Memory,
-                title = threadTitle,
-                description = stringResource(R.string.thread_count_description)
-            ) {
-                SettingsDropdown(
-                    currentValue = threadCount,
-                    // The manual range deliberately exceeds the auto default's cap of 4
-                    options = (1..8).toList(),
-                    currentValueDisplay = if (threadCount == autoDetectedThreads)
-                        stringResource(R.string.thread_count_auto, autoDetectedThreads)
-                    else
-                        stringResource(R.string.thread_count_value, threadCount),
-                    optionDisplay = { threads ->
-                        if (threads == autoDetectedThreads)
-                            stringResource(R.string.thread_count_auto, threads)
-                        else
-                            stringResource(R.string.thread_count_value, threads)
-                    },
-                    onOptionSelected = { viewModel.saveThreadCount(it) },
-                    label = threadTitle
-                )
-            }
 
-            val providerTitle = stringResource(R.string.inference_provider_title)
-            SectionCard(
-                icon = Icons.Default.Bolt,
-                title = providerTitle,
-                description = stringResource(R.string.inference_provider_description)
-            ) {
-                SettingsDropdown(
-                    currentValue = inferenceProvider,
-                    options = InferenceProvider.options,
-                    currentValueDisplay = when (inferenceProvider) {
+        val providerTitle = stringResource(R.string.inference_provider_title)
+        SectionCard(
+            icon = Icons.Default.Bolt,
+            title = providerTitle,
+            description = stringResource(R.string.inference_provider_description)
+        ) {
+            SettingsDropdown(
+                currentValue = inferenceProvider,
+                options = InferenceProvider.options,
+                currentValueDisplay = when (inferenceProvider) {
+                    InferenceProvider.AUTO -> stringResource(R.string.inference_provider_auto)
+                    InferenceProvider.NNAPI -> stringResource(R.string.inference_provider_nnapi)
+                    InferenceProvider.CPU -> stringResource(R.string.inference_provider_cpu)
+                    else -> inferenceProvider
+                },
+                optionDisplay = { option ->
+                    when (option) {
                         InferenceProvider.AUTO -> stringResource(R.string.inference_provider_auto)
                         InferenceProvider.NNAPI -> stringResource(R.string.inference_provider_nnapi)
                         InferenceProvider.CPU -> stringResource(R.string.inference_provider_cpu)
-                        else -> inferenceProvider
-                    },
-                    optionDisplay = { option ->
-                        when (option) {
-                            InferenceProvider.AUTO -> stringResource(R.string.inference_provider_auto)
-                            InferenceProvider.NNAPI -> stringResource(R.string.inference_provider_nnapi)
-                            InferenceProvider.CPU -> stringResource(R.string.inference_provider_cpu)
-                            else -> option
-                        }
-                    },
-                    onOptionSelected = { viewModel.saveInferenceProvider(it) },
-                    label = providerTitle
-                )
-            }
-
-            // The TASK-625 deep-link target: the notification action opens
-            // this page with the focus flag; the border flash is the same
-            // pattern (idle is transparent).
-            ToggleSettingCard(
-                icon = Icons.Default.Memory,
-                title = stringResource(R.string.memory_protection),
-                description = stringResource(R.string.memory_protection_desc),
-                checked = memoryProtection,
-                onCheckedChange = { viewModel.saveMemoryProtection(it) },
-                modifier = Modifier
-                    .onGloballyPositioned {
-                        memoryProtectionFocus.capture(it.positionInRoot().y.toInt())
+                        else -> option
                     }
-                    .border(
-                        2.dp,
-                        memoryProtectionFocus.highlightColor("memory_protection_highlight"),
-                        MaterialTheme.shapes.medium,
-                    )
+                },
+                onOptionSelected = { viewModel.saveInferenceProvider(it) },
+                label = providerTitle
             )
+        }
 
-            Card(
+        // The TASK-625 deep-link target: the notification action opens
+        // this page with the focus flag; the border flash is the same
+        // pattern (idle is transparent).
+        ToggleSettingCard(
+            icon = Icons.Default.Memory,
+            title = stringResource(R.string.memory_protection),
+            description = stringResource(R.string.memory_protection_desc),
+            checked = memoryProtection,
+            onCheckedChange = { viewModel.saveMemoryProtection(it) },
+            modifier = Modifier
+                .onGloballyPositioned {
+                    memoryProtectionFocus.capture(it.positionInRoot().y.toInt())
+                }
+                .border(
+                    2.dp,
+                    memoryProtectionFocus.highlightColor("memory_protection_highlight"),
+                    MaterialTheme.shapes.medium,
+                )
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) {
+                    scope.launch {
+                        statsProfiles = viewModel.transcriptionCalibrator.getAllProfiles()
+                        showStats = true
+                    }
+                },
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(role = Role.Button) {
-                        scope.launch {
-                            statsProfiles = viewModel.transcriptionCalibrator.getAllProfiles()
-                            showStats = true
-                        }
-                    },
-                shape = MaterialTheme.shapes.medium
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Speed,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Column {
-                            Text(
-                                text = stringResource(R.string.performance_stats_title),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.performance_stats_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = stringResource(R.string.open_performance_stats),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
+                    Column {
+                        Text(
+                            text = stringResource(R.string.performance_stats_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.performance_stats_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.open_performance_stats),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        MemoryDiagnosticsCard(viewModel)
+    }
+
+    if (showStats) {
+        PerformanceStatsDialog(
+            profiles = statsProfiles,
+            isTranscribing = isTranscribing,
+            onDismiss = { showStats = false },
+            onReset = {
+                scope.launch {
+                    viewModel.transcriptionCalibrator.resetAll()
+                    statsProfiles = emptyList()
                 }
             }
-
-            MemoryDiagnosticsCard(viewModel)
-        }
-
-        if (showStats) {
-            PerformanceStatsDialog(
-                profiles = statsProfiles,
-                isTranscribing = isTranscribing,
-                onDismiss = { showStats = false },
-                onReset = {
-                    scope.launch {
-                        viewModel.transcriptionCalibrator.resetAll()
-                        statsProfiles = emptyList()
-                    }
-                }
-            )
-        }
+        )
     }
 }
-

@@ -1,0 +1,4 @@
+Nouveau : surveillance planifiée de dossiers : les nouveaux fichiers audio des dossiers choisis sont transcrits automatiquement
+Nouveau : déport distant (expérimental, désactivé par défaut) : déléguez les longues tâches à votre propre serveur
+Nouveau : exportez les modèles téléchargés en paquets hors ligne pour un autre appareil
+Nouveau : interface en chinois

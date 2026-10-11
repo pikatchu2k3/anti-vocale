@@ -11,7 +11,7 @@
 
     <!-- Model selection -->
     <string name="select_model">Выбрать файл модели</string>
-    <string name="select_model_from_device">Выбрать файл</string>
+    <string name="select_model_from_device">Выбрать файл .litertlm</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">Загрузить модель</string>
@@ -111,7 +111,7 @@
     <string name="transcript_capped_autosave_hint">Полная расшифровка в автосохранении: Настройки → Сохранить в папку</string>
     <string name="transcript_capped_autosave_saved">Полная расшифровка автоматически сохранена в вашей папке</string>
     <string name="export_settings_title">Автосохранение и экспорт</string>
-    <string name="export_settings_description">Выберите папку и формат файлов для сохранённых расшифровок</string>
+    <string name="export_settings_description">Необязательно: каждая расшифровка дополнительно сохраняется в выбранную папку в выбранном формате. Всё всегда остаётся и во вкладке «История».</string>
     <string name="error_folder_not_writable">Эта папка не может получать файлы. Выберите папку из хранилища устройства (не ярлык Загрузок).</string>
     <string name="language_phone_option">Язык телефона (%1$s)</string>
     <string name="today">Сегодня</string>
@@ -156,12 +156,11 @@
     <string name="whisper_extract_confirm_message">Файл модели уже загружен. Сейчас он будет извлечён для использования.</string>
 
     <!-- Qwen3-ASR model -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 языка)</string>
-    <string name="qwen3_asr_description">52 языка • Низкая точность на итальянском</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d языков)</string>
+    <string name="qwen3_asr_description">%1$d языков</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938 МБ • 52 языка • Низкая точность на итальянском</string>
+    <string name="qwen3_asr_0_6b_description">~938 МБ • %1$d языков</string>
     <string name="qwen3_asr_download_confirm_title">Скачать %1$s?</string>
-    <string name="qwen3_asr_download_confirm_message">Будет загружено ~%1$d МБ. Qwen3-ASR поддерживает 52 языка с невысокой точностью на итальянском.</string>
     <string name="qwen3_asr_download">Скачать Qwen3-ASR</string>
     <string name="qwen3_asr_delete_message">Удалить модель Qwen3-ASR?</string>
     <string name="qwen3_asr_downloaded">%1$s успешно загружена</string>
@@ -170,7 +169,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (потоковая)</string>
-    <string name="nemotron_description">~640 МБ • Потоковый преобразователь • Экспериментальное качество для итальянского</string>
+    <string name="nemotron_description">~640 МБ • Потоковый преобразователь</string>
     <string name="nemotron_download_confirm_title">Скачать %1$s?</string>
     <string name="nemotron_download_confirm_message">Будет загружено ~%1$d МБ. Nemotron 3.5, многоязычная потоковая модель распознавания речи.</string>
     <string name="nemotron_download">Скачать Nemotron</string>
@@ -279,6 +278,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">Внешняя автоматизация (Tasker)</string>
     <string name="external_automation_description">Позволяет другим приложениям запускать транскрипцию через API автоматизации (например, Tasker). По умолчанию отключено.</string>
+    <string name="open_transcribe_title">API Open Transcribe (экспериментально)</string>
+    <string name="open_transcribe_description">Позволяет другим приложениям, например Forkgram, использовать Anti-Vocale как офлайн-расшифровщик. По умолчанию отключено.</string>
+    <string name="opentranscribe_notification_text">Расшифровка аудио для другого приложения</string>
     <string name="external_automation_disabled">Внешняя автоматизация отключена. Включите её в разделе Настройки > Дополнительно > Внешняя автоматизация.</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">Руководство по автоматизации</string>
@@ -303,10 +305,10 @@
     <string name="faq_card_trouble_title">Что-то пошло не так</string>
     <string name="faq_card_trouble_body">Если результат не приходит, производитель мог заморозить приложение в фоне: следуйте совету о батарее в уведомлении об ошибке. Неудавшийся результат сохраняет запись отчёта.</string>
     <string name="no_app_to_open_link">Не найдено приложение для открытия ссылки</string>
-    <string name="remote_omnivoice_name">Перенос на сервер LAN (OmniVoice)</string>
-    <string name="remote_offload_title">Перенос на сервер LAN (экспериментально)</string>
-    <string name="remote_offload_description">Передача длинных или тяжёлых расшифровок вашему собственному серверу OmniVoice в вашей сети Wi-Fi. После включения выберите его на вкладке «Модели».</string>
-    <string name="remote_offload_disclosure">Когда функция включена и выбрана, звук этих расшифровок отправляется только на адрес сервера, который вы укажете ниже, в вашей собственной сети. Всё остальное расшифровывается на этом устройстве. По умолчанию выключено: ничего не покидает телефон, пока вы это не включите.</string>
+    <string name="remote_omnivoice_name">Удалённая разгрузка</string>
+    <string name="remote_offload_title">Удалённая разгрузка (экспериментально)</string>
+    <string name="remote_offload_description">Делегируйте длинные или тяжёлые расшифровки совместимому с OpenAI серверу по вашему выбору. Когда включено, выберите его на вкладке Модели.</string>
+    <string name="remote_offload_disclosure">Когда это включено и выбрано, аудио этих расшифровок отправляется только на адрес сервера, введённый ниже, где бы он ни находился: в вашей сети или где-то в интернете. Всё остальное расшифровывается на этом устройстве. По умолчанию выключено: ничего не покидает телефон, пока вы это не включите.</string>
     <string name="remote_offload_endpoint_label">Адрес сервера</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">API-ключ</string>
@@ -377,11 +379,13 @@
     <string name="cancel_extract">Отменить извлечение</string>
     <string name="extract_model">Извлечь</string>
     <string name="use_model">Использовать модель</string>
+    <string name="models_active_model_line">Используется: %1$s</string>
     <string name="active_badge">Активна</string>
     <string name="model_selected_message">Выбрано: %1$s</string>
     <string name="model_use_missing_files">Файлы модели %1$s отсутствуют или неполные. Скачайте этот вариант заново на вкладке «Модель».</string>
     <string name="model_demoted_notice">Не выбирается автоматически: эта модель не выдала текст при наличии речи. Выберите её снова, чтобы дать ей ещё один шанс.</string>
     <string name="delete">Удалить</string>
+    <string name="variant_more_actions">Ещё действия</string>
     <string name="download">Скачать</string>
     <string name="model_update_button">Обновить</string>
     <string name="gemma_update_confirm_title">Обновить %1$s</string>
@@ -415,7 +419,7 @@
     <!-- Settings Tab - Section Titles -->
     <string name="settings_section_transcription">Распознавание</string>
     <string name="settings_section_appearance">Оформление</string>
-    <string name="settings_section_advanced">Дополнительно</string>
+    <string name="settings_section_advanced">Система и интеграции</string>
     <string name="settings_section_feedback">Обратная связь и о приложении</string>
     <string name="settings_feedback_send_title">Отправить отзыв / Сообщить о проблеме</string>
     <string name="settings_feedback_send_description">Открывает почтовое приложение с заранее заполненными данными</string>
@@ -490,7 +494,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">Автовыгрузка</string>
-    <string name="timeout_description">Модель выгружается после простоя и возвращается при следующем использовании</string>
+    <string name="timeout_description">Освобождает память в простое и снижает шанс, что система завершит приложение; модель перезагрузится при следующем использовании.</string>
     <string name="timeout_1_minute">1 минута</string>
     <string name="timeout_1_hour">1 час</string>
     <plurals name="timeout_minutes">
@@ -554,7 +558,7 @@
     <string name="summarize_status">Резюмирую с помощью ИИ…</string>
     <string name="summary_default_prompt">Сделай краткое содержание этой расшифровки в 2-3 предложениях, на языке расшифровки. Сохрани имена и числа. Выведи только краткое содержание.</string>
     <string name="vad_title">Удаление тишины (VAD)</string>
-    <string name="vad_description">Удалять беззвучные участки из голосовых сообщений перед распознаванием. Сокращает время обработки и повышает точность.</string>
+    <string name="vad_description">Вырезает беззвучные участки перед распознаванием. Почти всегда быстрее; влияние на точность зависит от модели.</string>
     <string name="progressive_title">Прогрессивный показ</string>
     <string name="progressive_description">Показывать текст по мере распознавания, не дожидаясь окончания записи</string>
     <string name="early_preview_title">Ранний предпросмотр</string>
@@ -562,6 +566,7 @@
     <string name="early_preview_badge">Предпросмотр</string>
     <string name="early_preview_requires_progressive">Требуется прогрессивный показ</string>
     <string name="auto_save_failed">Не удалось автосохранить (%1$s)</string>
+    <string name="saved_to_folder">Сохранено в %1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Запрос по умолчанию</string>
@@ -742,7 +747,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 языка, нестабильное</string>
+    <string name="speed_comparison_qwen3_quality">%1$d языков, нестабильное</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Быстрая</string>
@@ -933,7 +938,7 @@
     <string name="model_info_notes_whisper_medium">Хороший баланс между точностью и потреблением ресурсов.</string>
     <string name="model_info_best_for_distil_it">Лучшая точность для итальянского (WER 4.3%%)</string>
     <string name="model_info_notes_distil_it">Только итальянский. Максимальная точность для итальянских голосовых сообщений. Приоритет: точность, а не скорость.</string>
-    <string name="model_info_best_for_qwen3">Автоопределение для 52 языков</string>
+    <string name="model_info_best_for_qwen3">Автоопределение для 59 языков</string>
     <string name="model_info_notes_qwen3">Самое широкое покрытие языков. Внимание: обрезает аудио длиннее 30 секунд. Только устройства ARM64.</string>
     <string name="model_info_best_for_parakeet">Самое быстрое распознавание (в 17,6 раза быстрее Whisper, WER 5.4%%)</string>
     <string name="model_info_notes_parakeet">Без ограничения длительности аудио. VAD не требуется. Лучший выбор для тех, кому важна скорость.</string>
@@ -962,9 +967,9 @@
     <string name="external_none_imported">Внешние модели не импортированы</string>
     <string name="external_section_title">Внешние модели</string>
     <string name="model_advanced_section">Дополнительно</string>
-    <string name="model_advanced_description">Импортировать файлы моделей вручную</string>
-    <string name="external_import_folder">Выбрать папку</string>
-    <string name="external_import_url">Импорт по URL</string>
+    <string name="model_advanced_description">Внешний импорт и загрузки Gemma</string>
+    <string name="external_import_folder">Импорт из папки</string>
+    <string name="external_import_url">Импорт по ссылке</string>
     <string name="external_url_hint">URL репозитория HuggingFace или JSON-записи каталога</string>
     <string name="external_import">Импортировать</string>
     <string name="external_importing">Импорт модели…</string>
@@ -992,8 +997,8 @@
     <string name="external_decode_language">Язык распознавания</string>
     <string name="external_decode_auto">Автоопределение</string>
     <string name="external_family">Семейство моделей</string>
-    <string name="external_family_transducer">Трансдьюсер (офлайн NeMo/Zipformer)</string>
-    <string name="external_family_transducer_help">Ожидаются файлы encoder + decoder + joiner + tokens</string>
+    <string name="external_family_transducer">Трансдьюсер</string>
+    <string name="external_family_transducer_help">Офлайн NeMo/Zipformer. Ожидаются файлы encoder + decoder + joiner + tokens</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">Ожидаются файлы encoder + decoder + tokens</string>
     <string name="external_family_ctc">CTC</string>
@@ -1097,7 +1102,6 @@
     <string name="feedback_label_truncated">сокращено</string>
     <string name="a11y_expand">развернуть</string>
     <string name="a11y_collapse">свернуть</string>
-    <string name="a11y_back">Назад</string>
     <string name="litertlm_importing">Импорт…</string>
     <string name="model_ram_warning">У %1$s может не хватить памяти на этом устройстве. Загрузка может завершиться неудачей; более лёгкие модели надёжнее.</string>
     <string name="error_oom_transcription">Недостаточно памяти для распознавания этого аудио. Попробуйте более короткий файл, более лёгкую модель или закройте другие приложения. Чтобы вовсе избежать попытки, включите защиту памяти в Настройки > Дополнительно.</string>
@@ -1192,7 +1196,7 @@
     <string name="performance_settings_title">Производительность и память</string>
     <string name="performance_settings_summary">Потоки, провайдер, защита памяти и диагностика</string>
     <string name="automation_settings_title">Автоматизация и разгрузка</string>
-    <string name="automation_settings_summary">Приёмники Tasker, руководство по broadcast и LAN-разгрузка</string>
+    <string name="automation_settings_summary">Приёмники Tasker, руководство по broadcast и удалённая разгрузка</string>
     <string name="settings_group_appearance">Оформление</string>
     <string name="settings_group_history">История</string>
     <string name="settings_group_decoding">Декодирование и предпросмотр</string>
@@ -1218,4 +1222,33 @@
     <string name="model_shortcut_switch_label">Переключить на %1$s</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">Добавь в эту расшифровку пунктуацию, заглавные буквы и разбиение на абзацы. Не переводи, не пересказывай и не добавляй, не удаляй, не меняй порядок и не исправляй ни одного слова: последовательность слов должна остаться точно как написано. Выведи только отформатированную расшифровку.</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">Расширенные настройки (%1$d)</string>
+    <string name="refinement_model_title">Модель уточнения</string>
+    <string name="refinement_model_description">Модель второго прохода. Оставьте «наследовать», чтобы использовать активную модель.</string>
+    <string name="refinement_model_inherit">Наследовать активную модель</string>
+    <string name="export_model_bundle">Поделиться моделью для переноса без сети</string>
+    <string name="external_import_bundle">Импорт пакета переноса</string>
+    <string name="external_models_intro">Этот раздел содержит альтернативные модели: компактные для телефонов с малым объёмом памяти и модели, оптимизированные под конкретные языки. Многие берутся из курируемого нами каталога сообщества, но приложение можно направить и на сторонний каталог или свой собственный.</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">Добавить модель Gemma (LiteRT)</string>
+    <string name="gemma_entry_title">Загрузки Gemma</string>
+    <string name="gemma_entry_subtitle">Просмотр и загрузка официальных моделей Gemma</string>
+    <string name="external_section_subtitle">Файлы моделей, которые вы добавляете сами (папка, URL или пакет переноса), а также загрузки Gemma LiteRT-LM; работают рядом со встроенным каталогом.</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">Запланированное наблюдение за папками</string>
+    <string name="folder_watch_description">Следит за выбранными вами папками и автоматически расшифровывает новые аудиофайлы. Проверки выполняются, когда система позволяет; агрессивные экономители батареи могут их задержать, а ручная проверка работает всегда.</string>
+    <string name="folder_watch_add">Следить за папкой</string>
+    <string name="folder_watch_empty">Пока нет отслеживаемых папок.</string>
+    <string name="folder_watch_scan_now">Проверить сейчас</string>
+    <string name="folder_watch_remove">Убрать</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">Каждый %1$d ч</item>
+        <item quantity="few">Каждые %1$d ч</item>
+        <item quantity="many">Каждые %1$d ч</item>
+        <item quantity="other">Каждые %1$d ч</item>
+    </plurals>
+    <string name="folder_watch_period_label">Интервал проверки</string>
+    <string name="folder_watch_grant_failed">Не удалось сохранить доступ к этой папке, поэтому она не была добавлена. Выберите её ещё раз.</string>
 </resources>

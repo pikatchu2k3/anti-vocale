@@ -1,19 +1,14 @@
 package com.antivocale.app.service
 
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.antivocale.app.MainActivity
 import com.antivocale.app.R
-import com.antivocale.app.data.AppNotificationPreferences
 import com.antivocale.app.data.PerAppPreferencesManager
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.transcription.DualRefinementPolicy
 import com.antivocale.app.transcription.TimedSegment
 import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.ClipboardWriter
@@ -37,9 +32,9 @@ import kotlinx.coroutines.withContext
  *
  * **Design note:** Both this listener and [InferenceService] now delegate result
  * notification building to [ResultNotificationFactory], eliminating the earlier
- * contained duplication. This class retains its own error and no-model notification
- * builders (those are not yet delegated to the factory; near-copies still exist
- * in InferenceService and are out of scope for TASK-327).
+ * contained duplication. Error and no-model notifications delegate to the
+ * factory's builders (TASK-625/328); the completed-run posting delegates to
+ * ResultNotificationFactory.postResult (TASK-757).
  *
  * @param appContext Application context used for notificationManager / getString / packages.
  * @param preferencesManager For the global auto-copy preference fallback.
@@ -123,9 +118,23 @@ class TranscriptionNotificationListener(
             coroutineScope.launch {
                 // TASK-598 review F3: same derivation as the notification Copy action.
                 val annotatedText = SubtitleFormatter.annotatedOrStored(resultText, segments)
-                autoCopyIfEnabled(annotatedText, sourcePackage)
-                val saveFailure = saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
-                showResultNotification(annotatedText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, streamedWithoutVad = streamedWithoutVad, repetitionSuspected = repetitionSuspected, segments = segments, saveFailure = saveFailure)
+                val copied = autoCopyIfEnabled(annotatedText, sourcePackage)
+                val saveResult = saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
+                // TASK-758 review: this route used to drop the clipboard
+                // note and the refinement verdicts the service route shows
+                // (the worker twin of the same facts).
+                resultNotificationFactory.postResult(
+                    preferencesManager, perAppPreferencesManager,
+                    annotatedText, segments, saveResult,
+                    sourcePackage, taskId, confidence, detectedLanguage,
+                    isPartial, failedChunkCount,
+                    copiedToClipboard = copied,
+                    streamedWithoutVad = streamedWithoutVad,
+                    refinedFrom = refinementOutcome?.takeIf { it != DualRefinementPolicy.NOT_REFINED },
+                    notRefined = refinementOutcome == DualRefinementPolicy.NOT_REFINED,
+                    repetitionSuspected = repetitionSuspected,
+                    originTag = "TranscriptionNotificationListener",
+                )
             }
         }
     }
@@ -137,7 +146,8 @@ class TranscriptionNotificationListener(
         isShareRequest: Boolean,
         isNoModelError: Boolean,
         durationMs: Long,
-        isMemoryFailure: Boolean
+        isMemoryFailure: Boolean,
+        isDecodeError: Boolean
     ) {
         if (!isShareRequest) return
         if (isNoModelError) showNoModelNotification() else showErrorNotification(errorMessage, isMemoryFailure)
@@ -145,7 +155,7 @@ class TranscriptionNotificationListener(
 
     // ---- Auto-Copy (ported from InferenceService to keep the service untouched) ----
 
-    private suspend fun autoCopyIfEnabled(transcriptionText: String, sourcePackage: String?) {
+    private suspend fun autoCopyIfEnabled(transcriptionText: String, sourcePackage: String?): Boolean {
         // Effective auto-copy = global toggle OR per-app preference (issue #13). Mirrors
         // InferenceService.autoCopyIfEnabled — keep the two paths in sync.
         val globalAutoCopy = preferencesManager.autoCopyEnabled.first()
@@ -175,7 +185,9 @@ class TranscriptionNotificationListener(
             Handler(Looper.getMainLooper()).post {
                 com.antivocale.app.util.ToastCompat.show(appContext, R.string.copied_to_clipboard)
             }
+            return true
         }
+        return false
     }
 
     // ---- Auto-save to folder (issue #14) ----
@@ -183,84 +195,30 @@ class TranscriptionNotificationListener(
     // in sync (the format resolution itself lives in TranscriptFileSaver.saveAuto,
     // the single owner of the export fail-safe).
 
-    /** @return the auto-save failure reason for the result notification
-     *  subtext, or null when saved/not configured (TASK-722, service twin). */
+    /** @return the auto-save [TranscriptFileSaver.SaveResult] for the result
+     *  notification (the InferenceService twin's contract). */
     private suspend fun saveTranscriptToFileIfEnabled(
         text: String,
         sourcePackage: String?,
         segments: List<TimedSegment>,
         failedChunkCount: Int
-    ): String? {
-        val result = withContext(Dispatchers.IO) {
+    ): TranscriptFileSaver.SaveResult {
+        return withContext(Dispatchers.IO) {
+            // ONE resolution, same torn-read guard as the service twin.
+            val sig = TranscriptSignature.effectiveSpec(
+                preferencesManager, appContext.getString(R.string.signature_default_text))
             TranscriptFileSaver.saveAuto(
                 appContext,
                 preferencesManager.outputFolderUri.first(),
                 preferencesManager.transcriptExportFormat.first(),
                 text, segments, failedChunkCount, sourcePackage,
-                signature = TranscriptSignature.effectiveSpec(
-                    preferencesManager, appContext.getString(R.string.signature_default_text)).let { it.text },
-                signaturePosition = TranscriptSignature.effectiveSpec(
-                    preferencesManager, appContext.getString(R.string.signature_default_text)).position,
+                signature = sig.text,
+                signaturePosition = sig.position,
             )
         }
-        // TASK-722: the failure reason rides the result notification; the
-        // saver already logged the concrete failing step.
-        return result.failureOrNull()
     }
 
     // ---- Notifications (ported from InferenceService) ----
-
-    private suspend fun showResultNotification(
-        transcriptionText: String,
-        sourcePackage: String?,
-        taskId: String,
-        confidence: Float?,
-        detectedLanguage: String?,
-        isPartial: Boolean = false,
-        failedChunkCount: Int = 0,
-        streamedWithoutVad: Boolean = false,
-        repetitionSuspected: Boolean = false,
-        segments: List<TimedSegment>,
-        saveFailure: String? = null,
-    ) {
-        // TASK-598 F5: mirrors InferenceService.showResultNotification (keep
-        // the two paths in sync): the notification's whole text derives the
-        // speaker-annotated form when the run carries labels; raw fallback.
-        val text = SubtitleFormatter.annotatedOrStored(transcriptionText, segments)
-        val prefs = if (sourcePackage != null) {
-            try {
-                perAppPreferencesManager.getCurrentPreferences(sourcePackage)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to get per-app preferences for $sourcePackage, using defaults", e)
-                AppNotificationPreferences.default()
-            }
-        } else {
-            AppNotificationPreferences.default()
-        }
-
-        val id = ResultNotificationFactory.nextNotificationId()
-        val spec = ResultNotificationSpec(
-            transcriptionText = text,
-            signatureText = TranscriptSignature.effectiveSpec(
-                preferencesManager, appContext.getString(R.string.signature_default_text)).let { it.text },
-            signaturePosition = TranscriptSignature.effectiveSpec(
-                preferencesManager, appContext.getString(R.string.signature_default_text)).position,
-            taskId = taskId,
-            sourcePackage = sourcePackage,
-            confidence = confidence,
-            detectedLanguage = detectedLanguage,
-            isPartial = isPartial,
-            failedChunkCount = failedChunkCount,
-            notificationId = id,
-            streamedWithoutVad = streamedWithoutVad,
-            repetitionSuspected = repetitionSuspected,
-            saveFailureReason = saveFailure,
-            firstPostedAt = System.currentTimeMillis()
-        )
-        val notification = resultNotificationFactory.build(spec, prefs)
-        notificationManager.notify(id, notification)
-        Log.i(TAG, "Worker showed result notification (${text.length} chars) (id=$id)")
-    }
 
     private fun showErrorNotification(errorMessage: String, isMemoryFailure: Boolean) {
         // TASK-625: composition lives in ResultNotificationFactory (both error
@@ -282,12 +240,6 @@ class TranscriptionNotificationListener(
 
     companion object {
         private const val TAG = "TranscriptionNotificationListener"
-        private const val RC_LAUNCH_DEFAULT = 0
-        private const val RC_LAUNCH_MODEL_TAB = 1
-        private const val RC_LAUNCH_SETTINGS_ROW = 2
 
-        // TaskId-hash codes live above the small-constant band (see the same
-        // comment on InferenceService.RC_HASH_BASE).
-        private const val RC_HASH_BASE = 1000
     }
 }

@@ -9,7 +9,7 @@
 
     <!-- Model selection -->
     <string name="select_model">انتخاب فایل مدل</string>
-    <string name="select_model_from_device">انتخاب فایل</string>
+    <string name="select_model_from_device">انتخاب فایل .litertlm</string>
 
     <!-- Custom transducer model (sideload) -->
     <string name="load_model">بارگذاری مدل</string>
@@ -122,7 +122,7 @@
     <string name="transcript_capped_autosave_hint">متن کامل رونویسی در ذخیره خودکار: تنظیمات ← ذخیره خودکار در پوشه</string>
     <string name="transcript_capped_autosave_saved">متن کامل رونویسی به‌طور خودکار در پوشه شما ذخیره شد</string>
     <string name="export_settings_title">ذخیره خودکار و برون‌بری</string>
-    <string name="export_settings_description">پوشه و قالب فایل رونویسی‌های ذخیره‌شده را انتخاب کنید</string>
+    <string name="export_settings_description">اختیاری: هر متن تبدیل‌شده را در پوشه انتخابی شما و با قالب دلخواه هم می‌نویسد. همه چیز همیشه در زبانه تاریخچه می‌ماند.</string>
     <string name="error_folder_not_writable">نوشتن در این پوشه ممکن نیست. یک پوشه از حافظه دستگاه انتخاب کنید (نه میان‌بر دانلودها).</string>
     <string name="language_phone_option">زبان گوشی (%1$s)</string>
     <string name="today">امروز</string>
@@ -167,12 +167,11 @@
     <string name="whisper_extract_confirm_message">فایل مدل قبلاً دانلود شده است. برای استفاده استخراج خواهد شد.</string>
 
     <!-- Qwen3-ASR -->
-    <string name="qwen3_asr_title">Qwen3-ASR (52 زبان)</string>
-    <string name="qwen3_asr_description">52 زبان • دقت ضعیف برای ایتالیایی</string>
+    <string name="qwen3_asr_title">Qwen3-ASR (%1$d زبان)</string>
+    <string name="qwen3_asr_description">%1$d زبان</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • 52 زبان • دقت ضعیف برای ایتالیایی</string>
+    <string name="qwen3_asr_0_6b_description">~938MB • %1$d زبان</string>
     <string name="qwen3_asr_download_confirm_title">%1$s دانلود شود؟</string>
-    <string name="qwen3_asr_download_confirm_message">حدود %1$dMB دانلود خواهد شد. Qwen3-ASR از 52 زبان با دقت ضعیف برای ایتالیایی پشتیبانی می‌کند.</string>
     <string name="qwen3_asr_download">دانلود Qwen3-ASR</string>
     <string name="qwen3_asr_delete_message">مدل Qwen3-ASR حذف شود؟</string>
     <string name="qwen3_asr_downloaded">%1$s دانلود شد</string>
@@ -181,7 +180,7 @@
     <!-- Nemotron 3.5 streaming -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (جریانی)</string>
-    <string name="nemotron_description">~640MB • ترنسدیوسر جریانی • کیفیت ایتالیایی آزمایشی</string>
+    <string name="nemotron_description">~640MB • ترنسدیوسر جریانی</string>
     <string name="nemotron_download_confirm_title">%1$s دانلود شود؟</string>
     <string name="nemotron_download_confirm_message">حدود %1$dMB دانلود خواهد شد. Nemotron 3.5 یک مدل ASR چندزبانه جریانی است.</string>
     <string name="nemotron_download">دانلود Nemotron</string>
@@ -288,6 +287,9 @@
     <!-- TASK-274: consent gate for the exported automation receivers (Tasker surface). -->
     <string name="external_automation_title">اتوماسیون خارجی (Tasker)</string>
     <string name="external_automation_description">به دیگر برنامه‌ها اجازه می‌دهد از طریق API اتوماسیون (مثلاً Tasker) رونویسی را شروع کنند. به طور پیش‌فرض خاموش است.</string>
+    <string name="open_transcribe_title">رابط Open Transcribe (آزمایشی)</string>
+    <string name="open_transcribe_description">به دیگر برنامه‌ها مانند فورکگرم اجازه می‌دهد از Anti-Vocale به عنوان رونویسی‌کننده آفلاین استفاده کنند. به طور پیش‌فرض خاموش است.</string>
+    <string name="opentranscribe_notification_text">رونویسی صوت برای برنامهٔ دیگر</string>
     <string name="external_automation_disabled">اتوماسیون خارجی خاموش است. آن را در تنظیمات > پیشرفته > اتوماسیون خارجی روشن کنید.</string>
     <!-- TASK-275: the Automation guide card (Settings > Advanced). -->
     <string name="automation_guide_title">راهنمای اتوماسیون</string>
@@ -312,10 +314,10 @@
     <string name="faq_card_trouble_title">چیزی درست پیش نرفت</string>
     <string name="faq_card_trouble_body">اگر نتیجه‌ای نمی‌رسد، سازنده گوشی ممکن است اپ را در پس‌زمینه замرده باشد: توصیه باتری در اعلان خطا را دنبال کنید. نتیجه ناموفق یک ورودی گزارش نگه می‌دارد.</string>
     <string name="no_app_to_open_link">اپلیکیشنی برای باز کردن پیوند پیدا نشد</string>
-    <string name="remote_omnivoice_name">واگذاری به LAN (OmniVoice)</string>
-    <string name="remote_offload_title">واگذاری به LAN (آزمایشی)</string>
-    <string name="remote_offload_description">رونویسی‌های طولانی یا سنگین را به سرور OmniVoice خودتان در شبکه Wi-Fi می‌سپارد. پس از فعال شدن، آن را در برگه Model انتخاب کنید.</string>
-    <string name="remote_offload_disclosure">وقتی این قابلیت فعال و انتخاب شده باشد، صدای آن رونویسی‌ها فقط به نشانی سروری که در پایین وارد می‌کنید، در شبکه خودتان فرستاده می‌شود. همه چیز دیگر روی همین دستگاه رونویسی می‌شود. به طور پیش‌فرض خاموش است: تا آن را روشن نکنید هیچ چیزی از گوشی خارج نمی‌شود.</string>
+    <string name="remote_omnivoice_name">بارگذاری به سرور راه دور</string>
+    <string name="remote_offload_title">بارگذاری به سرور راه دور (آزمایشی)</string>
+    <string name="remote_offload_description">رونوشت‌های طولانی یا سنگین را به یک سرور سازگار با OpenAI به انتخاب خودتان بسپارید. وقتی فعال است، آن را در برگه مدل‌ها انتخاب کنید.</string>
+    <string name="remote_offload_disclosure">وقتی این گزینه فعال و انتخاب شده باشد، صدای آن رونوشت‌ها فقط به نشانه سروری که در پایین وارد می‌کنید فرستاده می‌شود، هر جا که آن سرور باشد: در شبکه شما یا هرجای اینترنت. همه چیز دیگر روی همین دستگاه رونویسی می‌شود. به طور پیش‌فرض خاموش است: تا روشنش نکنید هیچ چیزی از گوشی خارج نمی‌شود.</string>
     <string name="remote_offload_endpoint_label">نشانی سرور</string>
     <string name="remote_offload_endpoint_placeholder">http://192.168.1.10:3900</string>
     <string name="remote_offload_key_label">کلید API</string>
@@ -383,11 +385,13 @@
     <string name="cancel_extract">لغو استخراج</string>
     <string name="extract_model">استخراج</string>
     <string name="use_model">استفاده از مدل</string>
+    <string name="models_active_model_line">در حال استفاده: %1$s</string>
     <string name="active_badge">فعال</string>
     <string name="model_selected_message">%1$s انتخاب شد</string>
     <string name="model_use_missing_files">فایل‌های مدل %1$s مفقود یا ناقص‌اند. این نسخه را از زبانه مدل دوباره دانلود کنید.</string>
     <string name="model_demoted_notice">به‌طور خودکار انتخاب نمی‌شود: این مدل با وجود گفتار متن تولید نکرد. دوباره انتخابش کنید تا فرصت دیگری به آن بدهید.</string>
     <string name="delete">حذف</string>
+    <string name="variant_more_actions">اقدامات بیشتر</string>
     <string name="download">دانلود</string>
     <string name="model_update_button">به‌روزرسانی</string>
     <string name="gemma_update_confirm_title">به‌روزرسانی %1$s</string>
@@ -421,7 +425,7 @@
     <!-- Settings - Section titles -->
     <string name="settings_section_transcription">رونویسی</string>
     <string name="settings_section_appearance">ظاهر</string>
-    <string name="settings_section_advanced">پیشرفته</string>
+    <string name="settings_section_advanced">سیستم و یکپارچه‌سازی</string>
     <string name="settings_section_feedback">بازخورد و درباره برنامه</string>
     <string name="settings_feedback_send_title">ارسال بازخورد / گزارش مشکل</string>
     <string name="settings_feedback_send_description">برنامه ایمیل شما را با جزئیات از پیش پرشده باز می‌کند</string>
@@ -496,7 +500,7 @@
 
     <!-- Settings Tab - Timeout -->
     <string name="auto_unload_timeout">تخلیه خودکار</string>
-    <string name="timeout_description">مدل پس از مدت بی‌کاری تخلیه می‌شود و با استفاده بعدی برمی‌گردد.</string>
+    <string name="timeout_description">وقتی برنامه غیرفعال است حافظه را آزاد می‌کند و احتمال بسته‌شدن برنامه توسط سیستم را کم می‌کند؛ مدل در استفاده بعدی دوباره بارگذاری می‌شود.</string>
     <string name="timeout_1_minute">1 دقیقه</string>
     <string name="timeout_1_hour">1 ساعت</string>
     <plurals name="timeout_minutes">
@@ -552,7 +556,7 @@
     <string name="summarize_status">در حال خلاصه‌سازی با هوش مصنوعی…</string>
     <string name="summary_default_prompt">این رونویسی را در 2 تا 3 جمله، به زبان خودِ رونویسی خلاصه کنید. نام‌ها و اعداد را حفظ کنید. فقط خلاصه را برگردانید.</string>
     <string name="vad_title">حذف سکوت (VAD)</string>
-    <string name="vad_description">بخش‌های ساکت پیام‌های صوتی را پیش از رونویسی حذف می‌کند. زمان پردازش را کم و دقت را بهتر می‌کند.</string>
+    <string name="vad_description">بخش‌های ساکت را پیش از رونویسی برمی‌دارد. تقریباً همیشه سریع‌تر؛ اثر آن بر دقت به مدل بستگی دارد.</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">دستور پیش‌فرض</string>
@@ -721,7 +725,7 @@
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
     <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
-    <string name="speed_comparison_qwen3_quality">52 زبان، متغیر</string>
+    <string name="speed_comparison_qwen3_quality">%1$d زبان، متغیر</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
     <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">سریع</string>
@@ -759,6 +763,7 @@
     <string name="early_preview_badge">پیش‌نمایش</string>
     <string name="early_preview_requires_progressive">نیاز به نمایش پیش‌رونده دارد</string>
     <string name="auto_save_failed">ذخیره خودکار ناموفق بود (%1$s)</string>
+    <string name="saved_to_folder">ذخیره شد در %1$s</string>
     <string name="progressive_initial">در حال آماده‌سازی متن؛ نتیجه نهایی در پایان</string>
     <string name="processing_segment_progress">قطعه %1$d از %2$d…</string>
 
@@ -898,7 +903,7 @@
     <string name="model_info_notes_whisper_medium">تعادل خوب بین دقت و مصرف منابع.</string>
     <string name="model_info_best_for_distil_it">بهترین دقت ایتالیایی (4.3%% WER)</string>
     <string name="model_info_notes_distil_it">فقط ایتالیایی. بالاترین دقت برای پیام‌های صوتی ایتالیایی. دقت مهم‌تر از سرعت.</string>
-    <string name="model_info_best_for_qwen3">تشخیص خودکار در 52 زبان</string>
+    <string name="model_info_best_for_qwen3">تشخیص خودکار در 59 زبان</string>
     <string name="model_info_notes_qwen3">وسیع‌ترین پوشش زبانی. توجه: صداهای بلندتر از 30 ثانیه را قطع می‌کند. فقط دستگاه‌های ARM64.</string>
     <string name="model_info_best_for_parakeet">سریع‌ترین رونویسی (17.6x سریع‌تر از Whisper، 5.4%% WER)</string>
     <string name="model_info_notes_parakeet">بدون محدودیت طول صدا. VAD لازم نیست. برای کسانی که سرعت برایشان اولویت است.</string>
@@ -927,9 +932,9 @@
     <string name="external_none_imported">هیچ مدل خارجی وارد نشده است</string>
     <string name="external_section_title">مدل‌های خارجی</string>
     <string name="model_advanced_section">پیشرفته</string>
-    <string name="model_advanced_description">وارد کردن دستی فایل‌های مدل</string>
-    <string name="external_import_folder">انتخاب پوشه</string>
-    <string name="external_import_url">وارد کردن از نشانی</string>
+    <string name="model_advanced_description">وارد کردن‌های خارجی و دانلودهای Gemma</string>
+    <string name="external_import_folder">وارد کردن از پوشه</string>
+    <string name="external_import_url">وارد کردن از پیوند</string>
     <string name="external_url_hint">نشانی مخزن HuggingFace یا نشانی JSON یک مدخل کاتالوگ</string>
     <string name="external_import">وارد کردن</string>
     <string name="external_importing">در حال وارد کردن مدل…</string>
@@ -957,8 +962,8 @@
     <string name="external_decode_language">زبان رمزگشایی</string>
     <string name="external_decode_auto">تشخیص خودکار (بدون زبان ثابت)</string>
     <string name="external_family">خانواده مدل</string>
-    <string name="external_family_transducer">Transducer (NeMo/Zipformer آفلاین)</string>
-    <string name="external_family_transducer_help">فایل‌های encoder + decoder + joiner + tokens لازم دارد</string>
+    <string name="external_family_transducer">Transducer</string>
+    <string name="external_family_transducer_help">فایل‌های encoder + decoder + joiner + tokens لازم دارد (NeMo/Zipformer آفلاین)</string>
     <string name="external_family_whisper">Whisper</string>
     <string name="external_family_whisper_help">فایل‌های encoder + decoder + tokens لازم دارد</string>
     <string name="external_family_ctc">CTC</string>
@@ -1080,7 +1085,6 @@
     <string name="feedback_label_truncated">کوتاه‌شده</string>
     <string name="a11y_expand">باز کردن</string>
     <string name="a11y_collapse">جمع کردن</string>
-    <string name="a11y_back">بازگشت</string>
     <string name="litertlm_importing">در حال وارد کردن…</string>
     <string name="model_ram_warning">ممکن است %1$s روی این دستگاه حافظه کافی نداشته باشد. ممکن است بارگذاری نشود یا کرش کند؛ مدل‌های سبک‌تر مطمئن‌ترند.</string>
     <string name="error_oom_transcription">حافظه برای رونویسی این صدا کافی نیست. فایل کوتاه‌تر یا مدل کوچک‌تری را امتحان کنید، یا برنامه‌های دیگر را ببندید. برای اینکه این تلاش اصلاً انجام نشود، محافظت از حافظه را در تنظیمات > پیشرفته روشن کنید.</string>
@@ -1172,7 +1176,7 @@
     <string name="performance_settings_title">عملکرد و حافظه</string>
     <string name="performance_settings_summary">رشته‌ها، ارائه‌دهنده، محافظت از حافظه و تشخیص خطا</string>
     <string name="automation_settings_title">اتوماسیون و بارگذاری خارجی</string>
-    <string name="automation_settings_summary">گیرنده‌های تسکر، راهنمای broadcast و تخلیه LAN</string>
+    <string name="automation_settings_summary">گیرنده‌های Tasker، راهنمای broadcast و بارگذاری راه دور</string>
     <string name="settings_group_appearance">ظاهر و حس</string>
     <string name="settings_group_history">تاریخچه</string>
     <string name="settings_group_decoding">رمزگشایی و پیش‌نمایش</string>
@@ -1198,4 +1202,31 @@
     <string name="model_shortcut_switch_label">تعویض به %1$s</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">به این رونوشت نشانه‌گذاری، حروف بزرگ و شکستن بندها را اضافه کن. ترجمه نکن، خلاصه نکن و هیچ واژه‌ای را اضافه، حذف، جابه‌جا یا اصلاح نکن: ترتیب واژه‌ها باید دقیقاً همان‌طور بماند که نوشته شده است. فقط رونوشت قالب‌بندی‌شده را برگردان.</string>
+    <!-- TASK-588: the TRANSCRIPTION section advanced-block reveal. -->
+    <string name="settings_advanced_reveal">گزینه‌های پیشرفته (%1$d)</string>
+    <string name="refinement_model_title">مدل بازنویسی</string>
+    <string name="refinement_model_description">مدلی که مرحله دوم استفاده می‌کند. برای استفاده از مدل فعال روی ارث‌بردن بگذارید.</string>
+    <string name="refinement_model_inherit">ارث‌بردن مدل فعال</string>
+    <string name="export_model_bundle">اشتراک‌گذاری مدل برای انتقال آفلاین</string>
+    <string name="external_import_bundle">وارد کردن بسته انتقال</string>
+    <string name="external_models_intro">این بخش مدل‌های جایگزین را در بر دارد: نسخه‌های کوچک برای گوشی‌های با حافظه کم، و مدل‌های بهینه‌شده برای زبان‌های مشخص. بسیاری از آن‌ها از کاتالوگ جامعه‌ای که ما سرپرستی می‌کنیم می‌آیند، اما می‌توانید برنامه را به کاتالوگ شخص ثالث هم اشاره دهید یا کاتالوگ خودتان را میزبانی کنید.</string>
+    <!-- TASK-779 + road-test copy fixes -->
+    <string name="litert_card_title">افزودن مدل Gemma (LiteRT)</string>
+    <string name="gemma_entry_title">دانلودهای Gemma</string>
+    <string name="gemma_entry_subtitle">مرور و دانلود مدل‌های رسمی Gemma</string>
+    <string name="external_section_subtitle">فایل‌های مدلی که خودتان اضافه می‌کنید (پوشه، نشانی یا بسته انتقال) به‌همراه دانلودهای Gemma LiteRT-LM؛ در کنار کاتالوگ داخلی اجرا می‌شوند.</string>
+
+    <!-- TASK-741 (GH #125): the scheduled folder watch -->
+    <string name="folder_watch_title">پایش زمان‌بندی‌شده پوشه</string>
+    <string name="folder_watch_description">پوشه‌هایی را که انتخاب می‌کنید زیر نظر دارد و فایل‌های صوتی جدید را خودکار پیاده‌سازی می‌کند. اسکن‌ها زمانی اجرا می‌شوند که سیستم اجازه دهد؛ ذخیره‌سازهای تهاجمی باتری ممکن است آن‌ها را به تأخیر بیندازند، و اسکن دستی همیشه کار می‌کند.</string>
+    <string name="folder_watch_add">پایش یک پوشه</string>
+    <string name="folder_watch_empty">هنوز پوشه‌ای زیر نظر نیست.</string>
+    <string name="folder_watch_scan_now">همین حالا اسکن کن</string>
+    <string name="folder_watch_remove">حذف</string>
+    <plurals name="folder_watch_period_value">
+        <item quantity="one">هر %1$d ساعت</item>
+        <item quantity="other">هر %1$d ساعت</item>
+    </plurals>
+    <string name="folder_watch_period_label">بازه اسکن</string>
+    <string name="folder_watch_grant_failed">دسترسی به آن پوشه قابل حفظ نبود، بنابراین اضافه نشد. دوباره انتخابش کنید.</string>
 </resources>

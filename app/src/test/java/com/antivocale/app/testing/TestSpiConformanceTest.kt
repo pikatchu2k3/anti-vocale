@@ -24,6 +24,7 @@ class TestSpiConformanceTest {
 
     private fun ops(fake: FakePreferencesManager) =
         TestSpiOps(fake, ExternalModelStore(fake), object : ExternalModelImportOperations {
+            override suspend fun importFromDirectory(src: java.io.File, modelType: String?, family: ModelFamily, options: Map<String, String>, languages: List<String>, streaming: Boolean, displayName: String?): ExternalModelRecord = throw UnsupportedOperationException()
             override suspend fun importFromTreeUri(context: android.content.Context, treeUri: android.net.Uri, modelType: String?, family: ModelFamily, options: Map<String, String>, languages: List<String>, streaming: Boolean): ExternalModelRecord = throw UnsupportedOperationException()
             override suspend fun importFromUrl(url: String, modelType: String?, family: ModelFamily, options: Map<String, String>, languages: List<String>, streaming: Boolean, onProgress: com.antivocale.app.data.ExternalImportProgress): ExternalModelRecord = throw UnsupportedOperationException()
         })
@@ -81,7 +82,9 @@ class TestSpiConformanceTest {
         val json = org.json.JSONObject(ops(fake).handle(TestSpiOps.OP_GET))
         val names = json.names() ?: org.json.JSONArray()
         val getKeys = (0 until names.length()).map { names.getString(it) }
-            .filter { it !in setOf("op", "paths") }
+            // "paths" is structural; scheduledFoldersTruncated is the cap
+            // meta-flag beside its capped row (binder-buffer rationale).
+            .filter { it !in setOf("op", "paths", "scheduledFoldersTruncated") }
 
         // Flows deliberately NOT in get: partial-transcription resume state
         // (write-path only), benchmark history, the one-shot external-migration

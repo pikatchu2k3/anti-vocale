@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.antivocale.app.data.ActiveModelRepository
+import com.antivocale.app.data.ModelBundleCodec
 import com.antivocale.app.data.HuggingFaceTokenManager
 import com.antivocale.app.BuildConfig
 import com.antivocale.app.data.ModelDownloader
@@ -237,6 +238,18 @@ class ModelViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    /**
+     * TASK-786: the active model's display name, for the "in use" line under
+     * the Models tab's language filter. Published by the SAME repository
+     * collector that maintains the saved path (one pipeline, no second
+     * subscription); null while nothing is active or the saved path fails
+     * the collector's file-existence validation (the line must never claim a
+     * model is in use that cannot load). Deliberately not
+     * [UiState.modelName], which other flows write optimistically.
+     */
+    private val _activeModelLabel = MutableStateFlow<String?>(null)
+    val activeModelLabel: StateFlow<String?> = _activeModelLabel.asStateFlow()
 
     private val _filePickerEvent = MutableSharedFlow<Unit>()
     val filePickerEvent: SharedFlow<Unit> = _filePickerEvent.asSharedFlow()
@@ -743,6 +756,7 @@ class ModelViewModel @Inject constructor(
                     // No model selected for this backend: clear the active model display.
                     // Also clear statusMessage so a stale "ready" message from the previously
                     // active backend does not linger after a backend switch.
+                    _activeModelLabel.value = null
                     _uiState.update { it.copy(modelPath = "", modelName = "", statusMessage = "") }
                 } else {
                     // File-existence validation is backend-specific (directory vs file vs custom
@@ -762,6 +776,10 @@ class ModelViewModel @Inject constructor(
                     }
                     val displayName = name ?: path.substringAfterLast("/")
                     val isLlm = BuiltInBackendIds.isLlm(active.backendId)
+                    // The "in use" line only claims a model the files back:
+                    // a saved path whose directory is gone must not assert
+                    // itself above the very cards reporting it missing.
+                    _activeModelLabel.value = if (isValid) displayName else null
                     _uiState.update {
                         it.copy(
                             modelPath = path,
@@ -1203,6 +1221,12 @@ class ModelViewModel @Inject constructor(
                     // retirement ordered BEFORE the shortcut refresh below.
                     shareTargetManager.onModelDeletedNow(LlmTranscriptionBackend.BACKEND_ID)
                     shareShortcutManager.refresh()
+                    // TASK-761: a dead refine pin degrades every two-pass
+                    // run while the dropdown shows "Inherit".
+                    if (preferencesManager.refinementModelBackendId.first() ==
+                        LlmTranscriptionBackend.BACKEND_ID) {
+                        preferencesManager.saveRefinementModelBackendId("")
+                    }
                     _uiState.update { it.copy(
                         modelPath = "",
                         modelName = "",
@@ -1461,6 +1485,11 @@ class ModelViewModel @Inject constructor(
                         // shortcut refresh below (same contract as the LLM site).
                         shareTargetManager.onModelDeletedNow(entryId)
                         shareShortcutManager.refresh()
+                        // TASK-761: the entry has no loadable variant left;
+                        // a pin on it would silently skip every fast pass.
+                        if (preferencesManager.refinementModelBackendId.first() == entryId) {
+                            preferencesManager.saveRefinementModelBackendId("")
+                        }
                     }
                 }
                 updateEntry(entryId) { it.copy(modelPath = activePath) }
@@ -1639,6 +1668,85 @@ class ModelViewModel @Inject constructor(
             family = family, options = options, languages = languages)
     }
 
+    /**
+     * TASK-742 (GH #124): the offline-transfer bundle import. The codec
+     * verifies every sha256 into a staging dir under cacheDir (outside the
+     * orphan sweep's filesRoot), the parsed record params come from the
+     * codec (ONE owner of the manifest vocabulary), and registration rides
+     * the SAME importFromDirectory core as a folder import, so
+     * residency/records stay coherent and the startup sweep cannot eat the
+     * result. A failure surfaces through the same error channel as every
+     * external import.
+     */
+    fun importExternalFromBundle(context: Context, bundleUri: Uri) =
+        runExternalImport("Bundle", onProgress = null) {
+            // TASK-761: the picker's TEMPORARY read grant covers this
+            // one-shot read; no persistable grant is taken, so nothing can
+            // leak (the old callback-side take was never released and
+            // burned one of the 128 grant slots per import).
+            val staging = File(context.cacheDir, "bundle-import-${System.currentTimeMillis()}")
+            try {
+                val manifest = context.contentResolver.openInputStream(bundleUri)?.use { input ->
+                    ModelBundleCodec.import(input, staging)
+                } ?: error("cannot open the selected bundle")
+                val params = ModelBundleCodec.recordParams(manifest)
+                externalModelImporter.importFromDirectory(
+                    src = staging,
+                    modelType = params.modelType,
+                    family = params.family,
+                    options = params.options,
+                    languages = params.languages,
+                    streaming = params.streaming,
+                    displayName = params.displayName,
+                )
+            } finally {
+                staging.deleteRecursively()
+            }
+        }
+
+    /**
+     * TASK-761 (review triage): the offline-transfer bundle export (GH
+     * #124). Streams up to ~1GB through SAF, so it runs on
+     * viewModelScope + IO like the import arm (a compose scope would
+     * cancel it mid-zip when the tab leaves composition). Errors surface
+     * as a log and a toast-free no-op: the share can be retried, the
+     * model is untouched.
+     */
+    fun exportBundle(
+        uri: Uri,
+        dir: File,
+        entry: CatalogEntry,
+        variant: CatalogVariantUi,
+    ) = viewModelScope.launch(Dispatchers.IO) {
+        try {
+            val metadata = ModelBundleCodec.BundleMetadata(
+                displayName = ctx.getString(variant.titleResId),
+                // The IMPORT family (the sherpa import taxonomy), NOT the
+                // entry's architecture string: the manifest round-trips into
+                // ModelFamily on the receiving device.
+                family = ModelBundleCodec
+                    .importFamilyForModelType(entry.modelType)?.name
+                    // Unreachable for the button (it is gated on the same
+                    // predicate); the loud fallback if a future call site
+                    // forgets the gate.
+                    ?: error("model type '${entry.modelType}' is not bundle-transferable"),
+                modelType = entry.modelType,
+                languages = BundledCatalog
+                    .byId(entry.id)?.variants
+                    ?.firstOrNull { it.dirName == variant.variantName }?.languages ?: emptyList(),
+                streaming = entry.isStreaming,
+                options = emptyMap(),
+                appVersion = BuildConfig.VERSION_NAME,
+            )
+            ctx.contentResolver.openOutputStream(uri)?.use { out ->
+                ModelBundleCodec.export(dir, out, metadata)
+            } ?: error("cannot open export target $uri")
+            Log.i(TAG, "Model bundle exported: ${dir.name} -> $uri")
+        } catch (e: Exception) {
+            Log.w(TAG, "Model bundle export failed", e)
+        }
+    }
+
     /** URL import: a HuggingFace repo URL or a catalog-entry JSON URL. */
     fun importExternalFromUrl(
         url: String,
@@ -1712,7 +1820,6 @@ class ModelViewModel @Inject constructor(
         }
     }
 
-    /** Selects an imported model as the active transcription backend. */
     fun useExternalModel(record: ExternalModelRecord) {
         viewModelScope.launch { activateExternalModel(record) }
     }
@@ -1746,6 +1853,13 @@ class ModelViewModel @Inject constructor(
             if (preferencesManager.transcriptionBackend.first() == record.backendId) {
                 preferencesManager.saveTranscriptionBackend(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
                 _uiState.update { it.copy(modelPath = "", modelName = "") }
+            }
+            // TASK-761: a refinement pin on the deleted model would keep
+            // degrading every two-pass run (the orchestrator honors the
+            // pin, the load fails, phase 1 silently skips) while the
+            // dropdown falls back to "Inherit active model".
+            if (preferencesManager.refinementModelBackendId.first() == record.backendId) {
+                preferencesManager.saveRefinementModelBackendId("")
             }
             shareTargetManager.syncAll()
             _snackbarEvent.tryEmit(SnackbarEvent.Message(

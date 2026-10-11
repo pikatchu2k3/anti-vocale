@@ -31,6 +31,7 @@ class BridgeApplication : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var externalModelStore: com.antivocale.app.data.ExternalModelStore
     @Inject lateinit var logDao: com.antivocale.app.data.local.LogDao
+    @Inject lateinit var scheduledFolderStore: com.antivocale.app.data.ScheduledFolderStore
 
     /**
      * Shared process-lifetime scope for startup work that must not block the
@@ -58,11 +59,6 @@ class BridgeApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         com.antivocale.app.data.catalog.BundledCatalog.attach(this)
-        // TASK-684 review: the suspension sweep (below) posts a Retry
-        // notification pointing at files/shared_audio; this 24h cleanup must
-        // not delete the file BEFORE the offer (a freezer kill + reopen >24h
-        // would deterministically offer a re-run of a just-deleted file). The
-        // sweep itself guards on file existence, so this order is sufficient.
         runCatching {
             // TASK-684 review: ORDERING. The suspension sweep (further down)
         // posts a Retry notification pointing at files/shared_audio; this
@@ -75,6 +71,21 @@ class BridgeApplication : Application(), Configuration.Provider {
             com.antivocale.app.util.SharedAudioHandler.cleanupOldFiles(this)
         }.onFailure { e ->
             android.util.Log.w("BridgeApplication", "shared_audio cleanup failed", e)
+        }
+        // TASK-741: reconcile the folder-watch schedules with the records at
+        // every process start (off the main thread; the DataStore read is
+        // disk IO). WorkManager persists periodic work itself, but a crash
+        // between a store write and its sync, or a backup/restore carrying
+        // the DataStore without the WorkManager database, would otherwise
+        // leave watched folders unscheduled until the next UI edit.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                com.antivocale.app.work.ScheduledFolderScheduler.sync(
+                    this@BridgeApplication, scheduledFolderStore.folders(),
+                )
+            }.onFailure { e ->
+                android.util.Log.w("BridgeApplication", "Folder-watch schedule reconcile failed", e)
+            }
         }
         }.onFailure { Log.w("BridgeApplication", "shared_audio cleanup failed", it) }
         // BEFORE syncAll: a persisted "custom-transductor" id must already resolve to an
@@ -93,6 +104,17 @@ class BridgeApplication : Application(), Configuration.Provider {
                 preferencesManager.saveExternalMigrationDone(false)
             }
         }
+        // Road test 2026-10-08: backfill of name-derived languages for
+        // records imported before the derivation existed (paraformer-zh and
+        // friends). Runs at EVERY app start, idempotently (writes only when
+        // something changes): import paths that still pass no languages
+        // rely on the repeated pass. Must stay OUTSIDE the identity
+        // collector above: that collect never completes, so code placed
+        // after it inside the same coroutine never runs (code review).
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { externalModelStore.backfillDerivedLanguages() }
+                .onFailure { android.util.Log.w("BridgeApplication", "language backfill failed", it) }
+        }
         // TASK-736 hardening: the identity listener's COMPONENT follows the
         // preference (ships disabled; the toggle, TEST_SPI, or any other
         // writer flips it here, one owner). distinctUntilChanged: the flow
@@ -106,6 +128,19 @@ class BridgeApplication : Application(), Configuration.Provider {
                 com.antivocale.app.receiver.VoiceNoteIdentityComponent.setEnabled(
                     this@BridgeApplication, enabled)
                 if (!enabled) voiceNoteIdentityCache.clear()
+            }
+        }
+
+        // TASK-785: the Open Transcribe provider component follows its gate
+        // the same one-owner way. The flow replays its cached value at
+        // startup, so this collector subsumes the former startup-only sync
+        // and covers every writer of the preference (the Settings toggle,
+        // TEST_SPI, any future one); setEnabled reads first, so the replay
+        // never churns package state for the default-off case.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            preferencesManager.openTranscribeEnabled.distinctUntilChanged().collect { enabled ->
+                com.antivocale.app.service.OpenTranscribeComponentSync
+                    .setEnabled(this@BridgeApplication, enabled)
             }
         }
 

@@ -40,6 +40,7 @@ import com.antivocale.app.service.ExtractionService
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.service.TranscriptionListener
 import com.antivocale.app.ui.viewmodel.LogEntry
+import com.antivocale.app.ui.components.countAwareString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -181,6 +182,22 @@ class TranscriptionOrchestrator @Inject constructor(
     private var lastPartialSaveMs: Long = 0L
 
     /**
+     * TASK-785: ONE engine, ONE run at a time, across every execution
+     * site. InferenceService serialized its own queue but nothing
+     * serialized the SITES against each other; the Open Transcribe
+     * provider (a bound service an external client can drive at any
+     * moment) is the first site that can genuinely overlap an in-app run,
+     * and two concurrent runs would interleave native decodes on one
+     * recognizer, double-count the memory ceilings and fight over the
+     * single partial-transcription seed. Existing callers never contend
+     * (each already serializes its own requests), so the lock is invisible
+     * to them; a request that arrives while another runs waits here,
+     * BEFORE its heartbeat span arms, so an idle wait never reads as a
+     * live run to the freezer classifier.
+     */
+    private val runMutex = Mutex()
+
+    /**
      * TASK-699 stage 2 (code-review F1/F2): whether THIS run has written a
      * seed. The run-level heartbeat ticks only when this is set, so a run
      * that never seeds (subtitle import/extract, text LLM) costs no ticks,
@@ -263,11 +280,13 @@ class TranscriptionOrchestrator @Inject constructor(
         // everything between, which the per-stretch chase kept missing. The
         // subtitle arms never seed (verified: no savePartial in their
         // scopes) so their stay inside the span is a no-op.
-        return withSeedHeartbeat {
-            processRequestInner(
-                taskId, requestType, prompt, filePath, source, sourcePackage,
-                backendOverride, languageOverride, trackIndex, queuePosition,
-                queueTotal, context, cacheDir, listener, coroutineScope)
+        return runMutex.withLock {
+            withSeedHeartbeat {
+                processRequestInner(
+                    taskId, requestType, prompt, filePath, source, sourcePackage,
+                    backendOverride, languageOverride, trackIndex, queuePosition,
+                    queueTotal, context, cacheDir, listener, coroutineScope)
+            }
         }
     }
 
@@ -376,18 +395,33 @@ class TranscriptionOrchestrator @Inject constructor(
                 Log.w(TAG, "First pass machinery failed; single-model run", it)
             }.getOrNull()
             val requestedBackendId = backendOverride ?: preferencesManager.transcriptionBackend.first()
-            if (fastFirstPass != null) {
+            // TASK-740 (GH #127): the pin the first pass carried out (read
+            // only when the two-pass was a candidate); applied as the
+            // phase-2 backend, never diverting a single-model run.
+            val refineBackendOverride = fastFirstPass?.refinePin
+            val phase2BackendId = refineBackendOverride ?: requestedBackendId
+            // Derived lazily (only when the two-pass ran) and defensively:
+            // the derivation reads backend state that an early-failing run
+            // (no file, load refusal) never reached, and a failure here must
+            // degrade to a skipped status line, never fail the run.
+            val phase2Name = fastFirstPass?.let {
+                runCatching { displayNameForBackend(context, phase2BackendId) }.getOrNull()
+            }
+            if (phase2Name != null) {
                 // Phase transition: the row keeps the first-pass text; the
                 // notification says what is happening now (the design's
                 // "Refining with <model>..." line).
                 runCatching {
-                    val name = displayNameForBackend(context, requestedBackendId)
-                    listener.onStatusUpdate(context.getString(R.string.refining_status, name))
+                    listener.onStatusUpdate(context.getString(R.string.refining_status, phase2Name))
                 }
             }
 
-            // Ensure the correct backend is loaded
-            val loadResult = ensureBackendLoaded(context, backendOverride, languageOverride)
+            // Ensure the correct backend is loaded. TASK-740: the pin replaces
+            // the active preference here; WITHOUT a pin the null flows on so
+            // the loader re-reads the preference itself (passing the resolved
+            // phase2BackendId would freeze this line's earlier read and change
+            // mid-run semantics after a Settings flip during phase 1).
+            val loadResult = ensureBackendLoaded(context, refineBackendOverride ?: backendOverride, languageOverride)
             // GH #45 / TASK-734/TASK-463: the credit writes AFTER the load's
             // path resolution (which persists the corrected variant path) and
             // BEFORE the decode: the failure row and the F4 arm keep the
@@ -395,7 +429,7 @@ class TranscriptionOrchestrator @Inject constructor(
             // stale saved one. Metadata only: rethrow cancellation (the
             // contract above), never break the run for the credit.
             runCatching {
-                logDao.setModelName(taskId, displayNameForBackend(context, requestedBackendId))
+                logDao.setModelName(taskId, phase2Name ?: displayNameForBackend(context, phase2BackendId))
             }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it
             }
@@ -670,7 +704,8 @@ class TranscriptionOrchestrator @Inject constructor(
                     }
                     val isNoModel = isNoModelConfiguredError(error)
                     listener.onError(taskId, "INFERENCE_ERROR", userMsg, isShareRequest, isNoModel, duration,
-                        isMemoryFailure = isMemoryClassFailure(error))
+                        isMemoryFailure = isMemoryClassFailure(error),
+                        isDecodeError = isDecodeFamilyError(error))
                 }
             )
 
@@ -723,7 +758,8 @@ class TranscriptionOrchestrator @Inject constructor(
             } else {
                 errorMsg
             }
-            listener.onError(taskId, "PROCESSING_ERROR", userMsg, isShareRequest, false, duration)
+            listener.onError(taskId, "PROCESSING_ERROR", userMsg, isShareRequest, false, duration,
+                isDecodeError = isDecodeFamilyError(e))
             return Result.failure(e)
         } finally {
             if (backendOverride != null) {
@@ -1605,7 +1641,8 @@ class TranscriptionOrchestrator @Inject constructor(
             preference = languagePref,
         )
         val label = when (val d = entry.display) {
-            is CatalogDisplay.Resource -> context.getString(CatalogStringKeys.resolve(d.key))
+            is CatalogDisplay.Resource -> context.countAwareString(
+                CatalogStringKeys.resolve(d.key), entry.titleCountArg())
             is CatalogDisplay.Literal -> d.text
         }
         val load = configureSherpaBackend(
@@ -1710,12 +1747,21 @@ class TranscriptionOrchestrator @Inject constructor(
         coroutineScope: CoroutineScope,
         onSkipped: (DualRefinementPolicy.SkipOutcome) -> Unit = {},
     ): FirstPassOutcome? {
+        // TASK-740 (GH #127): the pin is read HERE (a two-pass candidate is
+        // the only consumer; single-model runs never pay the read) and rides
+        // the outcome to the caller, which applies it to the phase-2 load.
+        // Defensive (the collectSpeakers idiom): a source that cannot answer
+        // degrades to inherit-active, never failing the pass.
+        val refinePin = runCatching {
+            preferencesManager.refinementModelBackendId.first()
+        }.getOrDefault("").takeIf(String::isNotBlank)
         val fastId = DualRefinementPolicy.fastBackendFor(
             requestType = requestType,
             backendOverride = backendOverride,
             refinementEnabled = preferencesManager.refinementEnabled.first(),
             selectedBackendId = preferencesManager.transcriptionBackend.first(),
             streamingBackendId = installedStreamingBackendId(context),
+            refineOverride = refinePin,
         ) ?: return null
 
         // F1: a fast-model load failure skips phase 1 silently; the run
@@ -1778,6 +1824,7 @@ class TranscriptionOrchestrator @Inject constructor(
             segments = outcome.segments,
             isPartial = outcome.isPartial,
             failedChunkCount = outcome.failedChunkCount,
+            refinePin = refinePin,
         )
     }
 
@@ -4124,6 +4171,21 @@ class TranscriptionOrchestrator @Inject constructor(
          *  a two-pass run refined it (null on single-model runs). */
         firstPassTranscript: String? = null,
     ) {
+        // TASK-785: the run-terminal cleanup is UNCONDITIONAL; only the row
+        // write below stays row-conditional (a user-deleted row stays
+        // deleted, no resurrect). Gating the cleanup on the row left a
+        // rowless caller (the Open Transcribe provider, or a delete mid
+        // flight) with a stale partial seed that surfaced much later as a
+        // false "was interrupted" recovery offer, and forced every direct
+        // caller into a logQueued pre-flight ritual.
+        // TASK-699: the clear rides the SAME mutex as the heartbeat tick's
+        // read+write, making clear-vs-tick atomic: a tick either completed
+        // before the clear (mutex) or starts after it (the seed is already
+        // null, the isNullOrBlank guard no-ops). No join, no field, no
+        // ordering hazard - and no resurrection window (TASK-692 class).
+        seedSaveMutex.withLock { preferencesManager.clearPartialTranscriptionState() }
+        lastPartialSaveMs = 0L
+        lastInterimRoomWriteMs.remove(taskId)
         val entity = logDao.getByTaskId(taskId) ?: return
         logDao.update(entity.toLogEntry().copy(
             status = LogEntry.Status.SUCCESS, result = result, durationMs = durationMs,
@@ -4137,34 +4199,20 @@ class TranscriptionOrchestrator @Inject constructor(
             detectedLanguage = detectedLanguage,
             languagePin = languagePin
         ).toEntity())
-        // TASK-699: the clear rides the SAME mutex as the heartbeat tick's
-        // read+write, making clear-vs-tick atomic: a tick either completed
-        // before the clear (mutex) or starts after it (the seed is already
-        // null, the isNullOrBlank guard no-ops). No join, no field, no
-        // ordering hazard - and no resurrection window (TASK-692 class).
-        seedSaveMutex.withLock { preferencesManager.clearPartialTranscriptionState() }
-        lastPartialSaveMs = 0L
-        lastInterimRoomWriteMs.remove(taskId)
-        // TASK-713 (GH #112 second half): seed a received-note language into
-        // the Models filter favorites on the first qualifying arrival. Guard
-        // chain: a genuine SHARE-origin run (isShareRequest: browse,
-        // retranscribe and benchmark runs must not seed; review F1), a
-        // detected language covered by the filter's offered set, and the
-        // preference still NULL (the untouched tri-state: "" is an explicit
-        // user clear or an uncovered tour seed, never re-seeded). Two
-        // near-simultaneous qualifying shares can both pass the null read
-        // (last writer wins the favorite): accepted, one write either way;
-        // favorites never force a decode language (TASK-457).
-        if (detectedLanguage != null && isShareRequest) {
-            val seed = Language.onboardingFavoriteSeed(detectedLanguage)
-            if (seed != null && preferencesManager.modelFilterLanguage.first() == null) {
-                preferencesManager.saveModelFilterLanguage(seed)
-                Log.i(TAG, "Seeded Models filter favorite from first received note: $seed (TASK-713)")
-            }
-        }
+        // TASK-713's first-note seeding (GH #112 second half) was REMOVED by
+        // maintainer direction (2026-10-08 road test): the Models filter
+        // default is "All languages" and only an explicit user pick changes
+        // it. The tour-completion seed went with it.
     }
 
     private suspend fun logError(taskId: String, errorMessage: String, durationMs: Long = 0) {
+        // TASK-785: unconditional run-terminal cleanup, mirroring logSuccess.
+        // TASK-699: same mutex discipline as logSuccess (see there); the
+        // error path is the WORSE resurrection case (persistPipelineFailure
+        // writes the seed right before this clear on mid-stream failures).
+        seedSaveMutex.withLock { preferencesManager.clearPartialTranscriptionState() }
+        lastPartialSaveMs = 0L
+        lastInterimRoomWriteMs.remove(taskId)
         val entity = logDao.getByTaskId(taskId) ?: return
         // TASK-568: durationMs on an ERROR row is the decoded-at-failure
         // seconds written by the streaming catches (updateFailureDecodedMs),
@@ -4176,15 +4224,9 @@ class TranscriptionOrchestrator @Inject constructor(
             status = LogEntry.Status.ERROR, errorMessage = errorMessage,
             durationMs = if (durationMs > 0) durationMs else entity.durationMs
         ).toEntity())
-        // TASK-699: same mutex discipline as logSuccess (see there); the
-        // error path is the WORSE resurrection case (persistPipelineFailure
-        // writes the seed right before this clear on mid-stream failures).
-        seedSaveMutex.withLock { preferencesManager.clearPartialTranscriptionState() }
-        lastPartialSaveMs = 0L
-        lastInterimRoomWriteMs.remove(taskId)
     }
 
-    private suspend fun cancelIfPending(taskId: String, errorMessage: String, durationMs: Long) {
+    internal suspend fun cancelIfPending(taskId: String, errorMessage: String, durationMs: Long) {
         lastInterimRoomWriteMs.remove(taskId)
         logDao.failNonTerminal(taskId, errorMessage, durationMs)
     }
