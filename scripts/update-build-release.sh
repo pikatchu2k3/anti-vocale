@@ -17,7 +17,13 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-$(grep '^GITHUB_TOKEN=' ~/.hermes/.env | cut -d= -
 export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
 export JAVA_HOME="${JAVA_HOME:-/opt/jdk-21.0.6+7}"
 export PATH="$JAVA_HOME/bin:$PATH"
-export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx4096m"
+# Speicher: Cron-Worker laufen in einem eigenen cgroup mit 4-GiB-Deckel
+# (Hermes: min(Gateway-Cgroup, halber RAM, 4 GiB)). Gradle + Kotlin-Daemon + aapt2
+# sprengen den schon durch reinen JVM-Overhead — am 11.10.2026 hat der Kernel den Lauf
+# nach 46 s per OOM-Killer beendet (Status -15, kein Ergebnis, kein Log).
+# Deshalb: bescheidener Heap UND der Build in einem eigenen, größeren Scope.
+export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=768m"
+BUILD_MEMORY_MAX="${BUILD_MEMORY_MAX:-6G}"
 MARKER="$HOME/.hermes/anti-vocale-last-error.txt"
 
 cd "$REPO_DIR"
@@ -96,10 +102,25 @@ TAG="v$(date +%Y.%m.%d)"
 export VERSION_NAME="$TAG"
 export VERSION_CODE="$(date +%Y%m%d)"
 
-step "[4/6] Build ($GRADLE_TASK, $TAG)"
-if ! { ./gradlew "$GRADLE_TASK" 2>&1 | tail -25; } >&2; then
-  fail "BUILD FEHLGESCHLAGEN (Repair: Log pruefen)"
+step "[4/6] Build ($GRADLE_TASK, $TAG, Scope $BUILD_MEMORY_MAX)"
+# Eigener Scope: er läuft als Geschwister des Worker-Cgroups in app.slice und erbt dessen
+# 4-GiB-Deckel damit NICHT (--collect räumt ihn nach dem Lauf weg). Das vollständige Log
+# bleibt auf der Platte — beim OOM-Abbruch war vorher gar nichts nachlesbar.
+BUILD_LOG="$HOME/.hermes/logs/anti-vocale-build.log"
+mkdir -p "$(dirname "$BUILD_LOG")"
+# Vorhandene Daemons zuerst stoppen: ein Daemon, der in einem FRÜHEREN (engeren) Scope
+# gestartet wurde, lebt dort weiter und wird von gradlew wiederverwendet — er schleppt
+# dann dessen Speicherdeckel mit, und der eigene Scope nützt nichts. Genau daran ist der
+# zweite Prüflauf gescheitert (OOM-Kill im alten Scope, „build daemon disappeared").
+./gradlew --stop >/dev/null 2>&1 || true
+if ! systemd-run --user --scope --quiet --collect \
+        -p "MemoryMax=$BUILD_MEMORY_MAX" -p MemorySwapMax=2G \
+        -- ./gradlew "$GRADLE_TASK" --no-daemon --max-workers=2 \
+           -Dkotlin.daemon.jvmargs=-Xmx1024m > "$BUILD_LOG" 2>&1; then
+  tail -25 "$BUILD_LOG" >&2
+  fail "BUILD FEHLGESCHLAGEN (Repair: $BUILD_LOG pruefen)"
 fi
+tail -3 "$BUILD_LOG" >&2
 
 APK="$(ls -t app/build/outputs/apk/fdroid/debug/${ABI_GLOB} 2>/dev/null | head -1)"
 [ -n "$APK" ] && [ -f "$APK" ] || fail "APK nicht gefunden (Glob: $ABI_GLOB)"

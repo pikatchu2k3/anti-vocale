@@ -667,9 +667,24 @@ class InferenceService : Service(), TranscriptionListener {
                 // diarized runs), not the raw stored transcript.
                 val annotatedText = SubtitleFormatter.annotatedOrStored(resultText, segments)
                 val copied = autoCopyIfEnabled(annotatedText, sourcePackage)
-                saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
+                val saveResult = saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
                 val refinedFrom = refinementOutcome?.takeIf { it != DualRefinementPolicy.NOT_REFINED }
-                showResultNotification(annotatedText, sourcePackage, taskId, confidence, detectedLanguage, isPartial, failedChunkCount, copiedToClipboard = copied, streamedWithoutVad = streamedWithoutVad, refinedFrom = refinedFrom, notRefined = refinementOutcome == DualRefinementPolicy.NOT_REFINED, segments = segments)
+                // Upstream TASK-757 hat das Posten in ResultNotificationFactory.postResult
+                // verschoben; die frueher hier aufgerufene private showResultNotification gibt
+                // es nicht mehr. Fork-Verhalten bleibt: dieser Pfad postet weiterhin
+                // bedingungslos (nicht auf isShareRequest eingeschraenkt).
+                resultNotificationFactory.postResult(
+                    preferencesManager, perAppPreferencesManager,
+                    annotatedText, segments, saveResult,
+                    sourcePackage, taskId, confidence, detectedLanguage,
+                    isPartial, failedChunkCount,
+                    copiedToClipboard = copied,
+                    streamedWithoutVad = streamedWithoutVad,
+                    refinedFrom = refinedFrom,
+                    notRefined = refinementOutcome == DualRefinementPolicy.NOT_REFINED,
+                    repetitionSuspected = repetitionSuspected,
+                    originTag = "InferenceService",
+                )
             } finally {
                 pendingResultNotifications.remove(coroutineContext[Job])
             }
