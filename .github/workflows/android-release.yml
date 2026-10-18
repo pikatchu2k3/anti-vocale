@@ -222,9 +222,10 @@ jobs:
           path: app/build/outputs/apk/fdroid/release/app-fdroid-*-release-unsigned.apk
 
       - name: Upload Release AAB artifact
-        if: >-
-          (github.event_name == 'release' && github.event.action == 'published') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != '')
+        # Keys on the AAB build itself: the event matrix alone made this step fail
+        # on a fork that has no Play secrets (the AAB step is gated off there, so
+        # there is nothing to upload). Same pattern as the R8 mapping upload below.
+        if: steps.playstore-aab.outcome == 'success'
         # TASK-683.9: node24-native major (see the test-job comment).
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

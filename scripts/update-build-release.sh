@@ -103,7 +103,15 @@ fi
 # der Release-POST liefe in HTTP 422).
 TAG="${TAG:-v$(date +%Y.%m.%d)}"
 export VERSION_NAME="$TAG"
-export VERSION_CODE="$(date +%Y%m%d)"
+# versionCode aus dem TAG ableiten (v2026.10.19 -> 20261019, per-ABI kommt +1/+2/+4 dazu):
+# aus `date` abgeleitet kollidierten zwei Builds am selben Kalendertag (v2026.10.18 und
+# v2026.10.19 trugen beide 202610182). Acht Ziffern = Datumsform, sonst Datum als Fallback.
+TAG_DIGITS="$(printf '%s' "${TAG#v}" | tr -d '.')"
+case "$TAG_DIGITS" in
+  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) VERSION_CODE="${VERSION_CODE:-$TAG_DIGITS}" ;;
+  *) VERSION_CODE="${VERSION_CODE:-$(date +%Y%m%d)}" ;;
+esac
+export VERSION_CODE
 
 step "[4/6] Build ($GRADLE_TASK, $TAG, Scope $BUILD_MEMORY_MAX)"
 # Eigener Scope: er läuft als Geschwister des Worker-Cgroups in app.slice und erbt dessen
