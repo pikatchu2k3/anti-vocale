@@ -38,6 +38,13 @@ env:
   # instead of repeating the event matrix inline; the runbook's dispatch-mode
   # section remains the source of truth for what each mode means.
   TAG_ANCHORED: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '') }}
+  # FORK-GUARD (pikatchu2k3/anti-vocale): die Release-Maschinerie unten gehoert
+  # dem Upstream — Play-Store-Upload braucht dessen Secrets, die reproduzierbaren
+  # F-Droid-Referenzen brauchen die Recipe aus paoloantinori/fdroid-data-mirror
+  # (dort nur Leserecht). Die Bedingungen mit github.repository == 'RisorseArtificiali/anti-vocale'
+  # halten diese Schritte im Fork aus dem Weg: dort laufen Test + Build (gruen, inkl.
+  # lintVitalRelease) als Nachweis, das Release selbst kommt aus
+  # scripts/update-build-release.sh (per-ABI Debug-APK, Obtainium-Kanal).
 
 jobs:
   # TASK-683.9: every runs-on in this file is pinned to ubuntu-24.04 because
@@ -185,8 +192,9 @@ jobs:
       - name: Build Release AAB
         id: playstore-aab
         if: >-
-          (github.event_name == 'release' && github.event.action == 'published') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != '')
+          github.repository == 'RisorseArtificiali/anti-vocale' &&
+          ((github.event_name == 'release' && github.event.action == 'published') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != ''))
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
           echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties
@@ -195,8 +203,9 @@ jobs:
 
       - name: Extract release notes
         if: >-
-          (github.event_name == 'release' && github.event.action == 'published') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != '')
+          github.repository == 'RisorseArtificiali/anti-vocale' &&
+          ((github.event_name == 'release' && github.event.action == 'published') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != ''))
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
@@ -243,8 +252,9 @@ jobs:
 
       - name: Upload release notes artifact
         if: >-
-          (github.event_name == 'release' && github.event.action == 'published') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != '')
+          github.repository == 'RisorseArtificiali/anti-vocale' &&
+          ((github.event_name == 'release' && github.event.action == 'published') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != ''))
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-notes
@@ -315,7 +325,7 @@ jobs:
       # attach steps below are for the legacy workflow-publishes mode; skip
       # them when the canonical signed set is already on the release.
       - name: Probe release for canonical assets
-        if: env.TAG_ANCHORED == 'true'
+        if: env.TAG_ANCHORED == 'true' && github.repository == 'RisorseArtificiali/anti-vocale'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -328,7 +338,7 @@ jobs:
             echo "canonical set incomplete on $REL_TAG: attach steps will run"
           fi
       - name: Attach APKs to GitHub Release
-        if: env.TAG_ANCHORED == 'true' && env.RELEASE_ASSETS_PRESENT != 'true'
+        if: env.TAG_ANCHORED == 'true' && env.RELEASE_ASSETS_PRESENT != 'true' && github.repository == 'RisorseArtificiali/anti-vocale'
         # TASK-683.9: v3 is the node24 runtime line; v3.0.0 is a runtime move only, no input changes.
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
@@ -343,7 +353,7 @@ jobs:
       # Issue #32: direct-download tester APKs (no GitHub login needed, unlike
       # workflow artifacts). Same trigger conditions as the attach step above.
       - name: Attach tester APKs to GitHub Release
-        if: env.TAG_ANCHORED == 'true'
+        if: env.TAG_ANCHORED == 'true' && github.repository == 'RisorseArtificiali/anti-vocale'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ github.event.inputs.tag || '' }}
@@ -374,8 +384,9 @@ jobs:
     name: Publish to Play Store
     runs-on: ubuntu-24.04
     if: >-
-      (github.event_name == 'release' && github.event.action == 'published') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != '')
+      github.repository == 'RisorseArtificiali/anti-vocale' &&
+      ((github.event_name == 'release' && github.event.action == 'published') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.play-store-track != ''))
     # TASK-683.6: `needs: build` alone let a red test suite reach the production
     # environment gate (the human approver was the only barrier). tests must
     # pass before publish is even scheduled.
@@ -442,8 +453,9 @@ jobs:
     # carried no signed APKs. The decision itself is harmless when no release
     # exists: assets_ok=false -> skip=false -> the rebuild runs.
     if: >-
-      github.event_name == 'release' ||
-      github.event_name == 'workflow_dispatch' 
+      github.repository == 'RisorseArtificiali/anti-vocale' &&
+      (github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch')
     outputs:
       skip: ${{ steps.decide.outputs.skip }}
     steps:

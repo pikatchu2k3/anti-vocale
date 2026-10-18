@@ -98,7 +98,10 @@ if ! bash scripts/fetch-sherpa-aar.sh >&2; then
 fi
 
 # Tag VOR dem Build berechnen und in die APK backen (Obtainium-Vergleich Tag == versionName)
-TAG="v$(date +%Y.%m.%d)"
+# Override: TAG=... im Aufruf erlaubt einen bewusst hoeheren Tag (z.B. ein zweiter
+# Build am selben Kalendertag — derselbe Tag waere fuer Obtainium kein Update und
+# der Release-POST liefe in HTTP 422).
+TAG="${TAG:-v$(date +%Y.%m.%d)}"
 export VERSION_NAME="$TAG"
 export VERSION_CODE="$(date +%Y%m%d)"
 
