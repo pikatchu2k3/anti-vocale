@@ -1,5 +1,6 @@
 package com.antivocale.app.ui.tabs
 
+import com.antivocale.app.service.ResultNotificationFactory
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.*
@@ -28,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -344,18 +347,104 @@ private fun cancelTask(context: Context, taskId: String) {
 private fun shareTranscription(context: Context, text: String) {
     // TASK-650 F5: sharing is an exit surface here too.
     val sig = com.antivocale.app.util.TranscriptSignature.lastResolved
+    sharePlainText(
+        context,
+        com.antivocale.app.util.TranscriptSignature.apply(text, sig.text, sig.position))
+}
+
+/**
+ * TASK-800 (GH #128 pt 3): share the row in the chosen export format. The
+ * format rides resolveExport (the fail-safe gate: a timed format without
+ * usable cues degrades to plain txt, same as the file exports). The STORED
+ * transcript goes in (annotatedOrStored reproduces the row's speaker-
+ * annotated text for the txt exits; the timed formats stay cue-derived).
+ * TXT and TXT_TIMED share as inline text; SRT/VTT share a uniquely named
+ * file from cacheDir/share via FileProvider, written off the main thread
+ * and guarded (a share tap must never crash).
+ */
+private fun shareInFormat(
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: Context,
+    format: com.antivocale.app.util.SubtitleFormatter.Format,
+    transcript: String,
+    segmentsJson: String?,
+    failedChunkCount: Int,
+) {
+    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        // Review F1: parse + render + sign ALL run off-main (a streamed
+        // transcript's cue list is thousands of entries); only the chooser
+        // hops back to the main thread.
+        val sig = com.antivocale.app.util.TranscriptSignature.lastResolved
+        val outcome = runCatching {
+            val segments = com.antivocale.app.data.local.TimedSegmentsConverter.fromJson(segmentsJson)
+            val decision = com.antivocale.app.util.SubtitleFormatter.resolveExport(
+                format, transcript, segments, failedChunkCount)
+            // Review F6: ONE signature-assembly path; signedExport covers
+            // both the inline-txt and the file arms.
+            val signed = com.antivocale.app.util.TranscriptFileSaver.signedExport(
+                decision, sig.text, sig.position)
+            if (decision.format != com.antivocale.app.util.SubtitleFormatter.Format.SRT &&
+                decision.format != com.antivocale.app.util.SubtitleFormatter.Format.VTT
+            ) {
+                return@runCatching ShareOutcome.Inline(signed)
+            }
+            // Review F2: real uniqueness (createTempFile), not a
+            // second-granularity stamp two fast shares would share.
+            val shareDir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File.createTempFile(
+                "transcript_", ".${decision.format.extension}", shareDir)
+            file.writeText(signed)
+            ShareOutcome.File(
+                androidx.core.content.FileProvider.getUriForFile(
+                    context, context.packageName + ".fileprovider", file),
+                decision.format.mime)
+        }
+        outcome.onSuccess { result ->
+            val sendIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                when (result) {
+                    is ShareOutcome.Inline -> {
+                        putExtra(Intent.EXTRA_TEXT, result.text)
+                        type = "text/plain"
+                    }
+                    is ShareOutcome.File -> {
+                        putExtra(Intent.EXTRA_STREAM, result.uri)
+                        type = result.mime
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                context.startActivity(
+                    Intent.createChooser(sendIntent, context.getString(R.string.share_transcription)))
+            }
+        }.onFailure {
+            android.util.Log.w("HistoryTab", "timed-format share failed", it)
+        }
+    }
+}
+
+/** The share dispatch shape after the off-main rework. */
+private sealed interface ShareOutcome {
+    data class Inline(val text: String) : ShareOutcome
+    data class File(val uri: android.net.Uri, val mime: String) : ShareOutcome
+}
+
+@Composable
+private fun ShareFormatOption(label: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Text(label)
+    }
+}
+
+private fun sharePlainText(context: Context, content: String) {
     val sendIntent = Intent().apply {
         action = Intent.ACTION_SEND
-        putExtra(
-            Intent.EXTRA_TEXT,
-            com.antivocale.app.util.TranscriptSignature.apply(text, sig.text, sig.position))
+        putExtra(Intent.EXTRA_TEXT, content)
         type = "text/plain"
     }
-    val shareIntent = Intent.createChooser(
-        sendIntent,
-        context.getString(R.string.share_transcription)
-    )
-    context.startActivity(shareIntent)
+    context.startActivity(
+        Intent.createChooser(sendIntent, context.getString(R.string.share_transcription)))
 }
 
 /**
@@ -530,6 +619,7 @@ fun HistoryTab(
     val pendingLongAudioWarning by viewModel.pendingLongAudioWarning.collectAsState()
     val showRetranscribeButton by viewModel.showRetranscribeButton.collectAsState()
     val compactActions by viewModel.compactResultActions.collectAsState()
+    val advancedShare by viewModel.advancedShareFormats.collectAsState()
 
     if (retranscribeTarget != null) {
         val retranscribeBackends by produceState(
@@ -566,11 +656,15 @@ fun HistoryTab(
 
     // Undo deletion via Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
+    // The undo prompt fires from a non-composable coroutine, so both
+    // strings resolve here in composition.
+    val entryDeletedMessage = stringResource(R.string.logs_entry_deleted)
+    val undoLabel = stringResource(R.string.logs_undo)
     LaunchedEffect(recentlyDeletedEntry) {
         val entry = recentlyDeletedEntry ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
-            message = context.getString(R.string.logs_entry_deleted),
-            actionLabel = context.getString(R.string.logs_undo),
+            message = entryDeletedMessage,
+            actionLabel = undoLabel,
             duration = SnackbarDuration.Short
         )
         if (result == SnackbarResult.ActionPerformed) {
@@ -845,6 +939,7 @@ fun HistoryTab(
                         viewModel = viewModel,
                         onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
                         compactActions = compactActions,
+                        advancedShareFormats = advancedShare,
                         onNavigateToSettings = onNavigateToSettings,
                         onOpenLanguageSetting = onOpenLanguageSetting,
                     )
@@ -1146,6 +1241,8 @@ fun LogEntryItem(
     firstPassLabel: String = "",
     /** TASK-595: the first-pass transcript via the lean per-row flow. */
     firstPassTranscript: String? = null,
+    /** TASK-800: the row's raw cue JSON (lean per-row read). */
+    rowSegmentsJson: String? = null,
     searchQuery: String = "",
     expanded: Boolean = false,
     onExpandChange: (Boolean) -> Unit = {},
@@ -1153,6 +1250,8 @@ fun LogEntryItem(
     onDelete: (() -> Unit)? = null,
     onCancel: (() -> Unit)? = null,
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+    /** TASK-800: the Share… format-picker button; default OFF. */
+    advancedShareFormats: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
     onNavigateToSettings: (() -> Unit)? = null,
     onOpenLanguageSetting: (() -> Unit)? = null,
     /** TASK-546: render the language chip (the Settings flag's value). */
@@ -1172,6 +1271,7 @@ fun LogEntryItem(
     showTechnicalDetails: Boolean,
 ) {
     val context = LocalContext.current
+    val rowScope = rememberCoroutineScope()
     var contextMenuExpanded by remember { mutableStateOf(false) }
     val menuActions = remember(log.id, log.status, log.result, onRetranscribe) {
         buildContextMenuActions(log, canRetranscribe = onRetranscribe != null)
@@ -1567,6 +1667,25 @@ fun LogEntryItem(
                                     )
                                 }
                             }
+                            // TASK-820 (GH #128): the row-scoped auto-save
+                            // outcome, persisted for every save attempt (the
+                            // subtext rides only the share-only result
+                            // notification, so the ROW is the durable surface).
+                            // The derivation is the factory's shared
+                            // saveOutcomeLine: the two surfaces cannot drift.
+                            val outcomeMessage = ResultNotificationFactory.saveOutcomeMessage(
+                                log.savedFolderName, log.savedFileName, log.saveFailureReason)
+                            ResultNotificationFactory.saveOutcomeLineSpec(outcomeMessage)?.let { (res, args) ->
+                                Text(
+                                    text = stringResource(res, *args),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (outcomeMessage is ResultNotificationFactory.SaveOutcomeMessage.Failed) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
                             // TASK-583 (GH #110): error color: the text needs
                             // a human look even though delivery stands.
                             if (remember(log.processingContext) {
@@ -1618,13 +1737,81 @@ fun LogEntryItem(
                                     labelRes = R.string.copy,
                                     contentDescriptionRes = R.string.copy_transcription
                                 )
-                                // Share button
+                                // TASK-800 (GH #128 pt 3, maintainer UX
+                                // direction): TWO share entries. The plain
+                                // one shares text in a single tap (the
+                                // reasonable default); the ellipsis one
+                                // opens the format picker (timed/subtitle
+                                // formats, the advanced path).
+                                var shareFormatOpen by remember { mutableStateOf(false) }
                                 ResultActionButton(
                                     compact = compactActions,
                                     onClick = { shareTranscription(context, displayResult) },
                                     icon = Icons.Default.Share,
                                     labelRes = R.string.share_transcription
                                 )
+                                if (advancedShareFormats) {
+                                    ResultActionButton(
+                                        compact = compactActions,
+                                        onClick = { shareFormatOpen = true },
+                                        icon = Icons.AutoMirrored.Filled.Send,
+                                        labelRes = R.string.share_transcription_more,
+                                        contentDescriptionRes = R.string.share_format_title
+                                    )
+                                }
+                                if (shareFormatOpen) {
+                                    androidx.compose.material3.AlertDialog(
+                                        onDismissRequest = { shareFormatOpen = false },
+                                        title = { Text(stringResource(R.string.share_format_title)) },
+                                        text = {
+                                            Column {
+                                                // TASK-800 trial round 4 (maintainer report):
+                                                // picking a timed format on a row without cues
+                                                // silently delivered plain text (the fail-safe
+                                                // gate). The picker now states the fact: timed
+                                                // rows stay enabled (the gate also protects
+                                                // failed-chunk rows) but a row with NO stored
+                                                // cues gets the reason under its options.
+                                                val hasCues = remember(rowSegmentsJson, log.segments) {
+                                                    // Same source the dispatch reads: the list
+                                                    // projection keeps log.segments null.
+                                                    !(rowSegmentsJson ?: log.segments).isNullOrBlank()
+                                                }
+                                                listOf(
+                                                    R.string.share_format_txt to com.antivocale.app.util.SubtitleFormatter.Format.TXT,
+                                                    R.string.share_format_timed to com.antivocale.app.util.SubtitleFormatter.Format.TXT_TIMED,
+                                                    R.string.share_format_srt to com.antivocale.app.util.SubtitleFormatter.Format.SRT,
+                                                    R.string.share_format_vtt to com.antivocale.app.util.SubtitleFormatter.Format.VTT,
+                                                ).forEach { (labelRes, fmt) ->
+                                                    ShareFormatOption(
+                                                        label = stringResource(labelRes),
+                                                    ) {
+                                                        shareFormatOpen = false
+                                                        // The STORED transcript (review F1): the txt
+                                                        // exits re-derive the speaker-annotated form;
+                                                        // timed formats are cue-derived regardless.
+                                                        shareInFormat(
+                                                            rowScope, context, fmt,
+                                                            log.result, rowSegmentsJson ?: log.segments, log.failedChunkCount)
+                                                    }
+                                                }
+                                                if (!hasCues) {
+                                                    Text(
+                                                        stringResource(R.string.share_format_no_cues),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {},
+                                        dismissButton = {
+                                            TextButton(onClick = { shareFormatOpen = false }) {
+                                                Text(stringResource(android.R.string.cancel))
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1817,6 +2004,7 @@ private fun LogEntryWithSwipe(
     viewModel: LogsViewModel,
     onRetranscribe: (() -> Unit)? = null,
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
+    advancedShareFormats: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
     onNavigateToSettings: (() -> Unit)? = null,
     onOpenLanguageSetting: (() -> Unit)? = null,
 ) {
@@ -1842,6 +2030,13 @@ private fun LogEntryWithSwipe(
     // flow (it left the list projections); collected here, handed down.
     val firstPassTranscript = if (isExpanded) {
         viewModel.firstPassFlow(log.id).collectAsState().value
+    } else {
+        null
+    }
+    // TASK-800: the row's raw cues for the Share-as formats (the list
+    // projection keeps the column null; same lean read as firstPass).
+    val rowSegmentsJson = if (isExpanded) {
+        viewModel.segmentsFlow(log.id).collectAsState().value
     } else {
         null
     }
@@ -1876,16 +2071,20 @@ private fun LogEntryWithSwipe(
         }
 
         val colorScheme = MaterialTheme.colorScheme
-        val actions = remember(log.id, log.status, log.result, speakerAnnotated, colorScheme) {
+        // Keyed into the remember so a locale change rebuilds the actions.
+        val copyLabel = stringResource(R.string.swipe_action_copy_description)
+        val shareLabel = stringResource(R.string.swipe_action_share_description)
+        val deleteLabel = stringResource(R.string.swipe_action_delete_description)
+        val actions = remember(log.id, log.status, log.result, speakerAnnotated, colorScheme, copyLabel, shareLabel, deleteLabel) {
             buildSwipeActions(
                 log = log,
                 context = context,
                 viewModel = viewModel,
                 speakerAnnotated = speakerAnnotated,
                 onDeleted = onDeleted,
-                copyLabel = context.getString(R.string.swipe_action_copy_description),
-                shareLabel = context.getString(R.string.swipe_action_share_description),
-                deleteLabel = context.getString(R.string.swipe_action_delete_description),
+                copyLabel = copyLabel,
+                shareLabel = shareLabel,
+                deleteLabel = deleteLabel,
                 colors = colorScheme
             )
         }
@@ -1901,6 +2100,7 @@ private fun LogEntryWithSwipe(
                 speakerAnnotated = speakerAnnotated,
                 firstPassLabel = firstPassLabel,
                 firstPassTranscript = firstPassTranscript,
+                rowSegmentsJson = rowSegmentsJson,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
                 onExpandChange = { expanded ->
@@ -1914,6 +2114,7 @@ private fun LogEntryWithSwipe(
                 onCancel = { cancelTask(context, log.taskId) },
                 onDelete = { onDeleted(log); viewModel.deleteLog(log.id) },
                 compactActions = compactActions,
+                advancedShareFormats = advancedShareFormats,
                 onNavigateToSettings = onNavigateToSettings,
                 onOpenLanguageSetting = onOpenLanguageSetting,
                 showLanguageChip = showLanguageChip,
@@ -1963,6 +2164,7 @@ private fun LogEntryWithSwipe(
                 speakerAnnotated = speakerAnnotated,
                 firstPassLabel = firstPassLabel,
                 firstPassTranscript = firstPassTranscript,
+                rowSegmentsJson = rowSegmentsJson,
                 searchQuery = searchQuery,
                 expanded = isExpanded,
                 onExpandChange = onExpandChange,
@@ -1970,6 +2172,7 @@ private fun LogEntryWithSwipe(
                 onCancel = { cancelTask(context, log.taskId) },
                 onDelete = { onDeleted(log); onDeleteLog(log.id) },
                 compactActions = compactActions,
+                advancedShareFormats = advancedShareFormats,
                 onNavigateToSettings = onNavigateToSettings,
                 onOpenLanguageSetting = onOpenLanguageSetting,
                 showLanguageChip = showLanguageChip,

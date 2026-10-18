@@ -48,6 +48,9 @@ internal class TestSpiOps(
      *  builds pass it; the main-source default keeps release construction
      *  unchanged. */
     private val identityCache: com.antivocale.app.receiver.VoiceNoteIdentityCache? = null,
+    /** TASK-791 device proof: the unload op needs the live backend manager
+     *  (same debug-passes-it story as the two params above). */
+    private val backendManager: com.antivocale.app.transcription.TranscriptionBackendManager? = null,
 ) {
 
     suspend fun handle(
@@ -68,6 +71,7 @@ internal class TestSpiOps(
             OP_NOTIFY_MEMORY_ERROR -> notifyMemoryError()
             OP_CLIPBOARD -> clipboard()
             OP_NOTIFICATIONS -> notifications()
+            OP_UNLOAD -> unload()
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -116,6 +120,10 @@ internal class TestSpiOps(
             .put("externalAutomationEnabled", preferences.externalAutomationEnabled.first())
             .put("openTranscribeEnabled", preferences.openTranscribeEnabled.first())
             .put("voiceNoteIdentityEnabled", preferences.voiceNoteIdentityEnabled.first())
+            // TASK-271: the voice-note detection gate (offer notifications).
+            .put("voiceNoteDetectionEnabled", preferences.voiceNoteDetectionEnabled.first())
+            // TASK-271: the SAF tree grant URI (the one read route), or null.
+            .put("voiceNoteTreeUri", preferences.voiceNoteTreeUri.first() ?: JSONObject.NULL)
             // TASK-681: the LAN-offload config (endpoint visible for E2E
             // verification; the key is masked to its last 4 chars).
             .put("remoteOmnivoiceEnabled", preferences.remoteOmnivoiceEnabled.first())
@@ -131,6 +139,7 @@ internal class TestSpiOps(
             // manual selection clears them; device tests only need to read).
             .put("demotedBackends", JSONArray(preferences.demotedBackends.first()))
             .put("advancedSharingEnabled", preferences.advancedSharingEnabled.first())
+            .put("advancedShareFormats", preferences.advancedShareFormats.first())
             .put("showRetranscribeButton", preferences.showRetranscribeButton.first())
             .put("groupLogsByConversation", preferences.groupLogsByConversation.first())
             .put("showTechnicalDetails", preferences.showTechnicalDetails.first())
@@ -196,11 +205,14 @@ internal class TestSpiOps(
         // TASK-670: the named-labels privacy gate.
         "speaker_id_enabled" to preferences::saveSpeakerIdEnabled,
         "voice_note_identity_enabled" to preferences::saveVoiceNoteIdentityEnabled,
+        // TASK-271: the voice-note detection gate (device trials flip it).
+        "voice_note_detection_enabled" to preferences::saveVoiceNoteDetectionEnabled,
         "auto_copy" to preferences::saveAutoCopyEnabled,
         "vad_advisory" to preferences::saveVadAdvisoryDismissed,
         "onboarding" to preferences::saveOnboardingCompleted,
         "group_logs" to preferences::saveGroupLogsByConversation,
         "advanced_sharing" to preferences::saveAdvancedSharingEnabled,
+        "advanced_share_formats" to preferences::saveAdvancedShareFormats,
         "show_retranscribe" to preferences::saveShowRetranscribeButton,
         "memory_protection" to preferences::saveMemoryProtection,
         // TASK-274: consent gate for the exported automation receivers.
@@ -542,6 +554,23 @@ internal class TestSpiOps(
     }
 
     /**
+     * TASK-791 device proof: unloads every loaded model through the
+     * production TranscriptionBackendManager.unloadAll path (the same call
+     * the UI Unload buttons make), so a mid-generation unload can be fired
+     * on device without a UI tap. The drain-release wiring under test makes
+     * this safe while a native call is in flight; the reply means the
+     * LOGICAL unload ran, not that native memory is already freed (see the
+     * manager's TASK-789 KDoc). Debug receiver only.
+     */
+    private fun unload(): String {
+        val manager = requireNotNull(backendManager) {
+            "unload requires the backend manager; this construction is debug-only"
+        }
+        manager.unloadAll()
+        return JSONObject().put("op", OP_UNLOAD).put("unloaded", true).toString()
+    }
+
+    /**
      * TASK-625 trial tool: posts the production memory-failure error
      * notification (the exact ResultNotificationFactory builder both error
      * surfaces use) so the Open-setting action can be exercised on device
@@ -630,6 +659,10 @@ internal class TestSpiOps(
                                 status.notification.actions.orEmpty().map { it.title?.toString() ?: "" }))
                         .put("title", extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: JSONObject.NULL)
                         .put("text", capped("text", extras.getCharSequence(android.app.Notification.EXTRA_TEXT)))
+                        // TASK-798 trial 3: the auto-save verdict ("Saved
+                        // <file> to <folder>") rides the subText; without
+                        // this field the op cannot prove it.
+                        .put("subText", capped("subText", extras.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT)))
                         .put("bigText", capped("bigText", extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT))))
             }
         return JSONObject().put("op", OP_NOTIFICATIONS).put("count", array.length()).put("items", array).toString()
@@ -672,6 +705,7 @@ internal class TestSpiOps(
         const val OP_NOTIFY_MEMORY_ERROR = "notify_memory_error"
         const val OP_CLIPBOARD = "clipboard"
         const val OP_NOTIFICATIONS = "notifications"
+        const val OP_UNLOAD = "unload"
         const val OP_HELP = "help"
 
         /**
@@ -680,7 +714,7 @@ internal class TestSpiOps(
          * is deliberately absent: it is intercepted receiver-side before
          * handle() runs, so it lives in the receiver's own table.
          */
-        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_HELP)
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_HELP)
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024

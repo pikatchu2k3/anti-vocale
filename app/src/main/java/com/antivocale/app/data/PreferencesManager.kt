@@ -151,6 +151,8 @@ interface PreferencesManager {
     val showTechnicalDetails: Flow<Boolean>
     val advancedSharingEnabled: Flow<Boolean>
     val showRetranscribeButton: Flow<Boolean>
+    /** TASK-800: show the Share… (format picker) button on result rows. */
+    val advancedShareFormats: Flow<Boolean>
     val memoryProtection: Flow<Boolean>
 
     /** TASK-274: consent gate for the exported automation receivers (Tasker surface). */
@@ -165,6 +167,14 @@ interface PreferencesManager {
 
     /** TASK-735: the identity listener's app-level gate; the privacy contract lives on the listener. */
     val voiceNoteIdentityEnabled: Flow<Boolean>
+
+    /**
+     * TASK-271: the voice-note detection gate (offer notifications for new
+     * WhatsApp voice notes). Off by default; while off nothing is read. The
+     * runtime permission is a second, independent gate (the coordinator
+     * subscribes only when both hold).
+     */
+    val voiceNoteDetectionEnabled: Flow<Boolean>
 
     /**
      * TASK-681: the LAN-offload consent gate. Off by default; while off the
@@ -272,6 +282,7 @@ interface PreferencesManager {
     suspend fun saveShowTechnicalDetails(enabled: Boolean)
     suspend fun saveAdvancedSharingEnabled(enabled: Boolean)
     suspend fun saveShowRetranscribeButton(enabled: Boolean)
+    suspend fun saveAdvancedShareFormats(enabled: Boolean)
     suspend fun saveMemoryProtection(enabled: Boolean)
 
     /** TASK-274: see [externalAutomationEnabled]. */
@@ -282,6 +293,11 @@ interface PreferencesManager {
 
     /** TASK-735: see [voiceNoteIdentityEnabled]. */
     suspend fun saveVoiceNoteIdentityEnabled(enabled: Boolean)
+
+    /** TASK-271: see [voiceNoteDetectionEnabled]. */
+    suspend fun saveVoiceNoteDetectionEnabled(enabled: Boolean)
+    val voiceNoteTreeUri: Flow<String?>
+    suspend fun saveVoiceNoteTreeUri(uri: String?)
     suspend fun saveCompactResultActions(enabled: Boolean)
     suspend fun saveLanguageChipEnabled(enabled: Boolean)
 
@@ -402,6 +418,10 @@ interface PreferencesManager {
         const val DEFAULT_SHOW_TECHNICAL_DETAILS = false
         const val DEFAULT_ADVANCED_SHARING_ENABLED = false
         const val DEFAULT_SHOW_RETRANSCRIBE_BUTTON = true
+        /** TASK-800 (GH #128 pt 3): the advanced Share… format picker on
+         *  the result row; default OFF (the plain one-tap share is the
+         *  reasonable default, the maintainer's UX direction). */
+        const val DEFAULT_ADVANCED_SHARE_FORMATS = false
         /** TASK-631: protection is opt-in; by default the app never refuses a load on its own. */
         const val DEFAULT_MEMORY_PROTECTION = false
         /** TASK-274: the automation receivers are opt-in; off, they answer with the error
@@ -413,6 +433,9 @@ interface PreferencesManager {
         /** TASK-785: the Open Transcribe provider ships off; on, it is an
          *  experimental external surface for contract clients. */
         const val DEFAULT_OPEN_TRANSCRIBE_ENABLED = false
+
+        /** TASK-271: detection ships off; the runtime permission is the second gate. */
+        const val DEFAULT_VOICE_NOTE_DETECTION_ENABLED = false
         /** TASK-681: LAN offload is opt-in; off, no audio ever leaves the device. */
         const val DEFAULT_REMOTE_OMNIVOICE_ENABLED = false
         /** TASK-670: speaker identities are off until the maintainer signs the

@@ -1,5 +1,6 @@
 package com.antivocale.app.data.catalog
 
+import com.antivocale.app.testing.RepoFiles
 import com.antivocale.app.R
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.Language
@@ -19,15 +20,7 @@ import org.junit.Test
  */
 class BundledModelCatalogTest {
 
-    private fun asset(): File {
-        val moduleRelative = File("src/main/assets/models_catalog.json")
-        val rootRelative = File("app/src/main/assets/models_catalog.json")
-        return when {
-            moduleRelative.exists() -> moduleRelative
-            rootRelative.exists() -> rootRelative
-            else -> throw IllegalStateException("Cannot locate models_catalog.json from ${File(".").absolutePath}")
-        }
-    }
+    private fun asset(): File = RepoFiles.resolve("src/main/assets/models_catalog.json")
 
     private fun catalog(): List<CatalogEntry> =
         ModelCatalogJson.parseCatalog(asset().readText())
@@ -105,6 +98,11 @@ class BundledModelCatalogTest {
         assertTrue(qwen3.variants.single().files.any { it.name.startsWith("tokenizer/") })
         assertEquals(1.0, qwen3.flags.blankPenalty, 0.0)
         assertEquals(2048, qwen3.flags.maxNewTokens)
+        // TASK-795: the decode budget covering one 30s chunk (~390 audio
+        // tokens at 13/s + prompt + the 2048 generation budget) with 2x
+        // headroom; the KV transient scales with it, so 1024 over 2048
+        // halves the per-decode cache at no coverage loss for 30s chunks.
+        assertEquals(1024, qwen3.flags.maxTotalLen)
         assertEquals(30, qwen3.flags.chunkDurationSeconds)
         assertEquals(30, qwen3.flags.maxAudioDurationSeconds)
         assertEquals("sherpa-onnx-qwen3-asr-0.6b-int8", qwen3.defaultVariant.dirName)

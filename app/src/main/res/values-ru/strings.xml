@@ -566,7 +566,15 @@
     <string name="early_preview_badge">Предпросмотр</string>
     <string name="early_preview_requires_progressive">Требуется прогрессивный показ</string>
     <string name="auto_save_failed">Не удалось автосохранить (%1$s)</string>
-    <string name="saved_to_folder">Сохранено в %1$s</string>
+    <string name="saved_to_folder">%1$s сохранён в %2$s</string>
+    <string name="saved_to_folder_nameless">Сохранено в %1$s</string>
+    <string name="share_format_title">Поделиться как</string>
+    <string name="share_transcription_more">Поделиться…</string>
+    <string name="share_format_txt">Обычный текст</string>
+    <string name="share_format_timed">Текст с временными метками</string>
+    <string name="share_format_srt">Субтитры (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">В этой записи нет сохранённых временных меток; параметры с временем поделят обычным текстом.</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Запрос по умолчанию</string>
@@ -965,11 +973,9 @@
     <string name="share_target_external">Anti-Vocale (External)</string>
     <string name="share_shortcut_transcribe_with">Распознать с помощью %1$s</string>
     <string name="external_none_imported">Внешние модели не импортированы</string>
-    <string name="external_section_title">Внешние модели</string>
+    <string name="external_section_title">Добавить другие модели расшифровки</string>
     <string name="model_advanced_section">Дополнительно</string>
     <string name="model_advanced_description">Внешний импорт и загрузки Gemma</string>
-    <string name="external_import_folder">Импорт из папки</string>
-    <string name="external_import_url">Импорт по ссылке</string>
     <string name="external_url_hint">URL репозитория HuggingFace или JSON-записи каталога</string>
     <string name="external_import">Импортировать</string>
     <string name="external_importing">Импорт модели…</string>
@@ -993,7 +999,7 @@
     <string name="external_catalog_restore">Восстановить официальный каталог</string>
     <string name="external_link_advanced">У меня уже есть ссылка (доп.)</string>
     <string name="external_catalog_language">Язык</string>
-    <string name="external_catalog_other">Другие языки</string>
+    <string name="external_catalog_no_matches">Для этого языка пока нет моделей</string>
     <string name="external_decode_language">Язык распознавания</string>
     <string name="external_decode_auto">Автоопределение</string>
     <string name="external_family">Семейство моделей</string>
@@ -1018,9 +1024,31 @@
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Модели в меню «Поделиться»</string>
+    <string name="voice_note_settings_title">Голосовые сообщения</string>
+    <string name="voice_note_settings_summary_on">Автоматическая расшифровка голосовых сообщений WhatsApp · включена</string>
+    <string name="voice_note_settings_summary_off">Автоматическая расшифровка голосовых сообщений WhatsApp · выключена</string>
+    <string name="voice_note_settings_summary_limited">Распознавание отправителя голосовых сообщений</string>
     <string name="voice_note_identity_title">Распознавание отправителя голосовых</string>
-    <string name="voice_note_identity_description">Записывает в строку истории имя отправителя общего голосового сообщения. Пока только WhatsApp. Имя появится только если уведомление пришло, пока опция была включена, и только при совпадении заявленной длительности с аудио (без угадывания). Имя остаётся в строке и после выключения; список живёт только в памяти. Требуется доступ к уведомлениям.</string>
+    <string name="voice_note_identity_description">Помечает расшифрованные голосовые сообщения именем отправителя: отправленные в приложение или автоматические. Пока только WhatsApp. Имя появляется, только если уведомление пришло при включённой опции и длительность совпадает (без угадывания); список ожидания живёт только в памяти. Требуется доступ к уведомлениям.</string>
     <string name="voice_note_identity_grant_hint">Доступ к уведомлениям выключен. Нажмите, чтобы открыть системную настройку и включить его для этого приложения.</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">Транскрипция голосовых сообщений</string>
+    <string name="voice_note_detection_description">Расшифровывает новые голосовые сообщения WhatsApp по мере поступления, пока приложение работает. Если Android запрещает фоновый запуск, одно касание уведомления продолжит работу. Сообщение читается только для расшифровки, на этом устройстве; в выключенном состоянии ничего не читается. Требуется доступ к аудио.</string>
+    <string name="voice_note_detection_grant_hint">Доступ к аудио выключен. Нажмите, чтобы открыть настройки приложения и включить его; транскрипция начнётся после предоставления.</string>
+    <string name="voice_note_folder_grant_rejected">Это не папка голосовых сообщений WhatsApp. Выберите папку с именем WhatsApp Voice Notes и попробуйте ещё раз.</string>
+    <string name="voice_note_folder_card_title">Папка голосовых сообщений</string>
+    <string name="voice_note_folder_card_state_granted">Разрешение предоставлено</string>
+    <string name="voice_note_folder_card_state_missing">Разрешение отсутствует</string>
+    <string name="voice_note_folder_card_desc">Чтобы читать сообщения, один раз предоставьте доступ к папке, куда WhatsApp их сохраняет:</string>
+    <string name="voice_note_folder_choose">Выбрать папку</string>
+    <string name="voice_note_folder_change">Сменить папку</string>
+    <string name="voice_note_folder_remove">Отозвать доступ</string>
+    <string name="voice_note_folder_storage_root">Внутренняя память</string>
+    <string name="voice_note_folder_sheet_title">Предоставить доступ к папке</string>
+    <string name="voice_note_folder_sheet_step1">В открывшемся выборе перейдите во Внутреннюю память (меню слева; нажмите Показать память, если её не видно).</string>
+    <string name="voice_note_folder_sheet_step2">Пройдите по пути до папки голосовых сообщений:</string>
+    <string name="voice_note_folder_sheet_step3">Выберите папку WhatsApp Voice Notes (не открывая) и нажмите ИСПОЛЬЗОВАТЬ ЭТУ ПАПКУ, затем РАЗРЕШИТЬ.</string>
+    <string name="voice_note_folder_sheet_open">Открыть выбор папки</string>
     <string name="share_targets_description">Каждая скачанная модель отображается отдельным пунктом системного меню. Аудио обрабатывает выбранная модель</string>
     <string name="advanced_sharing_toggle">Показывать скачанные модели</string>
     <string name="share_targets_models_info">Каждая скачанная модель появится отдельным пунктом в меню «Поделиться». Удаление модели уберёт её из меню</string>
@@ -1048,6 +1076,8 @@
     <string name="retranscribe_active_badge">Активна</string>
     <string name="retranscribe_setting_title">Кнопка повторного распознавания</string>
     <string name="retranscribe_setting_description">Показывать кнопку повторного распознавания другой моделью для готовых результатов.</string>
+    <string name="advanced_share_formats_title">Поделиться как…</string>
+    <string name="advanced_share_formats_description">Добавляет вторую кнопку Поделиться… в результатах, предлагающую форматы субтитров и с временными метками, помимо обычной отправки текста.</string>
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Найдены субтитры</string>
@@ -1228,13 +1258,16 @@
     <string name="refinement_model_description">Модель второго прохода. Оставьте «наследовать», чтобы использовать активную модель.</string>
     <string name="refinement_model_inherit">Наследовать активную модель</string>
     <string name="export_model_bundle">Поделиться моделью для переноса без сети</string>
-    <string name="external_import_bundle">Импорт пакета переноса</string>
+    <string name="external_family_advanced">Выбрать семейство модели вручную</string>
+    <string name="external_import_device">Импортировать с этого устройства</string>
+    <string name="litert_card_description">Добавьте вручную имеющийся файл модели Gemma (.litertlm): с этого устройства или по URL Hugging Face. Большинству пользователей хватит загрузок выше.</string>
+    <string name="external_import_catalog">Открыть наш каталог моделей</string>
     <string name="external_models_intro">Этот раздел содержит альтернативные модели: компактные для телефонов с малым объёмом памяти и модели, оптимизированные под конкретные языки. Многие берутся из курируемого нами каталога сообщества, но приложение можно направить и на сторонний каталог или свой собственный.</string>
     <!-- TASK-779 + road-test copy fixes -->
     <string name="litert_card_title">Добавить модель Gemma (LiteRT)</string>
-    <string name="gemma_entry_title">Загрузки Gemma</string>
-    <string name="gemma_entry_subtitle">Просмотр и загрузка официальных моделей Gemma</string>
-    <string name="external_section_subtitle">Файлы моделей, которые вы добавляете сами (папка, URL или пакет переноса), а также загрузки Gemma LiteRT-LM; работают рядом со встроенным каталогом.</string>
+    <string name="gemma_entry_title">Модели Gemma ИИ</string>
+    <string name="gemma_entry_subtitle">Полные ИИ-ассистенты: расшифровка речи + аннотации текста, двухэтапное уточнение, офлайн-чат</string>
+    <string name="external_section_subtitle">Дополнительные модели расшифровки речи, которые вы добавляете сами. Они работают вместе со встроенными и появляются в списке ниже после импорта.</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
     <string name="folder_watch_title">Запланированное наблюдение за папками</string>

@@ -93,6 +93,9 @@ class InferenceService : Service(), TranscriptionListener {
         /** The on-device model benchmark screen. */
         const val SOURCE_BENCHMARK = "benchmark"
 
+        /** TASK-271: the detected voice-note offer's Transcribe action; not a share request. */
+        const val SOURCE_VOICE_NOTE = "voice_note"
+
         /** Sources that never get a Tasker-style reply broadcast: every
          *  in-app origin has no legitimate listener, so the reply would be
          *  a world-visible broadcast carrying the full transcript (the
@@ -101,7 +104,7 @@ class InferenceService : Service(), TranscriptionListener {
          *  replies: that is the one origin with a listener. */
         private val NON_REPLY_SOURCES = setOf(
             SOURCE_SHARE, SOURCE_BROWSE, SOURCE_FOLDER_WATCH,
-            SOURCE_RETRANSCRIBE, SOURCE_BENCHMARK,
+            SOURCE_RETRANSCRIBE, SOURCE_BENCHMARK, SOURCE_VOICE_NOTE,
         )
 
         const val EXTRA_SHARED_URI = "shared_uri"
@@ -411,8 +414,18 @@ class InferenceService : Service(), TranscriptionListener {
         failQueuedLogs("Cancelled")
         requestQueue.clear()
         pendingCount.set(0)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // TASK-820 review: join the tracked jobs (the auto-save now rides
+        // them, not just notifications) before the teardown cancels the
+        // service scope; the same drain the queue loop's finally does
+        // (TASK-336). A completed task's file write must not die mid-stream.
+        // On the service scope, not runBlocking on main: the scope lives
+        // until this launch's own stopSelf completes.
+        serviceScope.launch {
+            val pending = synchronized(pendingResultNotifications) { pendingResultNotifications.toList() }
+            pending.forEach { it.join() }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     /**
@@ -650,7 +663,8 @@ class InferenceService : Service(), TranscriptionListener {
     ) {
         // DRAFT-12 (TASK-598 boundary): the Tasker reply carries the same
         // annotated form every other surface delivers on diarized runs.
-        sendSuccessReply(taskId, SubtitleFormatter.annotatedOrStored(resultText, segments))
+        val annotatedResult = SubtitleFormatter.annotatedOrStored(resultText, segments)
+        sendSuccessReply(taskId, annotatedResult)
         forgetRequester(taskId)
         // Every completed task moves the model-recency source: re-derive the
         // launcher's dynamic share shortcuts. Metadata-only side effect on the

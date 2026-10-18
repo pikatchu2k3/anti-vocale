@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 import com.antivocale.app.transcription.Language
 import com.antivocale.app.data.download.DownloadConfig
@@ -30,7 +32,10 @@ interface ExternalModelImportOperations {
     /** TASK-742: register an already-verified local directory as a record.
      *  [displayName] overrides the src-derived name (the bundle's manifest
      *  carries the exporter's name; without it a re-import would rename a
-     *  properly named record to the staging directory's name). */
+     *  properly named record to the staging directory's name).
+     *  [linkedCatalog] (TASK-801) carries the resolved catalog identity for
+     *  bundle imports; it is stamped on the record and backfilled onto a
+     *  same-pins dedupe match. */
     suspend fun importFromDirectory(
         src: File,
         modelType: String? = null,
@@ -39,6 +44,7 @@ interface ExternalModelImportOperations {
         languages: List<String> = emptyList(),
         streaming: Boolean = false,
         displayName: String? = null,
+        linkedCatalog: LinkedCatalogRef? = null,
     ): ExternalModelRecord
 
     suspend fun importFromTreeUri(
@@ -66,6 +72,10 @@ interface ExternalModelImportOperations {
      *  implement it; the real importer overrides. */
     suspend fun listTreeFileNames(context: Context, treeUri: Uri): List<String> =
         throw UnsupportedOperationException("listTreeFileNames")
+
+    /** TASK-796 round 3: see the implementation's KDoc. */
+    suspend fun bundleZipChildren(context: Context, treeUri: Uri): List<Uri> =
+        throw UnsupportedOperationException("bundleZipChildren")
 }
 
 /** Per-file download telemetry for URL imports (TASK-398): (fileIndex, fileCount, fileName, bytes, totalBytes). */
@@ -245,6 +255,19 @@ class ExternalModelImporter(
     override suspend fun listTreeFileNames(context: Context, treeUri: Uri): List<String> =
         treeChildren(context, treeUri).second.mapNotNull { it.name }
 
+    /**
+     * TASK-796 round 3: the picked folder's bundle candidates, on IO with
+     * the [treeChildren] isFile filter (a directory named *.zip must not
+     * count). Returns the candidate URIs in provider order; the caller
+     * applies the exactly-one rule.
+     */
+    override suspend fun bundleZipChildren(context: Context, treeUri: Uri): List<Uri> =
+        withContext(Dispatchers.IO) {
+            treeChildren(context, treeUri).second
+                .filter { it.name?.endsWith(".zip", ignoreCase = true) == true }
+                .map { it.uri }
+        }
+
     /** SAF folder import: the primary v2a entry point. */
     override suspend fun importFromTreeUri(
         context: Context,
@@ -274,9 +297,10 @@ class ExternalModelImporter(
         languages: List<String>,
         streaming: Boolean,
         displayName: String?,
+        linkedCatalog: LinkedCatalogRef?,
     ): ExternalModelRecord {
         val children = src.listFiles()?.filter { it.isFile }?.map(::FileSource) ?: emptyList()
-        return importCore(children, modelType, displayName ?: src.name, family, options, languages, streaming)
+        return importCore(children, modelType, displayName ?: src.name, family, options, languages, streaming, linkedCatalog)
     }
 
     /**
@@ -376,6 +400,7 @@ class ExternalModelImporter(
         options: Map<String, String>,
         languages: List<String>,
         streaming: Boolean = false,
+        linkedCatalog: LinkedCatalogRef? = null,
     ): ExternalModelRecord {
         val resolvedModelType = resolveModelType(modelType, family)
         // 1. Copy plan by role, plus any ONNX split-file sidecars.
@@ -419,7 +444,7 @@ class ExternalModelImporter(
             }
 
             registerImported(targetDir, pins, family, resolvedModelType, options, languages,
-                ExternalModelSource.LOCAL, null, displayName, streaming)
+                ExternalModelSource.LOCAL, null, displayName, streaming, linkedCatalog)
         }
     }
 
@@ -514,6 +539,7 @@ class ExternalModelImporter(
         sourceUrl: String?,
         displayName: String,
         streaming: Boolean = false,
+        linkedCatalog: LinkedCatalogRef? = null,
     ): ExternalModelRecord {
         // Pre-native metadata validation BEFORE persisting: a wrong family is an
         // import-time error, never a transcription-time exit(255). Both the checked
@@ -596,6 +622,9 @@ class ExternalModelImporter(
                 // the reverse direction is symmetric).
                 sourceUrl = sourceUrl ?: existing.sourceUrl,
                 dir = if (existingDirValid) existing.dir else targetDir.absolutePath,
+                // TASK-801: backfill the catalog link only when absent (a
+                // plain folder re-import of the same files must not erase one).
+                linkedCatalog = existing.linkedCatalog ?: linkedCatalog,
             )
             store.update(updated)
             Log.i(TAG, "Re-import deduped onto existing record ${existing.backendId} (dirValid=$existingDirValid)")
@@ -616,6 +645,7 @@ class ExternalModelImporter(
             sizeBytes = sizeBytes,
             importedAt = System.currentTimeMillis(),
             streaming = streaming,
+            linkedCatalog = linkedCatalog,
         )
         store.add(record)
         Log.i(TAG, "Imported external model ${record.backendId} from $displayName ($sizeBytes bytes)")

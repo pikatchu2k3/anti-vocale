@@ -1,8 +1,10 @@
 package com.antivocale.app.ui
 
 import com.antivocale.app.MainActivity
+import com.antivocale.app.testing.RepoFiles
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,6 +28,47 @@ class AppNavigationTest {
         assertEquals(
             AppNavigation.Destination.ModelTarget("import"),
             AppNavigation.parse("models:import"))
+        // TASK-752 follow-up: the Gemma sub-page is SPI-reachable too.
+        assertEquals(
+            AppNavigation.Destination.ModelTarget("gemma"),
+            AppNavigation.parse("models:gemma"))
+    }
+
+    @Test
+    fun `scroll spec parses top bottom and viewport counts`() {
+        assertEquals(AppNavigation.ScrollDirective.ToTop, AppNavigation.parseScrollSpec("top"))
+        assertEquals(AppNavigation.ScrollDirective.ToBottom, AppNavigation.parseScrollSpec("bottom"))
+        assertEquals(AppNavigation.ScrollDirective.ByViewports(2f), AppNavigation.parseScrollSpec("+2"))
+        assertEquals(AppNavigation.ScrollDirective.ByViewports(2f), AppNavigation.parseScrollSpec("2"))
+        assertEquals(AppNavigation.ScrollDirective.ByViewports(-1f), AppNavigation.parseScrollSpec("-1"))
+        assertNull(AppNavigation.parseScrollSpec("sideways"))
+        // Integer contract: fractions and scientific notation are typos.
+        assertNull(AppNavigation.parseScrollSpec("+1.5"))
+        assertNull(AppNavigation.parseScrollSpec("1e1"))
+        assertNull(AppNavigation.parseScrollSpec(null))
+        // Out of range: an absurd viewport count is a typo, not a scroll.
+        assertNull(AppNavigation.parseScrollSpec("99"))
+    }
+
+    @Test
+    fun `scrollable destinations are the scroll sub-pages plus the gemma page`() {
+        // per_app is deliberately out of v1: its body is a LazyColumn.
+        assertEquals(
+            setOf("automation", "performance", "speaker", "prompt", "icon_picker", "export", "voice_notes"),
+            AppNavigation.SUBPAGE_KEYS.filter { key ->
+                AppNavigation.isScrollableDest(AppNavigation.parse("settings:$key")!!)
+            }.toSet(),
+        )
+        assertTrue(AppNavigation.isScrollableDest(AppNavigation.parse("models:gemma")!!))
+        assertFalse(AppNavigation.isScrollableDest(AppNavigation.parse("models:import")!!))
+        assertFalse(AppNavigation.isScrollableDest(AppNavigation.parse("tab:history")!!))
+        // The SPI error message derives from the same helper: pin that the
+        // token list and the validation stay the same set.
+        assertEquals(
+            setOf("settings:automation", "settings:performance", "settings:speaker",
+                "settings:prompt", "settings:icon_picker", "settings:export",
+                "settings:voice_notes", "models:gemma"),
+            AppNavigation.scrollableDestTokens().toSet())
     }
 
     @Test
@@ -33,12 +76,12 @@ class AppNavigationTest {
         AppNavigation.SECTION_KEYS.forEach { key ->
             assertEquals(
                 AppNavigation.Destination.SettingsSection(key),
-                AppNavigation.parse("settings:$key"))
+                AppNavigation.parse("settings:$key")!!)
         }
         AppNavigation.SUBPAGE_KEYS.forEach { key ->
             assertEquals(
                 AppNavigation.Destination.SettingsSubPage(key),
-                AppNavigation.parse("settings:$key"))
+                AppNavigation.parse("settings:$key")!!)
         }
     }
 
@@ -47,8 +90,8 @@ class AppNavigationTest {
         // The four SettingsTab sections and the three sub-screens, pinned so
         // a UI rename without a parser update (or the reverse) fails here.
         assertEquals(setOf("transcription", "appearance", "advanced", "feedback"), AppNavigation.SECTION_KEYS)
-        assertEquals(setOf("icon_picker", "prompt", "per_app", "export", "speaker", "performance", "automation"), AppNavigation.SUBPAGE_KEYS)
-        assertEquals(setOf("import"), AppNavigation.MODEL_KEYS)
+        assertEquals(setOf("icon_picker", "prompt", "per_app", "export", "speaker", "performance", "automation", "voice_notes"), AppNavigation.SUBPAGE_KEYS)
+        assertEquals(setOf("import", "gemma"), AppNavigation.MODEL_KEYS)
         assertEquals(listOf("history", "models", "settings"), AppNavigation.TAB_KEYS)
         // TASK-617 F2: the derived indices pin the TabRow ORDER, not just
         // membership; the load-time check in AppNavigation catches absence,
@@ -59,19 +102,10 @@ class AppNavigationTest {
     }
 
     /**
-     * Dual-path source read (repo root or module subdirectory cwd), shared
-     * by the scans below. TASK-617 F8: names the cwd on failure, so a
-     * working-dir regression is diagnosable instead of a bare
-     * FileNotFoundException with no context.
+     * Source read shared by the scans below; the shared [RepoFiles]
+     * locator owns the resolution (and its cwd-naming failure contract).
      */
-    private fun sourceOf(relative: String): String {
-        val direct = java.io.File(relative)
-        val file = if (direct.isFile) direct else java.io.File("app/$relative")
-        check(file.isFile) {
-            "cannot locate '$relative' from cwd ${java.io.File(".").absolutePath}"
-        }
-        return file.readText()
-    }
+    private fun sourceOf(relative: String): String = RepoFiles.readText(relative)
 
     @Test
     fun `every section key is wired into the Settings UI`() {

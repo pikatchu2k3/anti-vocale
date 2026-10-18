@@ -21,6 +21,8 @@ import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalCatalogRepository
 import com.antivocale.app.data.ExternalModelStore
+import com.antivocale.app.data.ExternalModelRecordsProvider
+import com.antivocale.app.data.LinkedCatalogRef
 import com.antivocale.app.data.LitertLmFile
 import com.antivocale.app.data.LitertLmUrlImporter
 import com.antivocale.app.data.ModelFamily
@@ -83,6 +85,10 @@ class ModelViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val backendRegistry: BackendRegistry,
     private val externalModelStore: ExternalModelStore,
+    // TASK-801: the hot valid-records snapshot the registry already keeps
+    // fresh; collecting it here adds no second decode of the records
+    // preference and survives ViewModel re-creation for free.
+    private val recordsProvider: ExternalModelRecordsProvider,
     private val externalModelImporter: ExternalModelImportOperations,
     private val litertLmUrlImporter: LitertLmUrlImporter,
     private val externalCatalogRepository: ExternalCatalogRepository,
@@ -220,7 +226,10 @@ class ModelViewModel @Inject constructor(
         val selectedVariant: String? = null,
         val variantToDelete: String? = null,
         val variantsNeedingExtraction: Set<String> = emptySet(),
-        val orphanedVariants: Set<String> = emptySet()
+        val orphanedVariants: Set<String> = emptySet(),
+        /** TASK-801: variant dirName -> the linked record's backendId, for the
+         *  card's active dot when the record (not the catalog dir) is active. */
+        val linkedVariantBackendIds: Map<String, String> = emptyMap()
     ) {
         val isAnyDownloading: Boolean get() = variantDownloadStates.values.any { it.isDownloading }
     }
@@ -300,6 +309,15 @@ class ModelViewModel @Inject constructor(
         refreshTokenState()
         // Refresh all catalog-backed model entries
         refreshCatalogEntries()
+        // TASK-801: the catalog cards re-derive presence whenever the valid
+        // external records change: a linked bundle import marks the variant
+        // present, and deleting or quarantining the record reverts the card
+        // with no per-site code (deleteExternalModel needs none). The
+        // conflated StateFlow coalesces record-mutation bursts into one
+        // sweep, and the sweep runs inline in the collector (serialized).
+        viewModelScope.launch(Dispatchers.IO) {
+            recordsProvider.records.collect { refreshAllCatalogEntries() }
+        }
         // Detect partial downloads
         detectPartialDownloads()
         // Reclaim disk space from stranded old-version model directories left by
@@ -675,24 +693,54 @@ class ModelViewModel @Inject constructor(
 
     /** Refreshes download/path state for every catalog entry, off the main thread. */
     fun refreshCatalogEntries() {
-        viewModelScope.launch(Dispatchers.IO) {
-            for (entryId in BuiltInBackendIds.ALL) {
-                refreshCatalogEntry(entryId)
-            }
+        viewModelScope.launch(Dispatchers.IO) { refreshAllCatalogEntries() }
+    }
+
+    private suspend fun refreshAllCatalogEntries() {
+        // One records snapshot per sweep (not per entry); the provider's
+        // conflated snapshot is the same freshness class the registry's own
+        // descriptors derive from.
+        val records = recordsProvider.records.value
+        for (entryId in BuiltInBackendIds.ALL) {
+            refreshCatalogEntry(entryId, records)
         }
     }
+
+    /**
+     * TASK-801: the valid record linked to a catalog variant, or null. The
+     * single matching rule for both card-presence and Use dispatch; two
+     * records claiming the same variant can only exist as a hand-built
+     * re-bundle (the import's pins guard rejects byte-different copies), and
+     * then the store's first wins deterministically.
+     */
+    private fun linkedRecordFor(
+        records: List<ExternalModelRecord>,
+        ref: LinkedCatalogRef,
+    ): ExternalModelRecord? = records.firstOrNull { it.linkedCatalog == ref }
 
     /**
      * Discovers downloaded variants and resolves the active model path for one
      * catalog entry (auto-fallback semantics live in [SherpaModelManager]).
      */
-    private suspend fun refreshCatalogEntry(entryId: String) {
+    private suspend fun refreshCatalogEntry(entryId: String, records: List<ExternalModelRecord>) {
         val context = ctx
         val entry = BundledCatalog.byId(entryId) ?: return
         val downloader = SherpaModelDownloader.of(entryId)
         val manager = SherpaModelManager.of(entryId)
+        // TASK-801: a valid linked record (a bundle imported from this entry)
+        // marks its variant present exactly like a disk download. Validity is
+        // the provider's loadability predicate at its last preference write:
+        // a quarantined record reverts the card on that write's emission,
+        // while a dir deleted outside the app keeps the card present until
+        // the next records write or restart (the registry's own descriptors
+        // share this freshness class).
+        val linkedVariantBackendIds = entry.variants.mapNotNull { v ->
+            linkedRecordFor(records, LinkedCatalogRef(entryId, v.dirName))
+                ?.let { v.dirName to it.backendId }
+        }.toMap()
+        val linkedVariantDirs = linkedVariantBackendIds.keys
         val downloadedVariants = entry.variants
-            .filter { downloader.isModelDownloaded(context, it.name) }
+            .filter { downloader.isModelDownloaded(context, it.name) || it.dirName in linkedVariantDirs }
             .map { it.name }
             .toSet()
         val activePath = manager.resolveActiveModelPath(context)
@@ -711,6 +759,7 @@ class ModelViewModel @Inject constructor(
                 modelPath = activePath,
                 variantsNeedingExtraction = needsExtraction,
                 orphanedVariants = orphaned,
+                linkedVariantBackendIds = linkedVariantBackendIds,
             )
         }
     }
@@ -1423,6 +1472,21 @@ class ModelViewModel @Inject constructor(
     fun useModel(entryId: String, variantName: String) {
         viewModelScope.launch {
             val context = ctx
+            // TASK-801: a variant present ONLY through a linked bundle import
+            // (no on-disk catalog copy) activates THAT record via the external
+            // path; a real download keeps the catalog ladder below, which also
+            // keeps precedence when both exist. The record lookup runs first
+            // (a StateFlow read): the disk probe only happens for variants a
+            // record actually claims, so plain catalog taps stay IO-free up
+            // to the ladder (B2, TASK-342).
+            val linkedDir = BundledCatalog.byId(entryId)?.variant(variantName)?.dirName
+            if (linkedDir != null) {
+                val linked = linkedRecordFor(recordsProvider.records.value, LinkedCatalogRef(entryId, linkedDir))
+                if (linked != null && !SherpaModelDownloader.of(entryId).isModelDownloaded(context, variantName)) {
+                    activateExternalModel(linked)
+                    return@launch
+                }
+            }
             // The catalog-state fallback is STALE (populated by an earlier scan), so its
             // path is disk-checked inside the activator; the first two resolutions read
             // the disk fresh and must stay free of extra IO (B2, TASK-342 device verification).
@@ -1463,6 +1527,19 @@ class ModelViewModel @Inject constructor(
     fun deleteModel(entryId: String, variantName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val context = ctx
+            // TASK-801: a variant present only through a linked record has no
+            // catalog dir to remove; the record IS the storage, so the delete
+            // routes there. Without this arm the downloader no-ops and reports
+            // success while the record re-lights the card on the next records
+            // emission (a confirmed delete that deleted nothing).
+            val linkedDir = BundledCatalog.byId(entryId)?.variant(variantName)?.dirName
+            if (linkedDir != null && !SherpaModelDownloader.of(entryId).isModelDownloaded(context, variantName)) {
+                val linked = linkedRecordFor(recordsProvider.records.value, LinkedCatalogRef(entryId, linkedDir))
+                if (linked != null) {
+                    deleteExternalModel(linked)
+                    return@launch
+                }
+            }
             val downloader = SherpaModelDownloader.of(entryId)
             val success = downloader.deleteModel(context, variantName)
             if (success) {
@@ -1639,6 +1716,17 @@ class ModelViewModel @Inject constructor(
             }
         }
     }
+    /**
+     * TASK-796 round 3: the single-picker bundle auto-detect. Returns the
+     * ONLY .zip child's URI when the picked folder holds exactly one (a
+     * random archive among many must not hijack the flow: several zips
+     * means the user must pick the specific folder). Null = no bundle
+     * candidate, the folder import proceeds with its own reporting.
+     * Binder work on IO inside the importer; the UI branch only decides.
+     */
+    suspend fun singleBundleChild(context: Context, treeUri: Uri): Uri? =
+        externalModelImporter.bundleZipChildren(context, treeUri).singleOrNull()
+
 
     /** TASK-513: lists a picked SAF folder and detects the family, so the
      *  import dialog can prefill it instead of failing a transducer-shaped
@@ -1680,17 +1768,17 @@ class ModelViewModel @Inject constructor(
      */
     fun importExternalFromBundle(context: Context, bundleUri: Uri) =
         runExternalImport("Bundle", onProgress = null) {
-            // TASK-761: the picker's TEMPORARY read grant covers this
-            // one-shot read; no persistable grant is taken, so nothing can
-            // leak (the old callback-side take was never released and
-            // burned one of the 128 grant slots per import).
+            // TASK-761/796: since round 3 the bundle arrives through the
+            // FOLDER picker; the caller releases the persisted read grant
+            // before invoking this, so the one-shot read rides the
+            // picker's transient grant again (nothing persists).
             val staging = File(context.cacheDir, "bundle-import-${System.currentTimeMillis()}")
             try {
                 val manifest = context.contentResolver.openInputStream(bundleUri)?.use { input ->
                     ModelBundleCodec.import(input, staging)
                 } ?: error("cannot open the selected bundle")
                 val params = ModelBundleCodec.recordParams(manifest)
-                externalModelImporter.importFromDirectory(
+                val record = externalModelImporter.importFromDirectory(
                     src = staging,
                     modelType = params.modelType,
                     family = params.family,
@@ -1698,11 +1786,54 @@ class ModelViewModel @Inject constructor(
                     languages = params.languages,
                     streaming = params.streaming,
                     displayName = params.displayName,
+                    // TASK-801 (the TASK-797 device trial's answer): the
+                    // entity link. The record keeps its external canonical
+                    // file names and the built-in loader is untouched (a
+                    // saved-path alias made the card claim installed and die
+                    // in ModelLoadError, exactly because the importer's names
+                    // differ from the catalog's); the card derives presence
+                    // from the linked record and Use activates it.
+                    linkedCatalog = linkedCatalogRefFor(params),
                 )
+                record
             } finally {
                 staging.deleteRecursively()
             }
         }
+
+    /**
+     * TASK-801: the catalog identity a bundle import links to, or null for a
+     * plain import. Linked only when the manifest's entry still exists in THIS
+     * device's bundled catalog, the modelTypes match (a relabeled or
+     * hand-edited manifest must not hijack an unrelated card), the variant
+     * resolves (the manifest's dirName when it names one of the entry's
+     * variants, else the entry's only variant; pre-801 manifests carry no
+     * variant identity, and a multi-variant entry is not linkable without
+     * one), AND the bundle's pinned bytes are the catalog variant's pinned
+     * bytes: the card must not vouch for weights the catalog never named.
+     */
+    private fun linkedCatalogRefFor(params: ModelBundleCodec.RecordParams): LinkedCatalogRef? {
+        val entryId = params.catalogEntryId ?: return null
+        val entry = BundledCatalog.byId(entryId) ?: return null
+        if (entry.modelType != params.modelType) return null
+        val variantDir = params.catalogVariantDir
+            ?.takeIf { dir -> entry.variants.any { it.dirName == dir } }
+            ?: entry.variants.singleOrNull()?.dirName
+            ?: return null
+        val variant = entry.variants.first { it.dirName == variantDir }
+        // Key-set equality, not just coverage: an extra canonical-named file
+        // (encoder.int8.onnx) riding the bundle could win the importer's
+        // role matching over the verified catalog-named file, so the card
+        // would vouch for bytes the record never loads.
+        val pinsMatch = params.filePins.keys == variant.files.map { it.name }.toSet() &&
+            variant.files.all { catalogFile ->
+                // Unpinned catalog files (none today, TASK-661 pins all)
+                // ride unconstrained.
+                catalogFile.sha256 == null || params.filePins[catalogFile.name] == catalogFile.sha256
+            }
+        if (!pinsMatch) return null
+        return LinkedCatalogRef(entryId, variantDir)
+    }
 
     /**
      * TASK-761 (review triage): the offline-transfer bundle export (GH
@@ -1731,12 +1862,25 @@ class ModelViewModel @Inject constructor(
                     // forgets the gate.
                     ?: error("model type '${entry.modelType}' is not bundle-transferable"),
                 modelType = entry.modelType,
-                languages = BundledCatalog
-                    .byId(entry.id)?.variants
-                    ?.firstOrNull { it.dirName == variant.variantName }?.languages ?: emptyList(),
+                languages = BundledCatalog.byId(entry.id)?.let { catalogEntry ->
+                    // The UI variantName is the catalog variant NAME ("v3"),
+                    // never the dirName ("gigaam-v3"): comparing dirNames here
+                    // silently exported empty language lists (TASK-801 review).
+                    // Entries may also declare their languages at entry level
+                    // only (gigaam: ['ru'], no per-variant list).
+                    catalogEntry.variants
+                        .firstOrNull { it.name == variant.variantName }
+                        ?.languages
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: catalogEntry.languages
+                } ?: emptyList(),
                 streaming = entry.isStreaming,
                 options = emptyMap(),
                 appVersion = BuildConfig.VERSION_NAME,
+                // TASK-797: the built-in entry the bundle came from; the
+                // receiver links the imported record to its card (TASK-801).
+                catalogEntryId = entry.id,
+                catalogVariantDir = variant.dirName,
             )
             ctx.contentResolver.openOutputStream(uri)?.use { out ->
                 ModelBundleCodec.export(dir, out, metadata)

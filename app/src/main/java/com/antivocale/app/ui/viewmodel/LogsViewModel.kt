@@ -103,6 +103,13 @@ data class LogEntry(
     val detectedLanguage: String? = null,
     /** TASK-546: the policy-resolved pin in force at transcription time. */
     val languagePin: String? = null,
+    /** TASK-820: the auto-save outcome, persisted for EVERY save attempt
+     *  (share and non-share origins alike; the notification only exists on
+     *  shares). At most one of the three is non-null; all null = no save
+     *  ran (pre-v14 rows, or the folder was not configured). */
+    val savedFolderName: String? = null,
+    val savedFileName: String? = null,
+    val saveFailureReason: String? = null,
 ) {
     enum class Type { TEXT, AUDIO }
 
@@ -450,6 +457,7 @@ class LogsViewModel @Inject constructor(
         // outlive the row (long transcripts pin real memory).
         annotatedByRow.remove(id)
         firstPassByRow.remove(id)
+        segmentsByRow.remove(id)
         viewModelScope.launch {
             logDao.deleteById(id)
         }
@@ -462,6 +470,7 @@ class LogsViewModel @Inject constructor(
         _searchQuery.value = ""
         annotatedByRow.clear()
         firstPassByRow.clear()
+        segmentsByRow.clear()
         viewModelScope.launch {
             logDao.deleteAll()
         }
@@ -556,6 +565,10 @@ class LogsViewModel @Inject constructor(
     val compactResultActions: StateFlow<Boolean> = preferencesManager.compactResultActions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS)
 
+    /** TASK-800: the Share… format picker button; default OFF. */
+    val advancedShareFormats: StateFlow<Boolean> = preferencesManager.advancedShareFormats
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS)
+
     /** TASK-546: the detected-language chip toggle (maintainer directive:
      *  the chip is conditional on a Settings flag). */
     val languageChipEnabled: StateFlow<Boolean> = preferencesManager.languageChipEnabled
@@ -607,9 +620,10 @@ class LogsViewModel @Inject constructor(
      */
     private val annotatedByRow = ConcurrentHashMap<String, StateFlow<String?>>()
     private val firstPassByRow = ConcurrentHashMap<String, StateFlow<String?>>()
+    private val segmentsByRow = ConcurrentHashMap<String, StateFlow<String?>>()
 
     /**
-     * TASK-612: the two per-row reads below MUST build their flows with
+     * TASK-612: the three per-row reads below MUST build their flows with
      * [SharingStarted.WhileSubscribed] carrying a finite
      * replayExpirationMillis. stateIn launches its sharing coroutine into
      * viewModelScope eagerly, and an idle WhileSubscribed coroutine never
@@ -625,8 +639,8 @@ class LogsViewModel @Inject constructor(
 
     /** One cached per-row StateFlow per id: the flow is built once, late
      *  collectors share the running upstream, and eviction happens on
-     *  delete/clear (TASK-599 F3). Shared by the two lean per-row reads
-     *  (TASK-595). The value payload is bounded by [rowSharingStarted]'s
+     *  delete/clear (TASK-599 F3). Shared by the three lean per-row reads
+     *  (TASK-595, TASK-800). The value payload is bounded by [rowSharingStarted]'s
      *  replay expiration (TASK-612); the map ENTRY count is unbounded (one
      *  small skeleton + one idle stateIn job per id ever displayed, the
      *  widened set TASK-598 F15 brought in when the collapsed preview
@@ -646,6 +660,19 @@ class LogsViewModel @Inject constructor(
      */
     fun firstPassFlow(id: String): StateFlow<String?> = rowFlow(firstPassByRow, id) {
         logDao.getFirstPass(id)
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, rowSharingStarted, null)
+    }
+
+    /**
+     * TASK-800: the expanded row's RAW segments JSON (the cue source the
+     * Share-as formats derive from). Same lean lifecycle as
+     * [speakerAnnotatedFlow]; the list projection keeps the column
+     * structurally null, so this is the one UI-side read of the raw cue
+     * JSON (the annotated flow below reads the column for its own combine).
+     */
+    fun segmentsFlow(id: String): StateFlow<String?> = rowFlow(segmentsByRow, id) {
+        logDao.getSegments(id)
             .distinctUntilChanged()
             .stateIn(viewModelScope, rowSharingStarted, null)
     }

@@ -577,7 +577,15 @@
     <string name="early_preview_badge">תצוגה מקדימה</string>
     <string name="early_preview_requires_progressive">דורש תצוגה מתקדמת</string>
     <string name="auto_save_failed">השמירה האוטומטית נכשלה (%1$s)</string>
-    <string name="saved_to_folder">נשמר ב־%1$s</string>
+    <string name="saved_to_folder">%1$s נשמר ב־%2$s</string>
+    <string name="saved_to_folder_nameless">נשמר ב־%1$s</string>
+    <string name="share_format_title">שיתוף בתור</string>
+    <string name="share_transcription_more">שיתוף…</string>
+    <string name="share_format_txt">טקסט רגיל</string>
+    <string name="share_format_timed">טקסט עם חותמות זמן</string>
+    <string name="share_format_srt">כתוביות (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">לרשומה זו אין חותמות זמן שמורות; אפשרויות התזמון ישתפו טקסט רגיל.</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">פרומפט ברירת מחדל</string>
@@ -971,11 +979,9 @@
     <string name="share_target_external">Anti-Vocale (חיצוני)</string>
     <string name="share_shortcut_transcribe_with">תמלול עם %1$s</string>
     <string name="external_none_imported">לא יובאו מודלים חיצוניים</string>
-    <string name="external_section_title">מודלים חיצוניים</string>
+    <string name="external_section_title">הוספת מודלי תמלול נוספים</string>
     <string name="model_advanced_section">מתקדם</string>
     <string name="model_advanced_description">ייבוא חיצוני והורדות Gemma</string>
-    <string name="external_import_folder">ייבוא מתיקייה</string>
-    <string name="external_import_url">ייבוא מקישור</string>
     <string name="external_url_hint">מאגר HuggingFace או כתובת URL של רשומת קטלוג JSON</string>
     <string name="external_import">ייבוא</string>
     <string name="external_importing">מייבא מודל…</string>
@@ -999,7 +1005,7 @@
     <string name="external_catalog_restore">שחזור הקטלוג הרשמי</string>
     <string name="external_link_advanced">יש לי כבר קישור (מתקדם)</string>
     <string name="external_catalog_language">שפה</string>
-    <string name="external_catalog_other">שפות אחרות</string>
+    <string name="external_catalog_no_matches">אין עדיין מודלים לשפה זו</string>
     <string name="external_decode_language">שפת פענוח</string>
     <string name="external_decode_auto">זיהוי אוטומטי (בלי שפה קבועה)</string>
     <string name="external_family">משפחת מודל</string>
@@ -1024,9 +1030,31 @@
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">מודלים בתפריט השיתוף</string>
+    <string name="voice_note_settings_title">הודעות קול</string>
+    <string name="voice_note_settings_summary_on">תמלול אוטומטי של הודעות קול בוואטסאפ · פעיל</string>
+    <string name="voice_note_settings_summary_off">תמלול אוטומטי של הודעות קול בוואטסאפ · כבוי</string>
+    <string name="voice_note_settings_summary_limited">זיהוי השולח של הודעות קול</string>
     <string name="voice_note_identity_title">זיהוי שולח ההודעות הקוליות</string>
-    <string name="voice_note_identity_description">כותב בשורת ההיסטוריה את שם השולח של הודעת הקול ששותפה. לעת עתה רק WhatsApp. השם מופיע רק אם ההתראה של ההודעה הגיעה בעת שהאפשרות היתה פעילה, ורק אם האוך שדווח תואם לשמע (בלי שמות מנוחשים). השם נשאר בשורה גם לאחר כיבוי; רשימת ההמתנה מוחזרת רק בזכרון. דורש הרשאת גישה להתראות.</string>
+    <string name="voice_note_identity_description">מתייג הודעות קול מתומללות בשם השולח, ששותפו כאן או אוטומטיות. לעת עתה רק WhatsApp. השם מופיע רק אם ההתראה הגיעה כשהאפשרות היתה פעילה והאוך תואם (בלי שמות מנוחשים); רשימת ההמתנה מוחזקת רק בזכרון. דורש הרשאת גישה להתראות.</string>
     <string name="voice_note_identity_grant_hint">גישה להתראות כבויה. הקש כדי לפתוח את הגדרת המערכת ולהפעיל אותה ליישום הזה.</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">תמלול הודעות קוליות</string>
+    <string name="voice_note_detection_description">מתמלל הודעות קול חדשות של וואטסאפ בהגעתן, בזמן שהאפליקציה פועלת. אם Android חוסם התחלה ברקע, התראה בנגיעה אחת מתחילה אותה. הודעה נקראת רק לצורך התמלול, במכשיר זה; כשזה כבוי לא נקרא דבר. דורש הרשאת גישה לשמע.</string>
+    <string name="voice_note_detection_grant_hint">גישת האודיו כבויה. הקישו כדי לפתוח את הגדרות האפליקציה ולהפעיל אותה; התמלול מתחיל ברגע שהיא תינתן.</string>
+    <string name="voice_note_folder_grant_rejected">זו אינה תיקיית ההודעות הקוליות של WhatsApp. בחרו את התיקייה בשם WhatsApp Voice Notes ונסו שוב.</string>
+    <string name="voice_note_folder_card_title">תיקיית ההודעות הקוליות</string>
+    <string name="voice_note_folder_card_state_granted">ההרשאה ניתנה</string>
+    <string name="voice_note_folder_card_state_missing">ההרשאה חסרה</string>
+    <string name="voice_note_folder_card_desc">כדי לקרוא את ההודעות, העניקו פעם אחת גישה לתיקייה שבה WhatsApp שומר אותן:</string>
+    <string name="voice_note_folder_choose">בחירת תיקייה</string>
+    <string name="voice_note_folder_change">החלפת תיקייה</string>
+    <string name="voice_note_folder_remove">הסרת גישה</string>
+    <string name="voice_note_folder_storage_root">אחסון פנימי</string>
+    <string name="voice_note_folder_sheet_title">הענקת גישה לתיקייה</string>
+    <string name="voice_note_folder_sheet_step1">בבורר שנפתח, היכנסו לאחסון פנימי (תפריט משמאל; הקישו על הצג אחסון אם אינו נראה).</string>
+    <string name="voice_note_folder_sheet_step2">רדו בנתיב עד לתיקיית ההודעות הקוליות:</string>
+    <string name="voice_note_folder_sheet_step3">כשתיקיית WhatsApp Voice Notes מסומנת (בלי לפתוח אותה), הקישו על השתמש בתיקייה זו ולאחר מכן על אפשר.</string>
+    <string name="voice_note_folder_sheet_open">פתיחת הבורר</string>
     <string name="share_targets_description">כל מודל שהורד מופיע כאפשרות נפרדת בתפריט המערכת. האודיו מעובד על ידי המודל שנבחר.</string>
     <string name="advanced_sharing_toggle">הצגת מודלים שהורדו</string>
     <string name="share_targets_models_info">כל מודל שהורד יופיע כפריט בתפריט השיתוף. מחיקת מודל מסירה אותו מהתפריט.</string>
@@ -1053,6 +1081,8 @@
     <string name="retranscribe_active_badge">פעיל</string>
     <string name="retranscribe_setting_title">כפתור תמלול חוזר</string>
     <string name="retranscribe_setting_description">מציג כפתור על תמלולי אודיו לניסיון חוזר עם מודל אחר.</string>
+    <string name="advanced_share_formats_title">שיתוף בתור…</string>
+    <string name="advanced_share_formats_description">מוסיף לחצן שיתוף… שני בתוצאות שמציע פורמטים של כתוביות וחותמות זמן, בנוסף לשיתוף הטקסט הרגיל.</string>
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">נמצאו כתוביות</string>
@@ -1213,13 +1243,16 @@
     <string name="refinement_model_description">המודל ששלב השני משתמש בו. השאר על ירושה כדי להשתמש במודל הפעיל.</string>
     <string name="refinement_model_inherit">רשת מודל פעיל</string>
     <string name="export_model_bundle">שיתוף המודל להעברה ללא רשת</string>
-    <string name="external_import_bundle">ייבוא חבילת העברה</string>
+    <string name="external_family_advanced">בחירת משפחת המודל באופן ידני</string>
+    <string name="external_import_device">ייבוא מהמכשיר הזה</string>
+    <string name="litert_card_description">הוסיפו ידנית קובץ מודל Gemma‏ (.litertlm) שכבר יש לכם, מהמכשיר הזה או מכתובת Hugging Face. רוב המשתמשים צריכים את ההורדות למעלה.</string>
+    <string name="external_import_catalog">עיינו בקטלוג המודלים שלנו</string>
     <string name="external_models_intro">המדור הזה מכיל מודלים חלופיים: גרסאות קטנות לטלפונים עם זיכרון מועט ומודלים הממוטבים לשפות ספציפיות. רבים מגיעים מקטלוג הקהילה שאנחנו מנהלים, אבל אפשר גם להפנות את האפליקציה לקטלוג של ספק חיצוני או לארח קטלוג משלכם.</string>
     <!-- TASK-779 + road-test copy fixes -->
     <string name="litert_card_title">הוספת מודל Gemma (LiteRT)</string>
-    <string name="gemma_entry_title">הורדות Gemma</string>
-    <string name="gemma_entry_subtitle">עיינו והורידו את מודלי Gemma הרשמיים</string>
-    <string name="external_section_subtitle">קובצי מודל שאתם מוסיפים בעצמכם (תיקייה, כתובת או חבילת העברה) בתוספת הורדות Gemma LiteRT-LM; פועלים לצד הקטלוג המובנה.</string>
+    <string name="gemma_entry_title">מודלי AI של Gemma</string>
+    <string name="gemma_entry_subtitle">מודלי עוזר AI מלאים: תמלול קול + סיכומי טקסט, ליטוש דו-שלבי, צ\'אט ללא חיבור</string>
+    <string name="external_section_subtitle">מודלי תמלול קול נוספים שאתם מוסיפים בעצמכם. הם פועלים לצד המודלים המובנים ומופיעים ברשימה למטה לאחר הייבוא.</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
     <string name="folder_watch_title">מעקב מתוזמן אחר תיקיות</string>

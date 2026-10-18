@@ -1,5 +1,6 @@
 package com.antivocale.app.work
 
+import com.antivocale.app.data.local.LogDao
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -18,6 +19,7 @@ import com.antivocale.app.util.AppNotificationChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import com.antivocale.app.util.CrashReporter
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +45,9 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val orchestrator: TranscriptionOrchestrator,
     private val preferencesManager: PreferencesManager,
-    private val perAppPreferencesManager: PerAppPreferencesManager
+    private val perAppPreferencesManager: PerAppPreferencesManager,
+    /** TASK-820: feeds the listener's save-outcome persistence. */
+    private val logDao: LogDao
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -78,14 +82,17 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
         runCatching { setForeground(buildForegroundInfo()) }
 
         // The listener posts the result/error notification exactly as InferenceService would.
-        // Its coroutineScope is this worker's — it dies when doWork returns, which is fine
-        // because the only async side effect (auto-copy) is awaited inside onSuccess.
+        // Its coroutineScope is this worker's; since TASK-820 it also runs the
+        // auto-save (a SAF file write) and the save-outcome persistence, so
+        // doWork JOINS the scope before returning (below) instead of relying
+        // on side effects completing inside onSuccess.
         val workerScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CrashReporter.handler)
         val listener = TranscriptionNotificationListener(
             appContext = applicationContext,
             preferencesManager = preferencesManager,
             perAppPreferencesManager = perAppPreferencesManager,
-            coroutineScope = workerScope
+            coroutineScope = workerScope,
+            logDao = logDao,
         )
 
         // TASK-526: the worker bypasses InferenceService's enqueue layer,
@@ -125,11 +132,17 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
             }
             // The orchestrator already reported success/error to the listener (which posts
             // the notification). Surface success to WorkManager regardless so the job clears.
+            // TASK-820 review: await the listener's side-effect jobs (the save
+            // and the outcome persistence) first; WorkManager may drop the
+            // foreground promotion the moment this returns and kill the
+            // process with the write still in flight.
+            workerScope.coroutineContext[Job]?.children?.forEach { it.join() }
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "ASR fallback threw for taskId=$taskId", e)
             // Result.failure would trigger retry policy; there is none configured, so this
             // just marks the unique work done. The error notification is the user's signal.
+            workerScope.coroutineContext[Job]?.children?.forEach { it.join() }
             Result.failure()
         }
     }
@@ -138,19 +151,17 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
      * Builds the foreground-notification [ForegroundInfo] shown while the ASR fallback runs.
      * Uses the existing INFERENCE channel (IMPORTANCE_LOW, no badge) to match the service's
      * in-progress notification.
+     *
+     * The explicit DATA_SYNC type is mandatory (Crashlytics 2026-10-11, 1.13.2): WorkManager
+     * 2.10 passes the ForegroundInfo's type straight to Service.startForeground, and a type-0
+     * (NONE) call is prohibited for apps targeting 34+, killing the process inside
+     * SystemForegroundService.onStartCommand where nothing in this worker can catch it. The
+     * type must be a subset of the manifest override on SystemForegroundService (dataSync,
+     * declared in AndroidManifest.xml) and needs FOREGROUND_SERVICE_DATA_SYNC (both present).
+     * The type constant exists since API 29; below that the untyped 2-arg form is the only API.
      */
-    private fun buildForegroundInfo(): ForegroundInfo {
-        AppNotificationChannel.INFERENCE.create(applicationContext)
-        val notification = NotificationCompat.Builder(applicationContext, AppNotificationChannel.INFERENCE.id)
-            .setContentTitle(applicationContext.getString(R.string.app_name))
-            .setContentText(applicationContext.getString(R.string.processing_audio))
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
-        return ForegroundInfo(NOTIFICATION_ID, notification)
-    }
+    private fun buildForegroundInfo(): ForegroundInfo =
+        foregroundInfo(applicationContext)
 
     companion object {
         private const val TAG = "SubtitleChoiceTimeoutWorker"
@@ -159,6 +170,30 @@ class SubtitleChoiceTimeoutWorker @AssistedInject constructor(
         // ResultNotificationFactory.RESULT_NOTIFICATION_ID_BASE. Internal so
         // the contract test can pin this value.
         internal const val NOTIFICATION_ID = 1003
+
+        /** The FGS promotion's contract: a typed ForegroundInfo matching the
+         *  manifest's SystemForegroundService dataSync override (internal so
+         *  the pin test can reach it without a WorkerParameters fixture). */
+        internal fun foregroundInfo(context: Context): ForegroundInfo {
+            AppNotificationChannel.INFERENCE.create(context)
+            val notification = NotificationCompat.Builder(context, AppNotificationChannel.INFERENCE.id)
+                .setContentTitle(context.getString(R.string.app_name))
+                .setContentText(context.getString(R.string.processing_audio))
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .setSilent(true)
+                .build()
+            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                ForegroundInfo(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+            } else {
+                ForegroundInfo(NOTIFICATION_ID, notification)
+            }
+        }
 
         const val KEY_FILE_PATH = "file_path"
         const val KEY_TASK_ID = "task_id"

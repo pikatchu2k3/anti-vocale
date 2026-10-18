@@ -140,6 +140,10 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
     override val requiresVadAlignedChunking: Boolean
         get() = configuredFamily?.let(::familyForcesVadAlignedChunking) == true
 
+    /** TASK-816: the whisper family's loop guard (see SherpaBackend's twin). */
+    override val trimsDegenerateRepetition: Boolean
+        get() = configuredFamily == ModelFamily.WHISPER
+
     // @Volatile: a concurrent transcribeAudio on another thread must not read a stale
     // null recognizer after initialize completes (the unload-during-transcription window
     // is inherited from the sibling backends and unchanged).
@@ -363,9 +367,17 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         // (see SherpaBackend for the full rationale).
         keepAlive.beginWork()
         try {
+            // TASK-789 review T1: capture the case policy with the recognizer
+            // local; unload() resets the field mid-bracket and an orphaned
+            // decode must not return wrongly-cased text. TASK-816 review F2:
+            // the loop-guard gate captures the same way (it reads the same
+            // volatile configuredFamily), so a decode orphaned by an
+            // unload mid-bracket still trims its loop tail.
+            val lower = lowercaseOutput
+            val trimLoops = trimsDegenerateRepetition
             onlineRecognizer?.let { rec ->
                 return withContext(Dispatchers.IO) {
-                    transcribeStreamingBatch(rec, samples, sampleRate)
+                    transcribeStreamingBatch(rec, samples, sampleRate, lower)
                 }
             }
             val rec = recognizer
@@ -388,8 +400,18 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 rec.decode(stream)
 
                 val result = rec.getResult(stream)
-                val transcription = applyTextCase(result.text, lowercaseOutput)
                 val detectedLang = TranscriptionResult.normalizedDetectedLanguage(result.lang)
+                // TASK-816 (TASK-792 option 2): the same degenerate-tail
+                // truncation SherpaBackend applies to built-in whisper
+                // decodes, for user-imported whisper-family models (the
+                // 792 incident's Hebrew turbo looped exactly like the
+                // built-in distil). Other external families stay ungated
+                // via the capability default. On fire the TOKEN channel
+                // drops with the tail (the cue builder's exact-match
+                // alignment; see applyDegenerateRepetition).
+                val degenerateTrim =
+                    if (trimLoops) applyDegenerateRepetition(applyTextCase(result.text, lower)) else null
+                val transcription = degenerateTrim?.text ?: applyTextCase(result.text, lower)
 
                 if (transcription.isBlank()) {
                     // GH #96: silence windows decode blank; see SherpaBackend.
@@ -401,8 +423,9 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                         text = transcription,
                         confidence = confidence,
                         detectedLanguage = detectedLang,
-                        tokens = TimedTokens.fromRecognizer(
-                            casedTokens(result.tokens, lowercaseOutput), result.timestamps, result.durations),
+                        tokens = if (degenerateTrim?.fired == true) emptyList()
+                        else TimedTokens.fromRecognizer(
+                            casedTokens(result.tokens, lower), result.timestamps, result.durations),
                     ))
                 }
             } catch (e: Exception) {
@@ -428,6 +451,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
         rec: OnlineRecognizer,
         samples: FloatArray,
         sampleRate: Int,
+        lower: Boolean,
     ): Result<TranscriptionResult> {
         var stream: OnlineStream? = null
         try {
@@ -438,7 +462,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
             stream.inputFinished()
             while (rec.isReady(stream)) rec.decode(stream)
             val result = rec.getResult(stream)
-            val transcription = applyTextCase(result.text, lowercaseOutput)
+            val transcription = applyTextCase(result.text, lower)
             if (transcription.isBlank()) {
                 return Result.failure(TranscriptionException.NoTranscriptionProduced())
             }
@@ -446,7 +470,7 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                 text = transcription,
                 confidence = TranscriptionResult.computeConfidence(transcription, samples.size, sampleRate),
                 tokens = TimedTokens.fromRecognizer(
-                    casedTokens(result.tokens, lowercaseOutput), result.timestamps, FloatArray(0)),
+                    casedTokens(result.tokens, lower), result.timestamps, FloatArray(0)),
             ))
         } catch (e: Exception) {
             Log.e(TAG, "External streaming transcription failed", e)
@@ -468,17 +492,38 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
     override fun unload() {
         Log.i(TAG, "Unloading external backend: $configuredId")
         keepAlive.stop()
-        recognizer?.release()
+        // TASK-789 (the 1.13.2 FORTIFY crash): a decode may be live inside the
+        // beginWork/endWork bracket; releasing the recognizer now would
+        // destroy native state that decode still holds. State flips and the
+        // recognizer FIELDS null now: every transcribe path reads the field
+        // into a local AFTER beginWork, so the in-flight decode keeps its
+        // local while any work arriving after the flip fails NotInitialized
+        // (on this ONE shared engine that also prevents serving the previous
+        // external model's recognizer to a new request). The captured stale
+        // objects release once, at once when idle and otherwise when the
+        // bracket drains (requestDrainRelease). Capturing matters because
+        // ALL external models share this instance and a re-initialize can
+        // land before the drain; its fresh recognizer must not be released.
+        releaseBackendState()
+        val staleRecognizer = recognizer
+        val staleOnline = onlineRecognizer
         recognizer = null
-        onlineRecognizer?.release()
         onlineRecognizer = null
+        keepAlive.requestDrainRelease {
+            staleRecognizer?.release()
+            staleOnline?.release()
+        }
+        onAutoUnloadCallback.get()?.invoke()
+    }
+
+    /** TASK-789: the unload's non-native half (the flip callers observe). */
+    private fun releaseBackendState() {
         configuredLanguage = ""
         modelDir = null
         isInitialized = false
         configuredId = PLACEHOLDER_ID
         configuredFamily = null
         lowercaseOutput = false
-        onAutoUnloadCallback.get()?.invoke()
     }
 
     override fun setKeepAliveTimeout(minutes: Int) {

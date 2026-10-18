@@ -150,10 +150,12 @@ class SettingsSearchRegistryTest {
             SettingsSearchGroup.HISTORY to listOf(
                 SettingsSearchId.SWIPE_ACTION, SettingsSearchId.CONVERSATION_GROUPING,
                 SettingsSearchId.COMPACT_RESULT_ACTIONS, SettingsSearchId.TECHNICAL_DETAILS,
-                SettingsSearchId.LANGUAGE_CHIP, SettingsSearchId.RETRANSCRIBE),
+                SettingsSearchId.LANGUAGE_CHIP, SettingsSearchId.RETRANSCRIBE,
+                SettingsSearchId.ADVANCED_SHARE_FORMATS),
             SettingsSearchGroup.INTEGRATIONS to listOf(
                 SettingsSearchId.SHARE_TARGETS, SettingsSearchId.SUBTITLE_TIMEOUT, SettingsSearchId.AUTOMATION_HUB,
-                SettingsSearchId.VOICE_NOTE_IDENTITY, SettingsSearchId.SHARE_SHORTCUT_ICONS),
+                SettingsSearchId.VOICE_NOTE_HUB,
+                SettingsSearchId.SHARE_SHORTCUT_ICONS),
         )
         val registryOrder = SETTINGS_SEARCH_CARDS.map { it.id }
         SettingsSearchGroup.entries.forEach { g ->
@@ -334,7 +336,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.COMPACT_RESULT_ACTIONS,
                 SettingsSearchId.TECHNICAL_DETAILS,
                 SettingsSearchId.LANGUAGE_CHIP,
-                SettingsSearchId.RETRANSCRIBE,
+                SettingsSearchId.RETRANSCRIBE, SettingsSearchId.ADVANCED_SHARE_FORMATS,
             ),
             visibleIds(SettingsSearchSection.APPEARANCE, state()),
         )
@@ -355,7 +357,8 @@ class SettingsSearchRegistryTest {
         // The 2026-10-01 sub-grouping order: the kill-recovery offer, the
         // ungrouped head (performance, HuggingFace auth, per-app), then the
         // terminal Integrations cluster (share targets, subtitle choice,
-        // automation).
+        // automation; TASK-835 collapsed the two voice-note entries into
+        // the hub that opens their subpage).
         val base = visibleIds(SettingsSearchSection.ADVANCED, state())
         assertEquals(
             listOf(
@@ -365,7 +368,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.SHARE_TARGETS,
                 SettingsSearchId.SUBTITLE_TIMEOUT,
                 SettingsSearchId.AUTOMATION_HUB,
-                SettingsSearchId.VOICE_NOTE_IDENTITY,
+                SettingsSearchId.VOICE_NOTE_HUB,
                 SettingsSearchId.SHARE_SHORTCUT_ICONS,
             ),
             base,
@@ -397,6 +400,21 @@ class SettingsSearchRegistryTest {
         // TASK-741: the folder watch is the fourth child.
         assertTrue(vocab.contains(R.string.folder_watch_title))
         assertTrue(vocab.contains(R.string.folder_watch_description))
+    }
+
+    @Test
+    fun `the voice-note hub carries all three children's vocabulary`() {
+        // TASK-835: the hub opens the subpage hosting the three entries;
+        // the folder-card strings become searchable THROUGH it (they were
+        // unsearchable when the card lived in the main tree).
+        val hub = SETTINGS_SEARCH_CARDS.first { it.id == SettingsSearchId.VOICE_NOTE_HUB }
+        val vocab = hub.res(state())
+        assertTrue(vocab.contains(R.string.voice_note_identity_title))
+        assertTrue(vocab.contains(R.string.voice_note_identity_description))
+        assertTrue(vocab.contains(R.string.voice_note_detection_title))
+        assertTrue(vocab.contains(R.string.voice_note_detection_description))
+        assertTrue(vocab.contains(R.string.voice_note_folder_card_title))
+        assertTrue(vocab.contains(R.string.voice_note_folder_card_desc))
     }
 
     @Test

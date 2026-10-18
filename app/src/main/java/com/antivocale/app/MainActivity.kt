@@ -263,6 +263,11 @@ class MainActivity : AppCompatActivity() {
         intent.getStringExtra(TestNavigation.EXTRA_TEST_NAV)?.let {
             intent.removeExtra(TestNavigation.EXTRA_TEST_NAV)
             TestNavigation.pending.value = it
+            // TASK-815: the optional scroll spec rides the same broadcast.
+            intent.getStringExtra(TestNavigation.EXTRA_TEST_NAV_SCROLL)?.let { scroll ->
+                intent.removeExtra(TestNavigation.EXTRA_TEST_NAV_SCROLL)
+                TestNavigation.pendingScroll.value = scroll
+            }
         }
     }
 

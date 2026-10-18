@@ -95,6 +95,7 @@ class PreferencesManagerImpl(
         private val SHOW_TECHNICAL_DETAILS = booleanPreferencesKey("show_technical_details")
         private val ADVANCED_SHARING_ENABLED = booleanPreferencesKey("advanced_sharing_enabled")
         private val SHOW_RETRANSCRIBE_BUTTON = booleanPreferencesKey("show_retranscribe_button")
+        private val ADVANCED_SHARE_FORMATS = booleanPreferencesKey("advanced_share_formats")
         // TASK-631: replaces the old force-load key with NO migration; that key's only
         // signal was an opt-out of the block, which the new default (no block) grants
         // to everyone, so a stored old value is deliberately never read again.
@@ -104,6 +105,9 @@ class PreferencesManagerImpl(
         // TASK-785: consent gate for the Open Transcribe provider service.
         private val OPEN_TRANSCRIBE_ENABLED = booleanPreferencesKey("open_transcribe_enabled")
         private val VOICE_NOTE_IDENTITY_ENABLED = booleanPreferencesKey("voice_note_identity_enabled")
+        // TASK-271: the voice-note detection gate (offer notifications).
+        private val VOICE_NOTE_DETECTION_ENABLED = booleanPreferencesKey("voice_note_detection_enabled")
+        private val VOICE_NOTE_TREE_URI = stringPreferencesKey("voice_note_tree_uri")
         // TASK-681: the LAN-offload (OmniVoice) consent gate and its config triple.
         private val REMOTE_OMNIVOICE_ENABLED = booleanPreferencesKey("remote_omnivoice_enabled")
         private val REMOTE_OMNIVOICE_ENDPOINT = stringPreferencesKey("remote_omnivoice_endpoint")
@@ -167,10 +171,13 @@ class PreferencesManagerImpl(
         val showTechnicalDetails: Boolean = PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
         val advancedSharingEnabled: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
+        val advancedShareFormats: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
         val memoryProtection: Boolean = PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         val externalAutomationEnabled: Boolean = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
         val openTranscribeEnabled: Boolean = PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
         val voiceNoteIdentityEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
+        val voiceNoteDetectionEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        val voiceNoteTreeUri: String? = null,
         val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         val remoteOmnivoiceEndpoint: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         val remoteOmnivoiceApiKey: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -232,10 +239,13 @@ class PreferencesManagerImpl(
         showTechnicalDetails = this[SHOW_TECHNICAL_DETAILS] ?: PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
         advancedSharingEnabled = this[ADVANCED_SHARING_ENABLED] ?: PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
+        advancedShareFormats = this[ADVANCED_SHARE_FORMATS] ?: PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
         memoryProtection = this[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         externalAutomationEnabled = this[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
         openTranscribeEnabled = this[OPEN_TRANSCRIBE_ENABLED] ?: PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
         voiceNoteIdentityEnabled = this[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
+        voiceNoteDetectionEnabled = this[VOICE_NOTE_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        voiceNoteTreeUri = this[VOICE_NOTE_TREE_URI],
         remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         remoteOmnivoiceEndpoint = this[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         remoteOmnivoiceApiKey = this[REMOTE_OMNIVOICE_API_KEY] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -831,6 +841,16 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(showRetranscribeButton = enabled) }
     }
 
+    override val advancedShareFormats: Flow<Boolean> = dataStore.data.map { it[ADVANCED_SHARE_FORMATS] ?: PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS }
+        .onStart { emit(cache.get().advancedShareFormats) }
+
+    override suspend fun saveAdvancedShareFormats(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[ADVANCED_SHARE_FORMATS] = enabled
+        }
+        cache.updateAndGet { it.copy(advancedShareFormats = enabled) }
+    }
+
     override val memoryProtection: Flow<Boolean> = dataStore.data.map { it[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION }
         .onStart { emit(cache.get().memoryProtection) }
 
@@ -842,6 +862,20 @@ class PreferencesManagerImpl(
 
     override val voiceNoteIdentityEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED }
         .onStart { emit(cache.get().voiceNoteIdentityEnabled) }
+
+    override val voiceNoteDetectionEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED }
+        .onStart { emit(cache.get().voiceNoteDetectionEnabled) }
+    override val voiceNoteTreeUri: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_TREE_URI] }
+        .onStart { emit(cache.get().voiceNoteTreeUri) }
+
+    override suspend fun saveVoiceNoteTreeUri(uri: String?) {
+        dataStore.edit { preferences ->
+            if (uri == null) preferences.remove(VOICE_NOTE_TREE_URI)
+            else preferences[VOICE_NOTE_TREE_URI] = uri
+        }
+        cache.updateAndGet { it.copy(voiceNoteTreeUri = uri) }
+    }
+
 
     // TASK-681: the LAN-offload gate and its config triple. Re-emits on
     // unrelated writes are fine here, like the siblings above: the
@@ -972,6 +1006,13 @@ class PreferencesManagerImpl(
             preferences[VOICE_NOTE_IDENTITY_ENABLED] = enabled
         }
         cache.updateAndGet { it.copy(voiceNoteIdentityEnabled = enabled) }
+    }
+
+    override suspend fun saveVoiceNoteDetectionEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VOICE_NOTE_DETECTION_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(voiceNoteDetectionEnabled = enabled) }
     }
 
     override val externalModelsJson: Flow<String?> = dataStore.data.map { it[EXTERNAL_MODELS_JSON] }

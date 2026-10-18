@@ -10,15 +10,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,9 +42,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.antivocale.app.R
+import com.antivocale.app.ui.AppNavigation
 import com.antivocale.app.ui.appearance.LauncherIconVariant
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
-import com.antivocale.app.ui.components.SettingsSubPageHeader
+import com.antivocale.app.ui.components.SubPageScrollScaffold
 
 /** The adaptive-icon layer canvas, in dp (see any adaptive-icon XML). */
 private const val ADAPTIVE_CANVAS = 108f
@@ -61,6 +59,10 @@ private const val ADAPTIVE_CANVAS = 108f
  */
 private val tileBitmapCache = mutableMapOf<Int, ImageBitmap>()
 
+// The lint rule suggests painterResource/imageResource, but those silently
+// RENDER an XML vector while this tile contract must fail loudly on one
+// (a future tile swap must not silently degrade).
+@Suppress("LocalContextGetResourceValueCall")
 @Composable
 private fun cachedTileBitmap(@DrawableRes res: Int): ImageBitmap =
     tileBitmapCache.getOrPut(res) {
@@ -90,6 +92,8 @@ private const val SAFE_ZONE = 72f
 @Composable
 fun LauncherIconScreen(
     viewModel: SettingsViewModel,
+    initialScroll: AppNavigation.ScrollRequest? = null,
+    onScrollConsumed: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val current by viewModel.currentLauncherIcon.collectAsState()
@@ -103,28 +107,15 @@ fun LauncherIconScreen(
     )
     BackHandler(onBack = onBack)
     Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // No statusBarsPadding here (unlike pre-749): the host
-                // MainScreen Column already applies it, so the page was
-                // double-insetted at the top (749, flagged by the 748
-                // simplify round).
-                .navigationBarsPadding(),
-        ) {
-            SettingsSubPageHeader(
-                titleRes = R.string.app_icon_title,
-                onBack = onBack,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            )
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-            ) {
+        // TASK-752: the shared scaffold owns the nav-bar inset and the
+        // header at the standard margin. No statusBarsPadding: the host
+        // MainScreen Column already applies it (749).
+        SubPageScrollScaffold(
+            titleRes = R.string.app_icon_title,
+            onBack = onBack,
+            scrollRequest = initialScroll,
+            onScrollConsumed = onScrollConsumed,
+        ) { _ ->
                 Text(
                     text = stringResource(R.string.app_icon_note),
                     style = MaterialTheme.typography.bodySmall,
@@ -184,7 +175,6 @@ fun LauncherIconScreen(
                                         },
                                 )
                             }
-                        }
                     }
                 }
             }

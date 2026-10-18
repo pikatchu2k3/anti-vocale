@@ -1,6 +1,33 @@
 package com.antivocale.app.transcription
 
+/**
+ * The ONE language-to-flag-emoji table. Two consumers:
+ *  - the model-info language chips (TASK-790 lineage): [getFlag] per code;
+ *  - TASK-796 model-card titles: [titled] prefixes a title with the flags
+ *    of a monolingual/few-language set (at most [MAX_TITLE_FLAG_LANGUAGES]
+ *    distinct codes; multilingual models carry none). Unmapped codes
+ *    contribute nothing, so a card title never invents a flag.
+ */
 object LanguageFlags {
+
+    /** The "few languages" cutoff for title FLAGS (maintainer convention). */
+    const val MAX_TITLE_FLAG_LANGUAGES = 3
+
+    /**
+     * TASK-820 follow-up (maintainer, 2026-10-13): models with MORE than
+     * [MAX_TITLE_FLAG_LANGUAGES] languages carry the earth emoji instead,
+     * so every card keeps a language signal and the symbol itself says
+     * "multilingual" rather than nothing saying anything. One constant:
+     * swap to another glyph (e.g. the meridian globe) is a one-line change.
+     */
+    const val MULTILINGUAL_PREFIX = "\uD83C\uDF0D "
+
+    /**
+     * The community catalog's literal "speaks many languages" marker
+     * (declared in place of language codes on entries like Whisper Tiny
+     * multilingual).
+     */
+    const val MULTILINGUAL_MARKER = "multilingual"
 
     private val specialMappings = mapOf(
         "af" to "ZA", "am" to "ET", "ar" to "SA", "as" to "IN", "az" to "AZ",
@@ -26,6 +53,9 @@ object LanguageFlags {
         "tt" to "RU", "ug" to "CN", "uk" to "UA", "ur" to "PK", "uz" to "UZ",
         "vi" to "VN", "wo" to "SN", "xh" to "ZA", "yi" to "IL", "yo" to "NG",
         "zh" to "CN", "zu" to "ZA",
+        // ISO 639-3 codes the community catalog declares: Swiss German
+        // maps to the Swiss flag (the de+gsw bilingual entry shows both).
+        "gsw" to "CH",
     )
 
     private fun countryCodeToFlag(countryCode: String): String {
@@ -42,5 +72,27 @@ object LanguageFlags {
     fun getFlag(languageCode: String): String {
         val countryCode = specialMappings[languageCode] ?: return ""
         return countryCodeToFlag(countryCode)
+    }
+
+    /**
+     * TASK-796: a model-card title prefixed with its languages' flags (and
+     * a trailing space), or the title unchanged when the set is empty, too
+     * large, or entirely unmapped.
+     */
+    fun titled(title: String, languageCodes: Collection<String>): String {
+        val distinct = languageCodes.distinct()
+        if (distinct.isEmpty()) return title
+        // The community catalog declares the LITERAL marker "multilingual"
+        // on entries that speak many languages (Whisper Tiny multilingual):
+        // that IS the earth-prefix semantic, not an unmappable typo.
+        if (distinct.size > MAX_TITLE_FLAG_LANGUAGES || distinct.contains(MULTILINGUAL_MARKER)) {
+            return MULTILINGUAL_PREFIX + title
+        }
+        // Conservative: EVERY code must map. A partial prefix would claim a
+        // language set the model does not have (review round: a mixed
+        // [unknown, it] set showing only the Italian flag).
+        val flags = distinct.map { getFlag(it) }
+        if (flags.any { it.isEmpty() }) return title
+        return flags.joinToString("") + " " + title
     }
 }

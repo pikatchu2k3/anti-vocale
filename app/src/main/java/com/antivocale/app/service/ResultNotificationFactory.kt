@@ -60,6 +60,9 @@ data class ResultNotificationSpec(
     /** GH #128: the display name of the SAF folder the export landed in;
      *  success says WHERE, so a twin-folder mismatch reads right here. */
     val savedFolderName: String? = null,
+    /** TASK-798: the provider's name for the written document; the
+     *  notification names the exact file so a user can search for it. */
+    val savedFileName: String? = null,
     val firstPostedAt: Long = System.currentTimeMillis(),
     /** True when rebuilding after a prev/next tap: suppresses re-alerting. */
     val repost: Boolean = false
@@ -170,6 +173,10 @@ class ResultNotificationFactory(private val context: Context) {
             .setContentIntent(plainLaunchPendingIntent())
             .setAutoCancel(true)
             .build()
+
+    /** The resolved subtext line for [saveOutcomeMessage]'s result. */
+    fun saveOutcomeLine(message: SaveOutcomeMessage?): String? =
+        saveOutcomeLineSpec(message)?.let { (res, args) -> context.getString(res, *args) }
 
     /**
      * TASK-684 (GH #109): the quiet summary for the GENERIC interrupted
@@ -340,10 +347,26 @@ class ResultNotificationFactory(private val context: Context) {
             repetitionSuspected = repetitionSuspected,
             saveFailureReason = saveResult.failureOrNull(),
             savedFolderName = saveResult.savedFolderOrNull(),
+            savedFileName = saveResult.savedFileNameOrNull(),
             firstPostedAt = System.currentTimeMillis()
         )
         postIfPermitted(id, build(spec, prefs))
         Log.i(originTag, "Showed result notification (${text.length} chars), source=$sourcePackage, showShare=${prefs.showShareAction} (id=$id)")
+    }
+
+    /**
+     * TASK-820 (GH #128): the non-share save-failure surface. Shares carry
+     * the reason in the result notification's subtext (TASK-722); every
+     * other origin (browse, Tasker, retranscribe) gets this dedicated
+     * one-shot notice instead. Same channel and alert icon as the error
+     * notifications, so the user's per-app notification settings apply.
+     */
+    fun postSaveFailure(reason: String) {
+        val id = nextNotificationId()
+        postIfPermitted(id, alertNotification(
+            context.getString(R.string.app_name),
+            context.getString(R.string.auto_save_failed, reason)))
+        Log.i(TAG, "Posted save-failure notification (id=$id)")
     }
 
     /**
@@ -437,18 +460,14 @@ class ResultNotificationFactory(private val context: Context) {
             subTextParts.add(context.getString(R.string.warning_repetition_suspected))
         }
 
-        if (spec.saveFailureReason != null) {
-            // TASK-722: a failed auto-save is never silent; the reason token
-            // rides the subtext AFTER the repetition warning (TASK-583: the
-            // warning that the text may be garbage leads the status facts).
-            subTextParts.add(
-                context.getString(R.string.auto_save_failed, spec.saveFailureReason))
-        } else if (spec.savedFolderName != null) {
-            // GH #128: success names the destination folder, the fact that
-            // separates "written" from "written where you are not looking".
-            subTextParts.add(
-                context.getString(R.string.saved_to_folder, spec.savedFolderName))
-        }
+        // TASK-820: the ONE shared derivation (the History row line and this
+        // subtext cannot drift again).
+        saveOutcomeLine(saveOutcomeMessage(spec.savedFolderName, spec.savedFileName, spec.saveFailureReason))
+            ?.let { outcome ->
+                // It rides AFTER the repetition warning (TASK-583: the warning
+                // that the text may be garbage leads the status facts).
+                subTextParts.add(outcome)
+            }
         val langLabel = spec.detectedLanguage?.let { lang ->
             LanguageNames.nativeLanguageName(lang)
         }
@@ -545,7 +564,8 @@ class ResultNotificationFactory(private val context: Context) {
      * Nav intents carry everything needed to rebuild the neighbor page. The
      * request code is distinct per (notification, page, direction): PendingIntent
      * equality ignores extras, so shared codes would collapse distinct pages
-     * into one cached intent.
+     * into one cached intent. The extras themselves are the ONE round trip
+     * in [ResultNotificationSpecNav] (TASK-764).
      */
     private fun navPendingIntent(spec: ResultNotificationSpec, pageIndex: Int, isPrev: Boolean): PendingIntent {
         val intent = Intent(context, NotificationActionReceiver::class.java).apply {
@@ -554,28 +574,8 @@ class ResultNotificationFactory(private val context: Context) {
             } else {
                 NotificationActionReceiver.ACTION_PAGE_NEXT
             }
-            putExtra(NotificationActionReceiver.EXTRA_TRANSCRIPTION_TEXT, spec.transcriptionText)
-            // TASK-647: the rebuilt notification's copy/share actions must
-            // keep signing; the body stays raw.
-            putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_TEXT, spec.signatureText)
-            putExtra(NotificationActionReceiver.EXTRA_SIGNATURE_POSITION, spec.signaturePosition)
-            putExtra(NotificationActionReceiver.EXTRA_PAGE_INDEX, pageIndex)
-            putExtra(NotificationActionReceiver.EXTRA_SAVED_FOLDER, spec.savedFolderName)
-            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, spec.notificationId)
-            putExtra(NotificationActionReceiver.EXTRA_FIRST_POSTED_AT, spec.firstPostedAt)
-            putExtra(NotificationActionReceiver.EXTRA_SAVE_FAILURE, spec.saveFailureReason)
-            putExtra(NotificationActionReceiver.EXTRA_IS_PARTIAL, spec.isPartial)
-            putExtra(NotificationActionReceiver.EXTRA_FAILED_CHUNK_COUNT, spec.failedChunkCount)
-            putExtra(NotificationActionReceiver.EXTRA_REPETITION_SUSPECTED, spec.repetitionSuspected)
-            putExtra(NotificationActionReceiver.EXTRA_COPIED_TO_CLIPBOARD, spec.copiedToClipboard)
-            putExtra(NotificationActionReceiver.EXTRA_STREAMED_WITHOUT_VAD, spec.streamedWithoutVad)
-            spec.refinedFrom?.let { putExtra(NotificationActionReceiver.EXTRA_REFINED_FROM, it) }
-            putExtra(NotificationActionReceiver.EXTRA_NOT_REFINED, spec.notRefined)
-            spec.taskId?.let { putExtra(NotificationActionReceiver.EXTRA_TASK_ID, it) }
-            spec.sourcePackage?.let { putExtra(NotificationActionReceiver.EXTRA_SOURCE_PACKAGE, it) }
-            spec.confidence?.let { putExtra(NotificationActionReceiver.EXTRA_CONFIDENCE, it) }
-            spec.detectedLanguage?.let { putExtra(NotificationActionReceiver.EXTRA_DETECTED_LANGUAGE, it) }
         }
+        ResultNotificationSpecNav.writeTo(intent, spec, currentPage = pageIndex)
         val requestCode = spec.notificationId * 1000 + pageIndex * 2 + if (isPrev) 0 else 1
         return PendingIntent.getBroadcast(
             context,
@@ -602,8 +602,55 @@ class ResultNotificationFactory(private val context: Context) {
         )
     }
 
+    /** TASK-820: the message cases [saveOutcomeMessage] decides between. */
+    sealed interface SaveOutcomeMessage {
+        data class Failed(val reason: String) : SaveOutcomeMessage
+        data class Saved(val fileName: String, val folderName: String) : SaveOutcomeMessage
+        data class SavedNameless(val folderName: String) : SaveOutcomeMessage
+    }
+
     companion object {
         private const val TAG = "ResultNotificationFactory"
+
+        /**
+         * TASK-820: the ONE three-fields-to-message derivation, shared by
+         * the result notification's subtext and the History row line (the
+         * two surfaces that render the persisted save outcome). Pure (no
+         * context): each surface resolves the message with its own string
+         * idiom. Failure leads; a successful save names the file AND its
+         * folder (the fact that separates "written" from "written where
+         * you are not looking", GH #128). Null when no save ran.
+         */
+        fun saveOutcomeMessage(
+            savedFolderName: String?,
+            savedFileName: String?,
+            saveFailureReason: String?,
+        ): SaveOutcomeMessage? = when {
+            saveFailureReason != null -> SaveOutcomeMessage.Failed(saveFailureReason)
+            savedFolderName != null -> savedFileName
+                ?.let { name -> SaveOutcomeMessage.Saved(name, savedFolderName) }
+                ?: SaveOutcomeMessage.SavedNameless(savedFolderName)
+            else -> null
+        }
+
+        /**
+         * The ONE string spec for [saveOutcomeMessage]'s result: the resource
+         * plus its format args. Each surface resolves with its own idiom
+         * (context.getString in the factory, stringResource in the Compose
+         * row); the mapping itself lives only here, so the notification
+         * subtext and the History row cannot drift on wording or args.
+         */
+        fun saveOutcomeLineSpec(message: SaveOutcomeMessage?): Pair<Int, Array<out Any>>? =
+            when (message) {
+                is SaveOutcomeMessage.Failed ->
+                    R.string.auto_save_failed to arrayOf(message.reason)
+                is SaveOutcomeMessage.Saved ->
+                    R.string.saved_to_folder to arrayOf(message.fileName, message.folderName)
+                is SaveOutcomeMessage.SavedNameless ->
+                    R.string.saved_to_folder_nameless to arrayOf(message.folderName)
+                null -> null
+            }
+
         // Mirror the services' launch-band constants so the same intent shape
         // stays a single PendingIntent whichever builder produced it.
         private const val RC_ERROR_LAUNCH_DEFAULT = 0
@@ -649,7 +696,8 @@ class ResultNotificationFactory(private val context: Context) {
          * - 2503: SuspendedRunRecovery.INTERRUPTED_NOTIFICATION_ID (TASK-684
          *   generic interrupted-runs summary)
          * New fixed ids or bands go under the base; 2301..2400 and 2504..2999
-         * are free headroom.
+         * are free headroom (2601 was the voice-note offer slot until the
+         * offer mode was removed, TASK-272).
          */
         const val RESULT_NOTIFICATION_ID_BASE = 3000
 

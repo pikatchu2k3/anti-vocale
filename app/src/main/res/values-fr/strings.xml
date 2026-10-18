@@ -492,7 +492,15 @@
     <string name="early_preview_badge">Aperçu</string>
     <string name="early_preview_requires_progressive">Requiert un affichage progressif</string>
     <string name="auto_save_failed">Échec de l\'enregistrement automatique (%1$s)</string>
-    <string name="saved_to_folder">Enregistré dans %1$s</string>
+    <string name="saved_to_folder">%1$s enregistré dans %2$s</string>
+    <string name="saved_to_folder_nameless">Enregistré dans %1$s</string>
+    <string name="share_format_title">Partager au format</string>
+    <string name="share_transcription_more">Partager…</string>
+    <string name="share_format_txt">Texte brut</string>
+    <string name="share_format_timed">Texte avec horodatages</string>
+    <string name="share_format_srt">Sous-titres (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">Cette entrée n’a pas d’horodatages enregistrés ; les options horodatées partageront du texte brut.</string>
     <string name="default_prompt_title">Invite par défaut</string>
     <string name="default_prompt_description">Consigne donnée au modèle pendant la transcription. Laisser vide pour utiliser l\'invite intégrée.</string>
     <string name="default_prompt_placeholder">ex. Transcris ce discours :</string>
@@ -822,11 +830,9 @@
     <string name="share_target_external">Anti-Vocale (External)</string>
     <string name="share_shortcut_transcribe_with">Transcrire avec %1$s</string>
     <string name="external_none_imported">Aucun modèle externe importé</string>
-    <string name="external_section_title">Modèles externes</string>
+    <string name="external_section_title">Ajouter d\'autres modèles de transcription</string>
     <string name="model_advanced_section">Avancé</string>
     <string name="model_advanced_description">Importations externes et téléchargements Gemma</string>
-    <string name="external_import_folder">Importer depuis un dossier</string>
-    <string name="external_import_url">Importer depuis un lien</string>
     <string name="external_url_hint">URL de dépôt HuggingFace ou JSON de catalogue</string>
     <string name="external_import">Importer</string>
     <string name="external_importing">Importation du modèle…</string>
@@ -850,7 +856,7 @@
     <string name="external_catalog_restore">Restaurer le catalogue officiel</string>
     <string name="external_link_advanced">J\'ai déjà un lien (avancé)</string>
     <string name="external_catalog_language">Langue</string>
-    <string name="external_catalog_other">Autres langues</string>
+    <string name="external_catalog_no_matches">Pas encore de modèles pour cette langue</string>
     <string name="external_decode_language">Langue de décodage</string>
     <string name="external_decode_auto">Détection automatique</string>
     <string name="external_family">Famille de modèle</string>
@@ -873,9 +879,31 @@
     <string name="external_notice_single_pass">Un audio très long peut ne pas être traité en une seule passe par les grands modèles. Rognez l\'audio ou choisissez un modèle plus petit.</string>
     <string name="external_notice_family">Si la transcription plante sans erreur, l\'architecture est peut-être incorrecte : supprimez puis réimportez le modèle avec une autre architecture.</string>
     <string name="share_targets_title">Modèles dans le menu Partager</string>
+    <string name="voice_note_settings_title">Notes vocales</string>
+    <string name="voice_note_settings_summary_on">Transcription automatique des notes vocales WhatsApp · active</string>
+    <string name="voice_note_settings_summary_off">Transcription automatique des notes vocales WhatsApp · inactive</string>
+    <string name="voice_note_settings_summary_limited">Reconnaissance de l\'expéditeur des notes vocales</string>
     <string name="voice_note_identity_title">Reconnaissance de l\'expéditeur des notes vocales</string>
-    <string name="voice_note_identity_description">Inscrit sur la ligne d\'historique le nom de l\'expéditeur de la note vocale partagée. Pour l\'instant WhatsApp uniquement. Le nom n\'apparaît que si la notification de la note est arrivée pendant que c\'était activé, et seulement si la durée annoncée correspond à l\'audio (aucun nom deviné). Le nom reste sur cette ligne même après désactivation ; la liste d\'attente vit uniquement en mémoire. Nécessite l\'accès aux notifications.</string>
+    <string name="voice_note_identity_description">Étiquette les notes vocales transcrites du nom de l\'expéditeur, partagées ici ou automatiques. Pour l\'instant, WhatsApp seulement. Le nom n\'apparaît que si la notification est arrivée option activée et que la durée correspond (aucun nom deviné) ; la liste d\'attente vit uniquement en mémoire. Nécessite l\'accès aux notifications.</string>
     <string name="voice_note_identity_grant_hint">L\'accès aux notifications est désactivé. Touchez pour ouvrir le réglage système et l\'activer pour cette app.</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">Transcription des notes vocales</string>
+    <string name="voice_note_detection_description">Transcrit les notes vocales WhatsApp dès leur arrivée, pendant que l\'app s\'exécute. Si Android bloque un démarrage en arrière-plan, une notification le lance en un geste. Une note n\'est lue que pour être transcrite, sur cet appareil ; désactivé, rien n\'est lu. Nécessite l\'accès à l\'audio.</string>
+    <string name="voice_note_detection_grant_hint">L\'accès audio est désactivé. Touchez pour ouvrir les paramètres de l\'application et l\'activer; la transcription démarre dès qu\'il est accordé.</string>
+    <string name="voice_note_folder_grant_rejected">Ce n\'est pas le dossier des notes vocales WhatsApp. Choisissez le dossier nommé WhatsApp Voice Notes et réessayez.</string>
+    <string name="voice_note_folder_card_title">Dossier des notes vocales</string>
+    <string name="voice_note_folder_card_state_granted">Autorisation accordée</string>
+    <string name="voice_note_folder_card_state_missing">Autorisation manquante</string>
+    <string name="voice_note_folder_card_desc">Pour lire les notes, accordez une fois l\'accès au dossier où WhatsApp les enregistre:</string>
+    <string name="voice_note_folder_choose">Choisir le dossier</string>
+    <string name="voice_note_folder_change">Changer de dossier</string>
+    <string name="voice_note_folder_remove">Retirer l\'accès</string>
+    <string name="voice_note_folder_storage_root">Stockage interne</string>
+    <string name="voice_note_folder_sheet_title">Accorder l\'accès au dossier</string>
+    <string name="voice_note_folder_sheet_step1">Dans le sélecteur qui s\'ouvre, entrez dans Stockage interne (menu de gauche; touchez Afficher le stockage si vous ne le voyez pas).</string>
+    <string name="voice_note_folder_sheet_step2">Descendez le chemin jusqu\'au dossier des notes vocales:</string>
+    <string name="voice_note_folder_sheet_step3">Le dossier WhatsApp Voice Notes sélectionné (sans l\'ouvrir), touchez UTILISER CE DOSSIER puis AUTORISER.</string>
+    <string name="voice_note_folder_sheet_open">Ouvrir le sélecteur</string>
     <string name="share_targets_description">Chaque modèle téléchargé apparaît comme entrée distincte dans le menu système. L\'audio est traité par le modèle sélectionné.</string>
     <string name="advanced_sharing_toggle">Afficher les modèles téléchargés</string>
     <string name="share_targets_models_info">Chaque modèle téléchargé apparaîtra comme entrée dans le menu Partager. Supprimer un modèle le retire du menu.</string>
@@ -897,6 +925,8 @@
     <string name="retranscribe_active_badge">Actif</string>
     <string name="retranscribe_setting_title">Bouton de re-transcription</string>
     <string name="retranscribe_setting_description">Affiche un bouton sur les transcriptions audio pour réessayer avec un autre modèle.</string>
+    <string name="advanced_share_formats_title">Partager au format…</string>
+    <string name="advanced_share_formats_description">Ajoute un second bouton Partager… sur les résultats qui propose les formats sous-titres et horodatés, en plus du partage en texte brut habituel.</string>
     <string name="subtitles_found_title">Sous-titres trouvés</string>
     <string name="subtitles_found_text">Utiliser les sous-titres intégrés (%1$s) ou transcrire l\'audio ? Sans choix, la transcription démarre après %2$s.</string>
     <string name="subtitles_language_unknown">inconnue</string>
@@ -1071,13 +1101,16 @@
     <string name="refinement_model_description">Le modèle utilisé par la seconde passe. Laissez sur hériter pour utiliser le modèle actif.</string>
     <string name="refinement_model_inherit">Hériter du modèle actif</string>
     <string name="export_model_bundle">Partager le modèle pour un transfert hors ligne</string>
-    <string name="external_import_bundle">Importer un paquet de transfert</string>
+    <string name="external_family_advanced">Choisir la famille du modèle manuellement</string>
+    <string name="external_import_device">Importer depuis cet appareil</string>
+    <string name="litert_card_description">Ajoutez manuellement un fichier de modèle Gemma (.litertlm) que vous possédez déjà, depuis cet appareil ou via une URL Hugging Face. La plupart des utilisateurs préfèrent les téléchargements ci-dessus.</string>
+    <string name="external_import_catalog">Parcourir notre catalogue de modèles</string>
     <string name="external_models_intro">Cette section contient des modèles alternatifs : des versions légères pour les téléphones avec peu de mémoire, et des modèles optimisés pour des langues précises. Beaucoup viennent du catalogue communautaire que nous gérons, mais vous pouvez aussi pointer l\'app vers un catalogue tiers ou héberger le vôtre.</string>
     <!-- TASK-779 + road-test copy fixes -->
     <string name="litert_card_title">Ajouter un modèle Gemma (LiteRT)</string>
-    <string name="gemma_entry_title">Téléchargements Gemma</string>
-    <string name="gemma_entry_subtitle">Parcourir et télécharger les modèles Gemma officiels</string>
-    <string name="external_section_subtitle">Fichiers de modèles que tu ajoutes toi-même (dossier, URL ou paquet de transfert) ainsi que les téléchargements Gemma LiteRT-LM ; ils tournent à côté du catalogue intégré.</string>
+    <string name="gemma_entry_title">Modèles Gemma d\'IA</string>
+    <string name="gemma_entry_subtitle">Assistants IA complets : transcription vocale + résumés de texte, affinage en deux passes, discussion hors ligne</string>
+    <string name="external_section_subtitle">Modèles de transcription vocale supplémentaires que tu ajoutes toi-même. Ils fonctionnent à côté des modèles intégrés et apparaissent dans la liste ci-dessous après import.</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
     <string name="folder_watch_title">Surveillance planifiée des dossiers</string>

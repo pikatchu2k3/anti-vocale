@@ -598,7 +598,15 @@
     <string name="early_preview_badge">Preview</string>
     <string name="early_preview_requires_progressive">Requires Progressive Display</string>
     <string name="auto_save_failed">Auto-save failed (%1$s)</string>
-    <string name="saved_to_folder">Saved to %1$s</string>
+    <string name="saved_to_folder">Saved %1$s to %2$s</string>
+    <string name="share_format_title">Share as</string>
+    <string name="share_transcription_more">Share…</string>
+    <string name="share_format_txt">Plain text</string>
+    <string name="share_format_timed">Text with timestamps</string>
+    <string name="share_format_srt">Subtitles (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">This entry has no timestamps stored; the timed options will share plain text.</string>
+    <string name="saved_to_folder_nameless">Saved to %1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Default Prompt</string>
@@ -987,18 +995,19 @@
     <string name="share_target_external">Anti-Vocale (External)</string>
     <string name="share_shortcut_transcribe_with">Transcribe with %1$s</string>
     <string name="external_none_imported">No external models imported</string>
-    <string name="external_section_title">External models</string>
-    <string name="external_section_subtitle">Model files you add yourself (folder, URL, or transfer bundle) plus the Gemma LiteRT-LM downloads; they run alongside the built-in catalog.</string>
+    <string name="external_section_title">Add more transcription models</string>
+    <string name="external_section_subtitle">Extra voice-transcription models you add yourself. They run alongside the built-in ones and appear in the list below once imported.</string>
     <string name="model_advanced_section">Advanced</string>
     <string name="model_advanced_description">External imports and Gemma downloads</string>
-    <string name="external_import_folder">Import from a folder</string>
-    <string name="external_import_bundle">Import a transfer bundle</string>
     <string name="external_models_intro">This section holds alternative models: small ones for phones with little memory, and models tuned for specific languages. Many come from the community catalog we curate, and you can also point the app at a third-party catalog or host your own.</string>
     <!-- TASK-779: task-oriented labels for the import actions and the Gemma entry (maintainer road test) -->
     <string name="litert_card_title">Add a Gemma model (LiteRT)</string>
-    <string name="gemma_entry_title">Gemma downloads</string>
-    <string name="gemma_entry_subtitle">Browse and download the official Gemma models</string>
-    <string name="external_import_url">Import from a link</string>
+    <string name="gemma_entry_title">Gemma AI models</string>
+    <string name="gemma_entry_subtitle">Full AI assistant models: voice transcribers + text summaries, two-pass refinement, offline chat</string>
+    <string name="external_import_catalog">Browse our model catalog</string>
+    <string name="external_family_advanced">Choose the model family manually</string>
+    <string name="external_import_device">Import from this device</string>
+    <string name="litert_card_description">Manually add a Gemma model file (.litertlm) you already have, from this device or a Hugging Face URL. Most users want the downloads above.</string>
     <string name="external_url_hint">HuggingFace repo or catalog-entry JSON URL</string>
     <string name="external_import">Import</string>
     <string name="external_importing">Importing model…</string>
@@ -1022,7 +1031,7 @@
     <string name="external_catalog_restore">Restore the official catalog</string>
     <string name="external_link_advanced">I already have a link (advanced)</string>
     <string name="external_catalog_language">Language</string>
-    <string name="external_catalog_other">Other languages</string>
+    <string name="external_catalog_no_matches">No models for this language yet</string>
     <string name="external_decode_language">Decode language</string>
     <string name="external_decode_auto">Auto-detect (no fixed language)</string>
     <string name="external_family">Model family</string>
@@ -1047,9 +1056,31 @@
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Models in Share Menu</string>
+    <string name="voice_note_settings_title">Voice notes</string>
+    <string name="voice_note_settings_summary_on">Automatic WhatsApp voice-note transcription · on</string>
+    <string name="voice_note_settings_summary_off">Automatic WhatsApp voice-note transcription · off</string>
+    <string name="voice_note_settings_summary_limited">Sender recognition for voice notes</string>
     <string name="voice_note_identity_title">Voice note sender recognition</string>
-    <string name="voice_note_identity_description">Labels the History row of a shared voice note with the sender\'s name. WhatsApp only for now. The name appears only if the note\'s notification arrived while this was on, and only when its reported length matches the audio (no guessed names). The name stays on that row even after you turn this off; the waiting list lives in memory only. Requires notification access.</string>
+    <string name="voice_note_identity_description">Labels transcribed voice notes with the sender\'s name, shared here or automatic. WhatsApp only for now. The name appears only when the note\'s notification arrived while this was on and its length matches (no guessed names); the waiting list lives in memory only. Requires notification access.</string>
     <string name="voice_note_identity_grant_hint">Notification access is off. Tap to open the system setting and enable it for this app.</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">Voice note transcription</string>
+    <string name="voice_note_detection_description">Transcribes new WhatsApp voice notes as they arrive, while the app is running. If Android blocks a background start, a one-tap notification starts it. A note is read only to transcribe it, on this device; while off, nothing is read. Requires audio access.</string>
+    <string name="voice_note_detection_grant_hint">Audio access is off. Tap to open the app settings and enable it; transcription starts once it is granted.</string>
+    <string name="voice_note_folder_grant_rejected">That is not the WhatsApp Voice Notes folder. Pick the folder named WhatsApp Voice Notes and try again.</string>
+    <string name="voice_note_folder_card_title">Voice notes folder</string>
+    <string name="voice_note_folder_card_state_granted">Permission granted</string>
+    <string name="voice_note_folder_card_state_missing">Permission missing</string>
+    <string name="voice_note_folder_card_desc">To read the notes, grant access once to the folder where WhatsApp saves them:</string>
+    <string name="voice_note_folder_choose">Choose folder</string>
+    <string name="voice_note_folder_change">Change folder</string>
+    <string name="voice_note_folder_remove">Remove access</string>
+    <string name="voice_note_folder_storage_root">Internal storage</string>
+    <string name="voice_note_folder_sheet_title">Grant folder access</string>
+    <string name="voice_note_folder_sheet_step1">In the picker that opens, enter Internal storage (the left menu; tap Show storage if you don\'t see it).</string>
+    <string name="voice_note_folder_sheet_step2">Scroll down the path to the voice-notes folder:</string>
+    <string name="voice_note_folder_sheet_step3">With the WhatsApp Voice Notes folder selected (don\'t open it), tap USE THIS FOLDER, then ALLOW.</string>
+    <string name="voice_note_folder_sheet_open">Open the picker</string>
     <string name="share_targets_description">Each downloaded model appears as a separate option in the system menu. Audio is processed by the selected model.</string>
     <string name="advanced_sharing_toggle">Show downloaded models</string>
     <string name="share_targets_models_info">Each downloaded model will appear as an item in the share menu. Deleting a model removes it from the menu.</string>
@@ -1075,6 +1106,8 @@
     <string name="retranscribe_active_badge">Active</string>
     <string name="retranscribe_setting_title">Re-transcribe Button</string>
     <string name="retranscribe_setting_description">Show a button on audio transcriptions to retry with a different model.</string>
+    <string name="advanced_share_formats_title">Share as…</string>
+    <string name="advanced_share_formats_description">Adds a second Share… button on results that offers subtitle and timestamped formats, in addition to the default plain-text share.</string>
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Subtitles found</string>

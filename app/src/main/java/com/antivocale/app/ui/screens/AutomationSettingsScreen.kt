@@ -8,14 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -46,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.antivocale.app.R
+import com.antivocale.app.ui.AppNavigation
 import com.antivocale.app.ui.components.SectionCard
 import com.antivocale.app.ui.components.SettingsDropdown
 import com.antivocale.app.ui.components.SettingsHubCard
@@ -54,7 +51,7 @@ import com.antivocale.app.ui.tabs.AutomationGuideCard
 import com.antivocale.app.ui.tabs.RemoteOmnivoiceConfigCard
 import com.antivocale.app.ui.tabs.SettingsRowFocus
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
-import com.antivocale.app.ui.components.SettingsSubPageHeader
+import com.antivocale.app.ui.components.SubPageScrollScaffold
 
 /**
  * The automation-and-offload secondary page (maintainer decision
@@ -76,101 +73,99 @@ import com.antivocale.app.ui.components.SettingsSubPageHeader
 @Composable
 fun AutomationSettingsScreen(
     viewModel: SettingsViewModel,
+    initialScroll: AppNavigation.ScrollRequest? = null,
+    onScrollConsumed: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val externalAutomationEnabled by viewModel.externalAutomationEnabled.collectAsStateWithLifecycle()
     val openTranscribeEnabled by viewModel.openTranscribeEnabled.collectAsStateWithLifecycle()
     val remoteOffloadEnabled by viewModel.remoteOmnivoiceEnabled.collectAsStateWithLifecycle()
 
-    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val toggleFocus = remember { SettingsRowFocus() }
     var scrollContentRootY by remember { mutableStateOf(0) }
 
-    // TASK-748: the sub-pages' shared chrome (plain Column + back-header
-    // Row, no Scaffold); the host tab already applies the status-bar inset.
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .navigationBarsPadding()
-            .verticalScroll(scrollState)
-            .onGloballyPositioned { scrollContentRootY = it.positionInRoot().y.toInt() }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        SettingsSubPageHeader(titleRes = R.string.automation_settings_title, onBack = onBack)
-        // TASK-274: consent gate for the exported automation receivers
-        // (Tasker surface); while off they answer with the error that
-        // names this toggle.
-        ToggleSettingCard(
-            icon = Icons.Default.Build,
-            title = stringResource(R.string.external_automation_title),
-            description = stringResource(R.string.external_automation_description),
-            checked = externalAutomationEnabled,
-            onCheckedChange = { enabled ->
-                viewModel.saveExternalAutomationEnabled(enabled)
-            },
-            modifier = Modifier
-                .onGloballyPositioned {
-                    toggleFocus.capture(it.positionInRoot().y.toInt())
+    // TASK-815: the scroll scaffold owns the scroll state, the body
+    // wrapper, and the programmatic scroll a nav request may carry.
+    SubPageScrollScaffold(
+        titleRes = R.string.automation_settings_title,
+        onBack = onBack,
+        scrollRequest = initialScroll,
+        onScrollConsumed = onScrollConsumed,
+        onBodyPositioned = { scrollContentRootY = it },
+    ) { scrollState ->
+            // TASK-274: consent gate for the exported automation receivers
+            // (Tasker surface); while off they answer with the error that
+            // names this toggle.
+            ToggleSettingCard(
+                icon = Icons.Default.Build,
+                title = stringResource(R.string.external_automation_title),
+                description = stringResource(R.string.external_automation_description),
+                checked = externalAutomationEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.saveExternalAutomationEnabled(enabled)
+                },
+                modifier = Modifier
+                    .onGloballyPositioned {
+                        toggleFocus.capture(it.positionInRoot().y.toInt())
+                    }
+                    .border(
+                        2.dp,
+                        toggleFocus.highlightColor("external_automation_highlight"),
+                        MaterialTheme.shapes.medium,
+                    )
+            )
+
+            // TASK-275: the explainer card; its onShowToggle converges on
+            // this page's own scroll state (the flash pattern unchanged).
+            AutomationGuideCard(
+                title = stringResource(R.string.automation_guide_title),
+                description = stringResource(R.string.automation_guide_description),
+                enabled = externalAutomationEnabled,
+                onShowToggle = {
+                    toggleFocus.flashIn(scope, scrollState) { scrollContentRootY }
+                },
+            )
+
+            // TASK-785 (GH #144): the Open Transcribe provider gate, the third
+            // external surface on this page. While off the bound service is
+            // disabled at the component level, so contract clients never list
+            // the app as a transcriber.
+            ToggleSettingCard(
+                icon = Icons.Default.Api,
+                title = stringResource(R.string.open_transcribe_title),
+                description = stringResource(R.string.open_transcribe_description),
+                checked = openTranscribeEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.saveOpenTranscribeEnabled(enabled)
                 }
-                .border(
-                    2.dp,
-                    toggleFocus.highlightColor("external_automation_highlight"),
-                    MaterialTheme.shapes.medium,
-                )
-        )
+            )
 
-        // TASK-275: the explainer card; its onShowToggle converges on
-        // this page's own scroll state (the flash pattern unchanged).
-        AutomationGuideCard(
-            title = stringResource(R.string.automation_guide_title),
-            description = stringResource(R.string.automation_guide_description),
-            enabled = externalAutomationEnabled,
-            onShowToggle = {
-                toggleFocus.flashIn(scope, scrollState) { scrollContentRootY }
-            },
-        )
+            // TASK-681: LAN offload (experimental); the supporting text IS
+            // the privacy contract and stays visible while off too.
+            ToggleSettingCard(
+                icon = Icons.Default.Lan,
+                title = stringResource(R.string.remote_offload_title),
+                description = stringResource(R.string.remote_offload_description),
+                supportingText = stringResource(R.string.remote_offload_disclosure),
+                checked = remoteOffloadEnabled,
+                onCheckedChange = { enabled ->
+                    viewModel.saveRemoteOmnivoiceEnabled(enabled)
+                }
+            )
 
-        // TASK-785 (GH #144): the Open Transcribe provider gate, the third
-        // external surface on this page. While off the bound service is
-        // disabled at the component level, so contract clients never list
-        // the app as a transcriber.
-        ToggleSettingCard(
-            icon = Icons.Default.Api,
-            title = stringResource(R.string.open_transcribe_title),
-            description = stringResource(R.string.open_transcribe_description),
-            checked = openTranscribeEnabled,
-            onCheckedChange = { enabled ->
-                viewModel.saveOpenTranscribeEnabled(enabled)
+            // The offload configuration sits contextually under its own
+            // toggle (maintainer road test 2026-10-07: it used to appear after
+            // the folder-watch card, detached from the switch that reveals it).
+            if (remoteOffloadEnabled) {
+                RemoteOmnivoiceConfigCard(viewModel)
             }
-        )
 
-        // TASK-681: LAN offload (experimental); the supporting text IS
-        // the privacy contract and stays visible while off too.
-        ToggleSettingCard(
-            icon = Icons.Default.Lan,
-            title = stringResource(R.string.remote_offload_title),
-            description = stringResource(R.string.remote_offload_description),
-            supportingText = stringResource(R.string.remote_offload_disclosure),
-            checked = remoteOffloadEnabled,
-            onCheckedChange = { enabled ->
-                viewModel.saveRemoteOmnivoiceEnabled(enabled)
-            }
-        )
-
-        // The offload configuration sits contextually under its own
-        // toggle (maintainer road test 2026-10-07: it used to appear after
-        // the folder-watch card, detached from the switch that reveals it).
-        if (remoteOffloadEnabled) {
-            RemoteOmnivoiceConfigCard(viewModel)
-        }
-
-        // TASK-741 (GH #125): the scheduled folder watch. The third
-        // automation input source; the honest ColorOS contract lives in the
-        // description (runs when the system allows; the manual scan is
-        // always available).
-        ScheduledFolderWatchCard(viewModel)
+            // TASK-741 (GH #125): the scheduled folder watch. The third
+            // automation input source; the honest ColorOS contract lives in the
+            // description (runs when the system allows; the manual scan is
+            // always available).
+            ScheduledFolderWatchCard(viewModel)
     }
 }
 

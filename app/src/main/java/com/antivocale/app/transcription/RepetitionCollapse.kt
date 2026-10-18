@@ -18,6 +18,12 @@ package com.antivocale.app.transcription
  * bounded at [MAX_REPETITION_UNIT_CHARS] so a long legitimate sentence
  * can never pair with itself as a "unit". No LLM anywhere in this
  * tier; the constants are the guard.
+ *
+ * TASK-816 boundary: the whisper backends run [DegenerateRepetition]
+ * FIRST, at the decode boundary, so tight tail loops never even reach
+ * this pass; this collapse stays the delivered-funnel net for every
+ * backend, wider multi-word units (four or more distinct words), mid-text
+ * loops, and no-space scripts. See that object's KDoc for the split.
  */
 object RepetitionCollapse {
 
@@ -138,7 +144,13 @@ object RepetitionCollapse {
             .lowercase()
             .ifEmpty { null }
 
-    private val WHITESPACE = Regex("\\s+")
+    /**
+     * The word-boundary contract the package's two repetition passes share
+     * (TASK-816 review: a second private \s+ here would let the two passes
+     * silently disagree on what a "word" is while both claim tokenKey
+     * identity). Internal for the same reason tokenKey is.
+     */
+    internal val WHITESPACE = Regex("\\s+")
 
     /** Non-greedy unit: the shortest repeating substring wins. */
     private val CHARACTER_LOOP =

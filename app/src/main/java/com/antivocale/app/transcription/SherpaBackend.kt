@@ -375,6 +375,14 @@ class SherpaBackend(
     override val maxChunkDurationSeconds: Int?
         get() = BundledCatalog.byId(entryId)?.flags?.chunkDurationSeconds?.takeIf { it > 0 }
 
+    /**
+     * TASK-816: only the whisper built-in loops (TASK-792 scoreboard); the
+     * qwen3 guard is native inside sherpa, the other modelTypes stay on the
+     * capability default.
+     */
+    override val trimsDegenerateRepetition: Boolean
+        get() = entry.modelType == "whisper"
+
     // @Volatile: the idle-unload timer frees these on Dispatchers.Default while
     // transcriptions start on Dispatchers.IO; a stale non-null read after an
     // unload would be a use-after-free on the native handle.
@@ -606,6 +614,7 @@ class SherpaBackend(
                     encoder = File(dir, roles.encoder).absolutePath,
                     decoder = File(dir, roles.decoder).absolutePath,
                     tokenizer = File(dir, requireNotNull(roles.tokenizerDir)).absolutePath,
+                    maxTotalLen = entry.flags.maxTotalLen,
                     maxNewTokens = entry.flags.maxNewTokens,
                 ),
                 modelType = entry.modelType,
@@ -719,8 +728,20 @@ class SherpaBackend(
                 rec.decode(stream)
 
                 val result = rec.getResult(stream)
-                val transcription = result.text
                 val detectedLang = TranscriptionResult.normalizedDetectedLanguage(result.lang)
+                // TASK-816 (TASK-792 option 2): whisper-family decodes
+                // truncate a degenerate repetition tail HERE, at the decode
+                // boundary, so every downstream consumer (assembly paths,
+                // interim partials, firstPass storage, cues) sees clean
+                // text. qwen3 decodes get the same guard natively inside
+                // sherpa; the other built-ins do not loop (TASK-792
+                // scoreboard) and stay ungated via the capability default.
+                // On fire the TOKEN channel drops with the tail (see
+                // applyDegenerateRepetition): trimmed text next to untrimmed
+                // tokens fails the cue builder's exact-match alignment.
+                val degenerateTrim =
+                    if (trimsDegenerateRepetition) applyDegenerateRepetition(result.text) else null
+                val transcription = degenerateTrim?.text ?: result.text
 
                 // GH #92: token timestamps decide whether sentence-level subtitle
                 // cues are possible for this model (empty = chunk cues only), and
@@ -749,7 +770,8 @@ class SherpaBackend(
                         text = transcription,
                         confidence = confidence,
                         detectedLanguage = detectedLang,
-                        tokens = TimedTokens.fromRecognizer(result.tokens, result.timestamps, result.durations),
+                        tokens = if (degenerateTrim?.fired == true) emptyList()
+                        else TimedTokens.fromRecognizer(result.tokens, result.timestamps, result.durations),
                     ))
                 }
             } catch (e: Exception) {
@@ -777,6 +799,9 @@ class SherpaBackend(
 
         keepAlive.beginWork()
         try {
+            // TASK-789 review T1: unload() resets the language field
+            // mid-bracket; capture it with the recognizer local.
+            val lang = language
             val rec = onlineRecognizer
                 ?: return Result.failure(TranscriptionException.NotInitialized())
             return withContext(Dispatchers.IO) {
@@ -788,7 +813,7 @@ class SherpaBackend(
                 // non-empty value triggers contextual biasing, which sherpa aborts on (exit 255).
                 stream = rec.createStream("")
                 // AC #3: condition the multilingual model on the user's language ("auto" = auto-detect).
-                stream.setOption("language", language)
+                stream.setOption("language", lang)
                 // Tail padding: a second acceptWaveform of one shared zero buffer so the
                 // streaming encoder gets a complete final chunk to flush trailing tokens,
                 // with no per-chunk padded copy (TASK-340 Fix 1b). The original length
@@ -873,15 +898,38 @@ class SherpaBackend(
     override fun unload() {
         Log.i(TAG, "Unloading '$entryId' backend")
         keepAlive.stop()
-        offlineRecognizer?.release()
+        // TASK-789 (the 1.13.2 FORTIFY crash): a decode may be live inside the
+        // beginWork/endWork bracket; releasing the ORT session now would
+        // destroy mutexes that decode still holds. State flips immediately
+        // and the recognizer FIELDS null now: every transcribe path reads the
+        // field into a local AFTER beginWork, so the in-flight decode keeps
+        // its local while any work arriving after the flip fails
+        // NotInitialized. The captured stale objects release once, at once
+        // when idle and otherwise when the bracket drains (requestDrainRelease).
+        // Capturing matters because a re-initialize landing on this instance
+        // before the drain must not have its fresh recognizer released. May
+        // run under the keep-alive monitor (drain fire and idle fire share
+        // the discipline); must not call back into NativeKeepAlive beyond
+        // the reentrant stop()/requestDrainRelease pattern.
+        releaseBackendState()
+        val staleOffline = offlineRecognizer
+        val staleOnline = onlineRecognizer
         offlineRecognizer = null
-        onlineRecognizer?.release()
         onlineRecognizer = null
+        keepAlive.requestDrainRelease {
+            staleOffline?.release()
+            staleOnline?.release()
+        }
+        // Notify the manager/UI after the unload is booked; on the drain path
+        // the native bytes follow the in-flight decode's return (seconds).
+        onAutoUnloadCallback.get()?.invoke()
+    }
+
+    /** TASK-789: the unload's non-native half (the flip callers observe). */
+    private fun releaseBackendState() {
         modelDir = null
         language = "auto"
         isInitialized = false
-        // Notify the manager/UI after the native memory is actually freed.
-        onAutoUnloadCallback.get()?.invoke()
     }
 
     override fun setKeepAliveTimeout(minutes: Int) {

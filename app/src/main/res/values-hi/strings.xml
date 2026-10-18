@@ -544,7 +544,15 @@
     <string name="early_preview_badge">पूर्वावलोकन</string>
     <string name="early_preview_requires_progressive">प्रगतिशील डिस्प्ले आवश्यक है</string>
     <string name="auto_save_failed">स्वतः सहेजना विफल (%1$s)</string>
-    <string name="saved_to_folder">%1$s में सहेजा गया</string>
+    <string name="saved_to_folder">%1$s को %2$s में सहेजा गया</string>
+    <string name="saved_to_folder_nameless">%1$s में सहेजा गया</string>
+    <string name="share_format_title">इस रूप में साझा करें</string>
+    <string name="share_transcription_more">साझा करें…</string>
+    <string name="share_format_txt">सादा पाठ</string>
+    <string name="share_format_timed">टाइमस्टैम्प सहित पाठ</string>
+    <string name="share_format_srt">सबटाइटल (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">इस प्रविष्टि में कोई टाइमस्टैम्प संग्रहीत नहीं है; समय-संबंधी विकल्प सादा पाठ साझा करेंगे।</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">डिफ़ॉल्ट प्रॉम्प्ट</string>
@@ -921,11 +929,9 @@
     <string name="share_target_external">Anti-Vocale (External)</string>
     <string name="share_shortcut_transcribe_with">%1$s से ट्रांसक्राइब करें</string>
     <string name="external_none_imported">कोई बाहरी मॉडल इंपोर्ट नहीं हुआ</string>
-    <string name="external_section_title">बाहरी मॉडल</string>
+    <string name="external_section_title">और ट्रांसक्रिप्शन मॉडल जोड़ें</string>
     <string name="model_advanced_section">अतिरिक्त सेटिंग</string>
     <string name="model_advanced_description">बाहरी इंपोर्ट और Gemma डाउनलोड</string>
-    <string name="external_import_folder">फ़ोल्डर से आयात करें</string>
-    <string name="external_import_url">लिंक से आयात करें</string>
     <string name="external_url_hint">HuggingFace रेपो या कैटलॉग-एंट्री JSON URL</string>
     <string name="external_import">इंपोर्ट करें</string>
     <string name="external_importing">मॉडल इंपोर्ट हो रहा है…</string>
@@ -949,7 +955,7 @@
     <string name="external_catalog_restore">आधिकारिक कैटलॉग बहाल करें</string>
     <string name="external_link_advanced">मेरे पास पहले से लिंक है (उन्नत)</string>
     <string name="external_catalog_language">भाषा</string>
-    <string name="external_catalog_other">अन्य भाषाएँ</string>
+    <string name="external_catalog_no_matches">इस भाषा के लिए अभी कोई मॉडल नहीं है</string>
     <string name="external_decode_language">डिकोड भाषा</string>
     <string name="external_decode_auto">स्वतः पहचान</string>
     <string name="external_family">मॉडल फ़ैमिली</string>
@@ -974,9 +980,31 @@
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">शेयर मेन्यू में मॉडल</string>
+    <string name="voice_note_settings_title">वॉयेस नोट</string>
+    <string name="voice_note_settings_summary_on">WhatsApp वॉयेस नोट की स्वचालित ट्रांसक्रिप्शन · चालू</string>
+    <string name="voice_note_settings_summary_off">WhatsApp वॉयेस नोट की स्वचालित ट्रांसक्रिप्शन · बंद</string>
+    <string name="voice_note_settings_summary_limited">वॉयेस नोट भेजने वाले की पहचान</string>
     <string name="voice_note_identity_title">वॉइस नोट भेजने वाले की पहचान</string>
-    <string name="voice_note_identity_description">साझा गया वॉयेस नोट की इतिहास पंक्ति पर भेजने वाले का नाम लिखता है। फिलहाल सिर्फ WhatsApp। नाम तभी दिखता है जब नोट का नोटिफिकेशन इस ऑन होने पर आया हो, और तभी जब बताया गया समय ऑडियो से मेल खाता हो (कोई अंदाज़ा नाम नहीं)। यह ऑप्शन बंद करने के बाद भी नाम उस पंक्ति पर रहता है; प्रतीक्षा सूची केवल मेमरी में रहती है। नोटिफिकेशन एक्सेस चाहिए।</string>
+    <string name="voice_note_identity_description">ट्रांसक्राइब की गई वॉयेस नोट को भेजने वाले के नाम से लेबल करता है, यहाँ साझा या स्वचालित। फिलहाल सिर्फ WhatsApp। नाम केवल तब दिखता है जब यह ऑन होने पर नोटिफिकेशन आया हो और समय मेल खाता हो (कोई अंदाज़ा नहीं); प्रतीक्षा सूची केवल मेमरी में रहती है। नोटिफिकेशन एक्सेस चाहिए।</string>
     <string name="voice_note_identity_grant_hint">सूचना एक्सेस बंद है। सिस्टम सेटिंग खोलने और इस ऐप के लिए इसे चालू करने के लिए टैप करें।</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">वॉइस नोट ट्रांसक्रिप्शन</string>
+    <string name="voice_note_detection_description">ऐप चलते समय नई WhatsApp वॉयेस नोट आते ही ट्रांसक्राइब करता है। Android बैकग्राउंड शुरुआत रोके तो एक टैप वाली नोटिफिकेशन से शुरू होता है। नोट केवल ट्रांसक्रिप्शन के लिए पढ़ा जाता है, इसी डिवाइस पर; बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
+    <string name="voice_note_detection_grant_hint">ऑडियो एक्सेस बंद है। ऐप सेटिंग्स खोलकर सक्षम करने के लिए टैप करें; अनुमति मिलते ही ट्रांसक्रिप्शन शुरू हो जाता है।</string>
+    <string name="voice_note_folder_grant_rejected">That is not the WhatsApp Voice Notes folder. Pick the folder named WhatsApp Voice Notes and try again.</string>
+    <string name="voice_note_folder_card_title">वॉइस नोट फ़ोल्डर</string>
+    <string name="voice_note_folder_card_state_granted">अनुमति दी गई</string>
+    <string name="voice_note_folder_card_state_missing">अनुमति नहीं है</string>
+    <string name="voice_note_folder_card_desc">नोट पढ़ने के लिए, जिस फ़ोल्डर में WhatsApp उन्हें सहेजता है उसे एक बार एक्सेस दें:</string>
+    <string name="voice_note_folder_choose">फ़ोल्डर चुनें</string>
+    <string name="voice_note_folder_change">फ़ोल्डर बदलें</string>
+    <string name="voice_note_folder_remove">एक्सेस हटाएँ</string>
+    <string name="voice_note_folder_storage_root">इंटरनल स्टोरेज</string>
+    <string name="voice_note_folder_sheet_title">फ़ोल्डर एक्सेस दें</string>
+    <string name="voice_note_folder_sheet_step1">खुलने वाले पिकर में इंटरनल स्टोरेज पर जाएँ (बायाँ मेनू; न दिखे तो स्टोरेज दिखाएँ पर टैप करें)।</string>
+    <string name="voice_note_folder_sheet_step2">वॉइस नोट फ़ोल्डर तक पथ पर नीचे जाएँ:</string>
+    <string name="voice_note_folder_sheet_step3">WhatsApp Voice Notes फ़ोल्डर चुनकर (खोले बिना) इस फ़ोल्डर का उपयोग करें पर, फिर अनुमति दें पर टैप करें।</string>
+    <string name="voice_note_folder_sheet_open">पिकर खोलें</string>
     <string name="share_targets_description">हर डाउनलोड किया मॉडल सिस्टम मेन्यू में अलग विकल्प के रूप में दिखेगा। ऑडियो चुने गए मॉडल से प्रोसेस होगा।</string>
     <string name="advanced_sharing_toggle">डाउनलोड किए मॉडल दिखाएं</string>
     <string name="share_targets_models_info">हर डाउनलोड किया मॉडल शेयर मेन्यू में अलग एंट्री के रूप में दिखेगा। मॉडल मिटाने पर वह मेन्यू से हट जाएगा।</string>
@@ -998,6 +1026,8 @@
     <string name="retranscribe_active_badge">सक्रिय</string>
     <string name="retranscribe_setting_title">फिर-ट्रांसक्राइब बटन</string>
     <string name="retranscribe_setting_description">ऑडियो ट्रांसक्रिप्शन पर दूसरे मॉडल से फिर कोशिश करने का बटन दिखाएं।</string>
+    <string name="advanced_share_formats_title">इस रूप में साझा करें…</string>
+    <string name="advanced_share_formats_description">परिणामों पर दूसरा Share… बटन जोड़ता है जो सामान्य प्लेन-टेक्स्ट साझाकरण के अतिरिक्त सबटाइटल और टाइमस्टैम्प प्रारूप देता है।</string>
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">सबटाइटल मिले</string>
@@ -1202,13 +1232,16 @@
     <string name="refinement_model_description">दूसरे चरण द्वारा उपयोग किया जाने वाला मॉडल। सक्रिय मॉडल का उपयोग करने के लिए इनहेरिट पर छोड़ें।</string>
     <string name="refinement_model_inherit">सक्रिय मॉडल इनहेरिट करें</string>
     <string name="export_model_bundle">ऑफ़लाइन ट्रांसफ़र के लिए मॉडल साझा करें</string>
-    <string name="external_import_bundle">ट्रांसफ़र बंडल आयात करें</string>
+    <string name="external_family_advanced">मॉडल फ़ैमिली मैन्युअल रूप से चुनें</string>
+    <string name="external_import_device">इस डिवाइस से इंपोर्ट करें</string>
+    <string name="litert_card_description">अपने पास मौजूद Gemma मॉडल फ़ाइल (.litertlm) को मैन्युअल रूप से जोड़ें, इस डिवाइस से या Hugging Face URL से। ज़्यादातर उपयोगकर्ता ऊपर दिए डाउनलोड चाहते हैं।</string>
+    <string name="external_import_catalog">हमारा मॉडल कैटलॉग देखें</string>
     <string name="external_models_intro">इस सेक्शन में वैकल्पिक मॉडल हैं: कम मेमोरी वाले फ़ोन के लिए छोटे संस्करण, और खास भाषाओं के लिए अनुकूलित मॉडल। कई हमारे संचालित कम्युनिटी कैटलॉग से आते हैं, लेकिन आप ऐप को किसी तृतीय-पक्ष कैटलॉग पर भी इशारा कर सकते हैं या अपना कैटलॉग होस्ट कर सकते हैं।</string>
     <!-- TASK-779 + road-test copy fixes -->
     <string name="litert_card_title">Gemma मॉडल जोड़ें (LiteRT)</string>
-    <string name="gemma_entry_title">Gemma डाउनलोड</string>
-    <string name="gemma_entry_subtitle">आधिकारिक Gemma मॉडल देखें और डाउनलोड करें</string>
-    <string name="external_section_subtitle">आपके अपने जोड़े हुए मॉडल फ़ाइलें (फ़ोल्डर, URL या ट्रांसफ़र बंडल) और Gemma LiteRT-LM डाउनलोड; बिल्ट-इन कैटलॉग के साथ चलती हैं।</string>
+    <string name="gemma_entry_title">Gemma AI मॉडल</string>
+    <string name="gemma_entry_subtitle">पूर्ण AI सहायक मॉडल: वॉयस ट्रांसक्रिप्शन + टेक्स्ट सारांश, दो-चरण संशोधन, ऑफ़लाइन चैट</string>
+    <string name="external_section_subtitle">अतिरिक्त वॉयस-ट्रांसक्रिप्शन मॉडल जो आप खुद जोड़ते हैं। ये बिल्ट-इन मॉडलों के साथ चलते हैं और इंपोर्ट होने पर नीचे की सूची में दिखते हैं।</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
     <string name="folder_watch_title">शेड्यूल्ड फ़ोल्डर निगरानी</string>

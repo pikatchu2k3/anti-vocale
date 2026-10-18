@@ -1,5 +1,6 @@
 package com.antivocale.app
 
+import com.antivocale.app.testing.RepoFiles
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,12 +43,12 @@ class ManifestFgsMirrorTest {
 
     @Test
     fun `every overlay re-assertion carries main's exact foregroundServiceType`() {
-        val main = java.io.File("src/main/AndroidManifest.xml").readText()
+        val main = RepoFiles.readText("src/main/AndroidManifest.xml")
         services.forEach { service ->
             val mainType = fgsType(main, service)
             assertTrue("main must declare a foregroundServiceType for $service", !mainType.isNullOrBlank())
             overlays.forEach { (label, path) ->
-                val overlay = java.io.File(path).readText()
+                val overlay = RepoFiles.readText(path)
                 assertEquals("$label drifted from main for $service", mainType, fgsType(overlay, service))
             }
         }
@@ -71,5 +72,25 @@ class ManifestFgsMirrorTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `the WorkManager SystemForegroundService override and its permission stay in main`() {
+        // Crashlytics 2026-10-11: SubtitleChoiceTimeoutWorker's typed
+        // ForegroundInfo passes FOREGROUND_SERVICE_TYPE_DATA_SYNC through
+        // WorkManager 2.10 to Service.startForeground. The subset rule
+        // (ActiveServices since API 29) requires this exact type on the
+        // service's manifest declaration and the typed permission for 34+;
+        // the library's own AAR declares NO type, so this override is the
+        // only one. Deleting it turns the first FGS promotion into a fatal
+        // IllegalArgumentException on every API 29+ device.
+        val main = RepoFiles.readText("src/main/AndroidManifest.xml")
+        val service = "androidx.work.impl.foreground.SystemForegroundService"
+        assertEquals(
+            "the SystemForegroundService manifest override must stay dataSync",
+            "dataSync", fgsType(main, service))
+        assertTrue(
+            "FOREGROUND_SERVICE_DATA_SYNC must stay declared",
+            main.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"))
     }
 }

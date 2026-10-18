@@ -86,6 +86,7 @@ class ModelViewModelExternalImportTest {
             languages: List<String>,
             streaming: Boolean,
             displayName: String?,
+            linkedCatalog: com.antivocale.app.data.LinkedCatalogRef?,
         ): ExternalModelRecord = throw UnsupportedOperationException("not used in this test")
 
         override suspend fun importFromTreeUri(
@@ -143,6 +144,7 @@ class ModelViewModelExternalImportTest {
             ctx = mockContext,
             backendRegistry = staticRegistry(),
             externalModelStore = com.antivocale.app.data.ExternalModelStore(fakePrefs),
+            recordsProvider = com.antivocale.app.data.FakeExternalRecordsProvider(),
             externalModelImporter = fakeImporter,
             litertLmUrlImporter = io.mockk.mockk(relaxed = true),
             externalCatalogRepository = io.mockk.mockk(relaxed = true),

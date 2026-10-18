@@ -576,7 +576,15 @@
     <string name="early_preview_badge">Önizleme</string>
     <string name="early_preview_requires_progressive">Aşamalı görüntüleme gerektirir</string>
     <string name="auto_save_failed">Otomatik kaydetme başarısız (%1$s)</string>
-    <string name="saved_to_folder">Şuraya kaydedildi: %1$s</string>
+    <string name="saved_to_folder">%1$s, %2$s konumuna kaydedildi</string>
+    <string name="saved_to_folder_nameless">%1$s konumuna kaydedildi</string>
+    <string name="share_format_title">Şu olarak paylaş</string>
+    <string name="share_transcription_more">Paylaş…</string>
+    <string name="share_format_txt">Düz metin</string>
+    <string name="share_format_timed">Zaman damgalı metin</string>
+    <string name="share_format_srt">Altyazılar (.srt)</string>
+    <string name="share_format_vtt">WebVTT (.vtt)</string>
+    <string name="share_format_no_cues">Bu kayıtta saklı zaman damgası yok; zaman damgalı seçenekler düz metin paylaşacak.</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Varsayılan Komut</string>
@@ -965,11 +973,9 @@
     <string name="share_target_external">Anti-Vocale (External)</string>
     <string name="share_shortcut_transcribe_with">%1$s ile metne çıkar</string>
     <string name="external_none_imported">İçe aktarılan harici model yok</string>
-    <string name="external_section_title">Harici modeller</string>
+    <string name="external_section_title">Daha fazla transkripsiyon modeli ekle</string>
     <string name="model_advanced_section">Gelişmiş</string>
     <string name="model_advanced_description">Harici içe aktarımlar ve Gemma indirmeleri</string>
-    <string name="external_import_folder">Klasörden içe aktar</string>
-    <string name="external_import_url">Bağlantıdan içe aktar</string>
     <string name="external_url_hint">HuggingFace deposu veya katalog girdisi JSON URL\'si</string>
     <string name="external_import">İçe Aktar</string>
     <string name="external_importing">Model içe aktarılıyor…</string>
@@ -993,7 +999,7 @@
     <string name="external_catalog_restore">Resmi katalogu geri yükle</string>
     <string name="external_link_advanced">Zaten bir linkim var (gelişmiş)</string>
     <string name="external_catalog_language">Dil</string>
-    <string name="external_catalog_other">Diğer diller</string>
+    <string name="external_catalog_no_matches">Bu dil için henüz model yok</string>
     <string name="external_decode_language">Kod çözme dili</string>
     <string name="external_decode_auto">Otomatik algıla</string>
     <string name="external_family">Model ailesi</string>
@@ -1018,9 +1024,31 @@
 
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Paylaşım Menüsünde Modeller</string>
+    <string name="voice_note_settings_title">Sesli mesajlar</string>
+    <string name="voice_note_settings_summary_on">WhatsApp sesli mesajlarının otomatik yazıya çevirisi · açık</string>
+    <string name="voice_note_settings_summary_off">WhatsApp sesli mesajlarının otomatik yazıya çevirisi · kapalı</string>
+    <string name="voice_note_settings_summary_limited">Sesli mesaj gönderenini tanıma</string>
     <string name="voice_note_identity_title">Sesli not gönderenini tanıma</string>
-    <string name="voice_note_identity_description">Paylaşılan sesli mesajın geçmiş satırına gönderenin adını yazar. Şimdilik sadece WhatsApp. Ad, yalnızca mesajın bildirimi bu açıkken geldiyse ve bildirilen süre sesle uyuyorsa görünür (tahmine dayanı ad yok). Ad, bunu kapattıktan sonra da o satırda kalır; bekleme listesi yalnız bellekte yaşar. Bildirim erişimi gerekir.</string>
+    <string name="voice_note_identity_description">Transkripte edilen sesli mesajları gönderenin adıyla etiketler; buraya paylaşılan ya da otomatik olanlar. Şimdilik sadece WhatsApp. Ad, yalnızca bildirim bu açıkken geldiyse ve süre uyuyorsa görünür (tahmine dayalı ad yok); bekleme listesi yalnız bellekte yaşar. Bildirim erişimi gerekir.</string>
     <string name="voice_note_identity_grant_hint">Bildirim erişimi kapalı. Sistem ayarını açıp bu uygulama için etkinleştirmek üzere dokunun.</string>
+    <!-- TASK-272: automatic voice-note transcription + folder grant -->
+    <string name="voice_note_detection_title">Sesli not transkripsiyonu</string>
+    <string name="voice_note_detection_description">Yeni WhatsApp sesli mesajlarını uygulama çalışırken geldikçe yazıya çevirir. Android arka plan başlatmayı engellerse tek dokunuşlu bir bildirimle başlar. Bir mesaj yalnızca yazıya çevirmek için okunur, bu cihazda; kapalıyken hiçbir şey okunmaz. Ses erişimi gerekir.</string>
+    <string name="voice_note_detection_grant_hint">Ses erişimi kapalı. Uygulama ayarlarını açıp etkinleştirmek için dokunun; transkripsiyon izin verilir verilmez başlar.</string>
+    <string name="voice_note_folder_grant_rejected">Bu, WhatsApp sesli notları klasörü değil. WhatsApp Voice Notes adlı klasörü seçin ve tekrar deneyin.</string>
+    <string name="voice_note_folder_card_title">Sesli notlar klasörü</string>
+    <string name="voice_note_folder_card_state_granted">İzin verildi</string>
+    <string name="voice_note_folder_card_state_missing">İzin eksik</string>
+    <string name="voice_note_folder_card_desc">Notları okumak için WhatsApp\'ın kaydettiği klasöre bir kez erişim verin:</string>
+    <string name="voice_note_folder_choose">Klasör seç</string>
+    <string name="voice_note_folder_change">Klasörü değiştir</string>
+    <string name="voice_note_folder_remove">Erişimi kaldır</string>
+    <string name="voice_note_folder_storage_root">Dahili depolama</string>
+    <string name="voice_note_folder_sheet_title">Klasör erişimi ver</string>
+    <string name="voice_note_folder_sheet_step1">Açılan seçicide Dahili depolama\'ya girin (soldaki menü; görmüyorsanız Depolamayı göster\'e dokunun).</string>
+    <string name="voice_note_folder_sheet_step2">Sesli notlar klasörüne ulaşana kadar yolu izleyin:</string>
+    <string name="voice_note_folder_sheet_step3">WhatsApp Voice Notes klasörü seçiliyken (açmadan) BU KLASÖRÜ KULLAN\'a, ardından İZİN VER\'e dokunun.</string>
+    <string name="voice_note_folder_sheet_open">Seçiciyi aç</string>
     <string name="share_targets_description">İndirilen her model sistem menüsünde ayrı bir seçenek olarak görünür. Sesi seçilen model işler.</string>
     <string name="advanced_sharing_toggle">İndirilen modelleri göster</string>
     <string name="share_targets_models_info">İndirilen her model paylaşım menüsünde ayrı bir öğe olarak görünür. Model silindiğinde menüden kalkar.</string>
@@ -1046,6 +1074,8 @@
     <string name="retranscribe_active_badge">Etkin</string>
     <string name="retranscribe_setting_title">Yeniden Metne Çıkarma Düğmesi</string>
     <string name="retranscribe_setting_description">Sesli metin çıkarmalarında farklı bir modelle yeniden denemek için bir düğme göster.</string>
+    <string name="advanced_share_formats_title">Şu olarak paylaş…</string>
+    <string name="advanced_share_formats_description">Sonuçlara, normal düz metin paylaşımına ek olarak altyazı ve zaman damgalı biçimler sunan ikinci bir Paylaş… düğmesi ekler.</string>
 
     <!-- Subtitle extraction choice (TASK-228) -->
     <string name="subtitles_found_title">Altyazılar bulundu</string>
@@ -1203,13 +1233,16 @@
     <string name="refinement_model_description">İkinci geçişin kullandığı model. Etkin modeli kullanmak için devral\'da bırakın.</string>
     <string name="refinement_model_inherit">Etkin modeli devral</string>
     <string name="export_model_bundle">Modeli çevrimdışı aktarım için paylaş</string>
-    <string name="external_import_bundle">Aktarım paketi içe aktar</string>
+    <string name="external_family_advanced">Model ailesini elle seç</string>
+    <string name="external_import_device">Bu cihazdan içe aktar</string>
+    <string name="litert_card_description">Elinde hazır bulunan bir Gemma model dosyasını (.litertlm) elle ekle: bu cihazdan ya da bir Hugging Face URL\'siyle. Çoğu kullanıcı yukarıdaki indirmeleri ister.</string>
+    <string name="external_import_catalog">Model kataloğumuza göz at</string>
     <string name="external_models_intro">Bu bölümde alternatif modeller bulunur: az bellekli telefonlar için küçük sürümler ve belirli dillere göre optimize edilmiş modeller. Birçoğu bizim sürdürdüğümüz topluluk kataloğundan gelir; ama uygulamayı üçüncü taraf bir kataloğa yönlendirebilir veya kendi kataloğunuzu barındırabilirsiniz.</string>
     <!-- TASK-779 + road-test copy fixes -->
     <string name="litert_card_title">Gemma modeli ekle (LiteRT)</string>
-    <string name="gemma_entry_title">Gemma indirmeleri</string>
-    <string name="gemma_entry_subtitle">Resmî Gemma modellerine göz at ve indir</string>
-    <string name="external_section_subtitle">Kendinizin eklediği model dosyaları (klasör, URL veya aktarım paketi) ve Gemma LiteRT-LM indirmeleri; yerleşik kataloğun yanında çalışır.</string>
+    <string name="gemma_entry_title">Gemma yapay zekâ modelleri</string>
+    <string name="gemma_entry_subtitle">Tam yapay zekâ asistanları: sesli transkripsiyon + metin özetleri, iki aşamalı iyileştirme, çevrimdışı sohbet</string>
+    <string name="external_section_subtitle">Kendinin eklediği ek ses transkripsiyon modelleri. Yerleşik olanların yanında çalışır ve içe aktarıldığında aşağıdaki listede görünür.</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
     <string name="folder_watch_title">Zamanlanmış klasör izleme</string>
