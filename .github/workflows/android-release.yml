@@ -466,9 +466,9 @@ jobs:
             echo "release ${RELEASE_TAG} has no assets yet (or does not exist)"
           fi
           echo "signed references present: ${assets_ok}"
-          tag_commit=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')
+          tag_commit=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')
           if [ -z "$tag_commit" ]; then
-            tag_commit=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale "refs/tags/${RELEASE_TAG}" | awk '{print $1}')
+            tag_commit=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} "refs/tags/${RELEASE_TAG}" | awk '{print $1}')
           fi
           recipe_commit=$(curl -sfL \
             https://raw.githubusercontent.com/paoloantinori/fdroid-data-mirror/av1100-slim/metadata/com.antivocale.app.yml \
@@ -649,10 +649,10 @@ jobs:
               echo "       Regenerate the recipe with --commit $DISPATCH_COMMIT and re-sync the mirror."
               exit 1
             fi
-            EXISTING=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale \
+            EXISTING=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} \
               "refs/tags/${RECIPE_TAG}^{}" 2>/dev/null | awk '{print $1}' | head -1)
             if [ -z "$EXISTING" ]; then
-              EXISTING=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale \
+              EXISTING=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} \
                 "refs/tags/${RECIPE_TAG}" 2>/dev/null | awk '{print $1}' | head -1)
             fi
             if [ -n "$EXISTING" ] && [ "$EXISTING" != "$DISPATCH_COMMIT" ]; then
@@ -670,10 +670,10 @@ jobs:
           # annotated tag; lightweight tags (created by gh release create, which is
           # how our betas are tagged) do not resolve under ^{}, so fall back to the
           # plain ref: for a lightweight tag that ref IS the commit.
-          TAG_COMMIT=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale \
+          TAG_COMMIT=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} \
             "refs/tags/${RELEASE_TAG}^{}" 2>/dev/null | awk '{print $1}')
           if [ -z "$TAG_COMMIT" ]; then
-            TAG_COMMIT=$(git ls-remote https://github.com/RisorseArtificiali/anti-vocale \
+            TAG_COMMIT=$(git ls-remote https://github.com/${GITHUB_REPOSITORY} \
               "refs/tags/${RELEASE_TAG}" 2>/dev/null | awk '{print $1}')
             if [ -n "$TAG_COMMIT" ]; then
               echo "note: ${RELEASE_TAG} is a lightweight tag; using its direct commit"
