@@ -18,6 +18,11 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// The base application id, single-sourced for the OAuth redirect scheme
+// placeholders (review 2026-10-15): defaultConfig and the suffixed build
+// types all derive from this one literal.
+val APP_ID_BASE = "com.antivocale.app"
+
 // Fork: Fallback-Version fuer Builds ohne VERSION_NAME (lokale Laeufe, CI, F-Droid).
 // Der Katalog-Index ist versionsgebunden (external-catalog/index-<x.y.z>.json), also
 // MUSS der Fallback die Version tragen, deren Index im Repo liegt. Ein fest
