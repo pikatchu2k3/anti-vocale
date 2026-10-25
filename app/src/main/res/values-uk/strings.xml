@@ -5,7 +5,6 @@
      "transcription" = "розшифровка" (per the ru glossary's расшифровка choice,
      issue #36 native-speaker feedback). -->
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Моделі</string>
@@ -187,7 +186,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (потокова)</string>
-    <string name="nemotron_description">~640МБ • Потоковий трансдюсер</string>
+    <string name="nemotron_description">~640МБ • Потокова • Точність замість швидкості</string>
     <string name="nemotron_download_confirm_title">Завантажити %1$s?</string>
     <string name="nemotron_download_confirm_message">Буде завантажено ~%1$dМБ. Nemotron 3.5 - це потокова багатомовна модель ASR.</string>
     <string name="nemotron_download">Завантажити Nemotron</string>
@@ -199,6 +198,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326МБ • Швидка • Розпізнавання російської мови з пунктуацією</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17 МБ • Дуже швидко • 7 мов, автовизначення</string>
+    <string name="benchmark_unsupported_engine">Бенчмарк не підтримується для цього рушія</string>
+    <string name="model_info_best_for_whistle">Найшвидший старт на пристрої: 17 МБ, 7 мов, миттєвий перший текст</string>
+    <string name="model_info_notes_whistle">Точність нижча за Parakeet на італійській; музика може розпізнатися як текст (без музичного фільтра)</string>
     <string name="gigaam_download_confirm_title">Завантажити GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">Буде завантажено ~%1$dМБ. GigaAM v3 - це російськомовна модель ASR від Sber з високою точністю російської.</string>
     <string name="gigaam_download">Завантажити GigaAM</string>
@@ -1285,4 +1289,40 @@
     </plurals>
     <string name="folder_watch_period_label">Інтервал перевірки</string>
     <string name="folder_watch_grant_failed">Не вдалося зберегти доступ до цієї папки, тому її не додано. Виберіть її ще раз.</string>
+
+    <!-- Резервна копія та перенесення (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Відтворити аудіо</string>
+    <string name="result_pause_audio">Призупинити аудіо</string>
+    <string name="duplicate_found_title">Вже розшифровано</string>
+    <string name="duplicate_found_message">Цей файл уже розшифровано за допомогою %1$s.</string>
+    <string name="duplicate_found_open">Відкрити результат</string>
+    <string name="duplicate_found_again">Розшифрувати знову</string>
+    <string name="result_language_advisory">Ця модель визначає мову сама. Щоб закріпити %1$s, виберіть мову в налаштуваннях (моделі, що враховують це налаштування, як-от Whisper, там позначені).</string>
+    <string name="result_skip_silences">Пропускати тишу</string>
+    <string name="result_playback_speed">Швидкість відтворення (%1$s)</string>
+
+    <string name="backup_transfer_title">Резервна копія та перенесення</string>
+    <string name="backup_transfer_summary">Збережіть налаштування та історію у файл або відновіть їх на іншому пристрої</string>
+    <string name="backup_export_title">Експорт резервної копії</string>
+    <string name="backup_export_description">Записує один файл з налаштуваннями та всією історією розшифрувань. Файл у відкритому вигляді: хто ним володіє, може прочитати кожне розшифрування і кожне ім\'я відправника.</string>
+    <string name="backup_export_action">Створити файл копії</string>
+    <string name="backup_import_title">Імпорт резервної копії</string>
+    <string name="backup_import_description">Додає на цей пристрій налаштування та минулі розшифрування з файлу копії. Те, що вже є, зберігається.</string>
+    <string name="backup_import_action">Вибрати файл копії</string>
+    <string name="backup_export_progress">Запис копії…</string>
+    <string name="backup_import_progress">Читання копії…</string>
+    <string name="backup_export_done">Копію збережено</string>
+    <string name="backup_export_failed">Не вдалося записати копію</string>
+    <string name="backup_import_done">Імпортовано: %1$d, пропущено: %2$d</string>
+    <string name="backup_import_failed">Не вдалося прочитати файл копії</string>
+    <string name="backup_import_history_failed">Налаштування імпортовано, але не вдалося додати історію. Повторити безпечно.</string>
+    <string name="backup_disclosure_title">Перед експортом</string>
+    <string name="backup_disclosure_body">Копія містить кожне розшифрування, ім\'я відправника та мітку мовця у читабельному вигляді. Передавайте її лише тим, кому довіряєте.</string>
+    <string name="keyword_biasing_title">Пріоритет ключових слів (Whistle)</string>
+    <string name="keyword_biasing_description">Імена, місця або терміни, які модель Whistle має віддавати перевагу, по одному на рядок. Діє з наступної розшифровки, без перезавантаження.</string>
+    <string name="keyword_biasing_placeholder">Один термін на рядок</string>
+    <string name="freeze_protection_title">Захист фонового розшифрування</string>
+    <string name="freeze_protection_description">Тримає беззвучний аудіопотік активним під час розшифрування, щоб агресивні заощаджувачі батареї не призупиняли застосунок. Увімкніть, якщо розшифрування зупиняється при вимкненому екрані (деякі Oppo, Realme, OnePlus та Vivo).</string>
 </resources>

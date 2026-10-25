@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Modelli</string>
@@ -180,7 +179,7 @@
     <!-- Nemotron 3.5 streaming -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (streaming)</string>
-    <string name="nemotron_description">~640MB • Transducer streaming • Qualità italiana sperimentale</string>
+    <string name="nemotron_description">~640MB • Streaming • Qualità rispetto a velocità</string>
     <string name="nemotron_download_confirm_title">Scaricare %1$s?</string>
     <string name="nemotron_download_confirm_message">Verranno scaricati ~%1$dMB. Nemotron 3.5 è un modello ASR multilingue streaming.</string>
     <string name="nemotron_download">Scarica Nemotron</string>
@@ -192,6 +191,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • Veloce • ASR russo con punteggiatura</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • Velocissimo • 7 lingue, rilevate automaticamente</string>
+    <string name="benchmark_unsupported_engine">Il benchmark non e supportato per questo motore</string>
+    <string name="model_info_best_for_whistle">Avvio più rapido on-device: 17 MB, 7 lingue, primo testo immediato</string>
+    <string name="model_info_notes_whistle">Accuratezza inferiore a Parakeet sull\'italiano; la musica può essere trascritta come testo (nessun filtro musicale)</string>
     <string name="gigaam_download_confirm_title">Scaricare GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">Verranno scaricati ~%1$dMB. GigaAM v3 è un modello ASR solo-russo di Sber con ottima accuratezza sul russo.</string>
     <string name="gigaam_download">Scarica GigaAM</string>
@@ -1263,4 +1267,40 @@
     </plurals>
     <string name="folder_watch_period_label">Intervallo di scansione</string>
     <string name="folder_watch_grant_failed">Impossibile mantenere l\'accesso a quella cartella, quindi non è stata aggiunta. Riprova a selezionarla.</string>
+
+    <!-- Backup e trasferimento (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Riproduci audio</string>
+    <string name="result_pause_audio">Metti in pausa l\'audio</string>
+    <string name="duplicate_found_title">Già trascritto</string>
+    <string name="duplicate_found_message">Questo file è già stato trascritto con %1$s.</string>
+    <string name="duplicate_found_open">Apri risultato</string>
+    <string name="duplicate_found_again">Trascrivi di nuovo</string>
+    <string name="result_language_advisory">Questo modello rileva la lingua da solo. Per bloccare l\'%1$s, scegli la lingua nelle Impostazioni (i modelli che onorano l\'impostazione, come Whisper, sono indicati lì).</string>
+    <string name="result_skip_silences">Salta i silenzi</string>
+    <string name="result_playback_speed">Velocità di riproduzione (%1$s)</string>
+
+    <string name="backup_transfer_title">Backup e trasferimento</string>
+    <string name="backup_transfer_summary">Salva impostazioni e cronologia in un file, oppure ripristinale su un altro dispositivo</string>
+    <string name="backup_export_title">Esporta backup</string>
+    <string name="backup_export_description">Scrive un unico file con le impostazioni e tutta la cronologia delle trascrizioni. Il file è in chiaro: chiunque lo abbia può leggere ogni trascrizione e ogni nome mittente.</string>
+    <string name="backup_export_action">Crea file di backup</string>
+    <string name="backup_import_title">Importa backup</string>
+    <string name="backup_import_description">Aggiunge a questo dispositivo impostazioni e trascrizioni passate da un file di backup. Quello che hai già viene conservato.</string>
+    <string name="backup_import_action">Scegli file di backup</string>
+    <string name="backup_export_progress">Scrittura del backup…</string>
+    <string name="backup_import_progress">Lettura del backup…</string>
+    <string name="backup_export_done">Backup salvato</string>
+    <string name="backup_export_failed">Impossibile scrivere il backup</string>
+    <string name="backup_import_done">Importate: %1$d, saltate: %2$d</string>
+    <string name="backup_import_failed">Impossibile leggere il file di backup</string>
+    <string name="backup_import_history_failed">Impostazioni importate, ma non è stato possibile aggiungere la cronologia. Riprovare è sicuro.</string>
+    <string name="backup_disclosure_title">Prima di esportare</string>
+    <string name="backup_disclosure_body">Il backup contiene ogni trascrizione, nome mittente ed etichetta parlante in testo leggibile. Condividilo solo con destinazioni di cui ti fidi.</string>
+    <string name="keyword_biasing_title">Bias delle parole chiave (Whistle)</string>
+    <string name="keyword_biasing_description">Nomi, luoghi o termini tecnici che il modello Whistle deve favorire, uno per riga. Vale dalla trascrizione successiva, senza ricaricare.</string>
+    <string name="keyword_biasing_placeholder">Un termine per riga</string>
+    <string name="freeze_protection_title">Protezione trascrizione in background</string>
+    <string name="freeze_protection_description">Mantiene un flusso audio silenzioso attivo durante la trascrizione, così i risparmiatori di batteria aggressivi non possono sospendere l\'app. Attivala se la trascrizione si blocca a schermo spento (alcuni telefoni Oppo, Realme, OnePlus e Vivo).</string>
 </resources>

@@ -452,11 +452,29 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "unload", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "unload", "voice_note_state", "model_download", "clear_orphaned", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
     }
+
+    @Test
+    fun `model_download answers the context-required error under the unit fakes`() = runTest {
+        val json = JSONObject(ops.handle(TestSpiOps.OP_MODEL_DOWNLOAD, entry = "llm", value = "gemma-4-e2b"))
+        assertTrue(json.has("error"))
+        assertTrue(json.getString("error").contains("Context"))
+    }
+
+    @Test
+    fun `clear_orphaned answers the context-required error under the unit fakes`() = runTest {
+        // The happy path deletes files (device-trial concern); this pins
+        // the dispatch arm, the requireContext-BEFORE-validation order the
+        // shared-helper consolidation preserved, and loud failure.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_CLEAR_ORPHANED, entry = "whistle", value = "v1"))
+        assertTrue(json.has("error"))
+        assertTrue(json.getString("error").contains("Context"))
+    }
+
 
     @Test
     fun `notifications op answers with the context-required error under the unit fakes`() = runTest {
@@ -466,6 +484,47 @@ class TestSpiOpsTest {
         val json = JSONObject(ops.handle(TestSpiOps.OP_NOTIFICATIONS))
         assertEquals("notifications", json.getString("op"))
         assertTrue(json.getString("error").contains("Context"))
+    }
+
+    @Test
+    fun `voice_note_state reports the preference facts with honest nulls under the unit fakes`() = runTest {
+        // TASK-826: the preference half is always readable; the
+        // context-derived probes (audio permission, live grant) and the
+        // armed seam answer null instead of a guess, and willArm follows
+        // (null in, null out, never a fabricated false). The full boolean
+        // contract is the device trial's; this pins dispatch and shapes.
+        val json = JSONObject(ops.handle(TestSpiOps.OP_VOICE_NOTE_STATE))
+        assertEquals("voice_note_state", json.getString("op"))
+        assertFalse(json.getBoolean("enabled"))
+        assertTrue(json.isNull("treeUri"))
+        // No URI saved: no grant, honestly false without any probe.
+        assertFalse(json.getBoolean("grantHeld"))
+        assertTrue(json.isNull("audioPermissionGranted"))
+        assertTrue(json.isNull("armed"))
+        assertTrue(json.isNull("willArm"))
+
+        fake._voiceNoteDetectionEnabled.value = true
+        fake._voiceNoteTreeUri.value = "content://tree/x"
+        val after = JSONObject(ops.handle(TestSpiOps.OP_VOICE_NOTE_STATE))
+        assertTrue(after.getBoolean("enabled"))
+        assertEquals("content://tree/x", after.getString("treeUri"))
+        // A saved URI whose probe is unavailable reads null, never false:
+        // false would assert the grant DEAD, which the fakes cannot know.
+        assertTrue(after.isNull("grantHeld"))
+        assertTrue(after.isNull("willArm"))
+    }
+
+    @Test
+    fun `voice_note_state echoes the armed seam when wired`() = runTest {
+        val withArmed = TestSpiOps(
+            fake, ExternalModelStore(fake), fakeImporter,
+            detectionArmed = { true },
+            detectionGateState = { com.antivocale.app.data.VoiceNoteGateState.Active })
+        val json = JSONObject(withArmed.handle(TestSpiOps.OP_VOICE_NOTE_STATE))
+        assertTrue("the debug receiver's lambda is the armed source", json.getBoolean("armed"))
+        assertEquals(
+            "the gate-state seam reports the data-object name",
+            "Active", json.getString("gateState"))
     }
 
     @Test

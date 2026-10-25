@@ -85,6 +85,13 @@ interface PreferencesManager {
     /** GH #92: auto-save file format, a [SubtitleFormatter.Format] name. Default TXT. */
     val transcriptExportFormat: Flow<String>
     val vadEnabled: Flow<Boolean>
+
+    /**
+     * GH #67 (scoped): the silent-audio freezer protection, DEFAULT OFF.
+     * Only users on freezer-ROMs (ColorOS-class) need it; everyone else
+     * pays a clocked audio path for nothing. Opt-in by the toggle.
+     */
+    val freezeProtectionEnabled: Flow<Boolean>
     val vadAdvisoryDismissed: Flow<Boolean>
 
     /**
@@ -126,6 +133,8 @@ interface PreferencesManager {
     val punctuationMode: Flow<String>
     /** TASK-276 user override of the punctuation prompt; blank = the localized curated default. */
     val punctuationPrompt: Flow<String>
+    /** TASK-858: whistle keyword biasing (newline-separated terms; "" = off). */
+    val keywordBiasing: Flow<String>
     /** TASK-121.4 smart-summary pass toggle: attach a Gemma summary to long transcripts. Default off. */
     val summarizeEnabled: Flow<Boolean>
 
@@ -230,6 +239,20 @@ interface PreferencesManager {
     /** TASK-675: removes [backendId] from the demoted set (no-op when absent). */
     suspend fun clearDemotedBackend(backendId: String)
 
+    /**
+     * TASK-843: the whitelisted settings as raw values for the backup
+     * archive (name-gated by BackupSettingsKeys; the codec derives each
+     * entry's type tag from the runtime class).
+     */
+    suspend fun exportPortableSettings(): Map<String, Any>
+
+    /**
+     * TASK-843: restores a portable-settings payload in ONE DataStore
+     * transaction; only whitelisted names are applied (a hand-edited
+     * archive cannot inject device-bound keys).
+     */
+    suspend fun importPortableSettings(values: Map<String, Any>)
+
     suspend fun saveModelPath(path: String)
     suspend fun clearModelPath()
     suspend fun saveKeepAliveTimeout(minutes: Int)
@@ -253,6 +276,7 @@ interface PreferencesManager {
     /** GH #92: see [transcriptExportFormat]. */
     suspend fun saveTranscriptExportFormat(format: String)
     suspend fun saveVadEnabled(enabled: Boolean)
+    suspend fun saveFreezeProtectionEnabled(enabled: Boolean)
     suspend fun saveVadAdvisoryDismissed(dismissed: Boolean)
 
     /** TASK-491: marks the welcome tour done; false re-arms it. */
@@ -268,6 +292,9 @@ interface PreferencesManager {
     suspend fun saveDefaultPrompt(prompt: String)
     suspend fun savePunctuationMode(mode: String)
     suspend fun savePunctuationPrompt(prompt: String)
+
+    /** TASK-858: persists the whistle keyword-biasing terms (capped). */
+    suspend fun saveKeywordBiasing(terms: String)
     suspend fun saveSummarizeEnabled(enabled: Boolean)
     suspend fun saveSummaryPrompt(prompt: String)
     suspend fun saveThreadCount(threads: Int)
@@ -373,6 +400,8 @@ interface PreferencesManager {
         /** GH #92: plain .txt is the default; timed formats are strictly opt-in. */
         const val DEFAULT_TRANSCRIPT_EXPORT_FORMAT = "TXT"
         const val DEFAULT_VAD_ENABLED = false
+        /** GH #67: opt-in; see [freezeProtectionEnabled]. */
+        const val DEFAULT_FREEZE_PROTECTION_ENABLED = false
         const val DEFAULT_PROGRESSIVE_TRANSCRIPTION = true
         /** TASK-186: the extra head decode is opt-in. */
         const val DEFAULT_EARLY_PREVIEW = false

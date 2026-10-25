@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Modelle</string>
@@ -162,7 +161,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (Streaming)</string>
-    <string name="nemotron_description">~640 MB • Streaming-Transducer</string>
+    <string name="nemotron_description">~640 MB • Streaming • Genauigkeit vor Geschwindigkeit</string>
     <string name="nemotron_download_confirm_title">%1$s herunterladen?</string>
     <string name="nemotron_download_confirm_message">Dies lädt etwa %1$d MB herunter. Nemotron 3.5 ist ein mehrsprachiges Streaming-ASR-Modell.</string>
     <string name="nemotron_download">Nemotron herunterladen</string>
@@ -174,6 +173,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326 MB • Schnell • Russische Spracherkennung mit Interpunktion</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • Sehr schnell • 7 Sprachen, automatisch erkannt</string>
+    <string name="benchmark_unsupported_engine">Benchmarks werden fuer diese Engine nicht unterstuetzt</string>
+    <string name="model_info_best_for_whistle">Schnellster Start auf dem Gerät: 17 MB, 7 Sprachen, sofortiger erster Text</string>
+    <string name="model_info_notes_whistle">Wortgenauigkeit hinter Parakeet bei Italienisch; Musik kann als Text erscheinen (kein Musikfilter)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 herunterladen?</string>
     <string name="gigaam_download_confirm_message">Dies lädt etwa %1$d MB herunter. GigaAM v3 ist ein russischsprachiges ASR-Modell von Sber mit starker Genauigkeit für Russisch.</string>
     <string name="gigaam_download">GigaAM herunterladen</string>
@@ -1257,4 +1261,40 @@
     </plurals>
     <string name="folder_watch_period_label">Scan-Intervall</string>
     <string name="folder_watch_grant_failed">Der Zugriff auf diesen Ordner konnte nicht dauerhaft gespeichert werden, er wurde daher nicht hinzugefügt. Bitte erneut auswählen.</string>
+
+    <!-- Backup und Übertragung (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Audio abspielen</string>
+    <string name="result_pause_audio">Audio pausieren</string>
+    <string name="duplicate_found_title">Bereits transkribiert</string>
+    <string name="duplicate_found_message">Diese Datei wurde bereits mit %1$s transkribiert.</string>
+    <string name="duplicate_found_open">Ergebnis öffnen</string>
+    <string name="duplicate_found_again">Erneut transkribieren</string>
+    <string name="result_language_advisory">Dieses Modell erkennt die Sprache selbst. Um %1$s festzulegen, wähle die Sprache in den Einstellungen (Modelle, die die Spracheinstellung beachten, z. B. Whisper, sind dort vermerkt).</string>
+    <string name="result_skip_silences">Pausen überspringen</string>
+    <string name="result_playback_speed">Wiedergabegeschwindigkeit (%1$s)</string>
+
+    <string name="backup_transfer_title">Backup und Übertragung</string>
+    <string name="backup_transfer_summary">Einstellungen und Verlauf in einer Datei sichern oder auf einem anderen Gerät wiederherstellen</string>
+    <string name="backup_export_title">Backup exportieren</string>
+    <string name="backup_export_description">Schreibt eine Datei mit deinen Einstellungen und deinem gesamten Transkriptionsverlauf. Die Datei ist Klartext: Wer sie hat, kann jedes Transkript und jeden Absendernamen lesen.</string>
+    <string name="backup_export_action">Backupdatei erstellen</string>
+    <string name="backup_import_title">Backup importieren</string>
+    <string name="backup_import_description">Fügt Einstellungen und frühere Transkriptionen aus einer Backupdatei zu diesem Gerät hinzu. Was du bereits hast, bleibt erhalten.</string>
+    <string name="backup_import_action">Backupdatei auswählen</string>
+    <string name="backup_export_progress">Backup wird geschrieben…</string>
+    <string name="backup_import_progress">Backup wird gelesen…</string>
+    <string name="backup_export_done">Backup gespeichert</string>
+    <string name="backup_export_failed">Backup konnte nicht geschrieben werden</string>
+    <string name="backup_import_done">Importiert: %1$d, übersprungen: %2$d</string>
+    <string name="backup_import_failed">Backupdatei konnte nicht gelesen werden</string>
+    <string name="backup_import_history_failed">Einstellungen importiert, aber der Verlauf konnte nicht hinzugefügt werden. Ein erneuter Versuch ist sicher.</string>
+    <string name="backup_disclosure_title">Vor dem Export</string>
+    <string name="backup_disclosure_body">Das Backup enthält jedes Transkript, jeden Absendernamen und jede Sprecherkennzeichnung als lesbaren Text. Teile es nur mit Stellen, denen du vertraust.</string>
+    <string name="keyword_biasing_title">Stichwort-Bevorzugung (Whistle)</string>
+    <string name="keyword_biasing_description">Namen, Orte oder Fachbegriffe, die das Whistle-Modell begünstigen soll, einer pro Zeile. Gilt ab der nächsten Transkription, ohne Neuladen.</string>
+    <string name="keyword_biasing_placeholder">Ein Begriff pro Zeile</string>
+    <string name="freeze_protection_title">Schutz für Hintergrund-Transkription</string>
+    <string name="freeze_protection_description">Hält während der Transkription einen stummen Audiostream aktiv, damit aggressive Akkusparer die App nicht anhalten. Aktiviere dies, wenn die Transkription bei ausgeschaltetem Bildschirm stehen bleibt (einige Oppo-, Realme-, OnePlus- und Vivo-Telefone).</string>
 </resources>

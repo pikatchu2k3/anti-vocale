@@ -95,8 +95,21 @@ object VoiceNoteSenderResolution {
         detectedAtMs: Long,
     ): String? {
         val candidates = inWindow(cache, sourcePackage, detectedAtMs)
-        if (candidates.isEmpty()) return null
-        return selectAndLog(candidates, probeDurationSeconds(audioPreprocessor, localPath))?.sender
+        if (candidates.isEmpty()) {
+            // TASK-833 telemetry: the two unlabeled causes are different
+            // user classes (no notification at all vs the deferred-download
+            // window miss where the right notification sits in the cache
+            // outside the 60s window); the weekly log mix sizes them.
+            Log.i(TAG, "identity match: no candidates in window " +
+                "(${sourcePackage.orEmpty()}, detected $detectedAtMs)")
+            return null
+        }
+        // One notification, one note: the entry that labels this detection
+        // can never label a later one (the race-window re-check then waits
+        // for the later note's OWN notification instead).
+        return selectAndLog(candidates, probeDurationSeconds(audioPreprocessor, localPath))
+            ?.also { cache.markConsumed(it) }
+            ?.sender
     }
 
     private fun inWindow(
@@ -104,7 +117,7 @@ object VoiceNoteSenderResolution {
         sourcePackage: String?,
         detectedAtMs: Long,
     ): List<VoiceNoteIdentityExtractor.VoiceNote> =
-        cache.forPackage(sourcePackage.orEmpty()).filter {
+        cache.unconsumedForPackage(sourcePackage.orEmpty()).filter {
             kotlin.math.abs(it.postedAtMs - detectedAtMs) <= CANDIDATE_WINDOW_MS
         }
 

@@ -49,6 +49,23 @@ class SherpaBackend(
 ) : TranscriptionBackend {
 
     companion object {
+        /**
+         * TASK-874: the streaming decode method. The desktop A/B (TASK-530,
+         * 2026-10-24, 11-clip Italian set) showed modified_beam_search beats
+         * greedy on this model family: WER 9.3% vs 10.3% at +13-20% wall, the
+         * OPPOSITE of the Parakeet greedy-vs-beam precedent (identical quality,
+         * 3x cost) that justified greedy elsewhere. Gated on the device A/B leg
+         * before this ships: the phone must show the same ratio, not the
+         * Parakeet-like collapse. Deliberately scoped to the BUILT-IN
+         * streaming entry: the A/B measured the bundled Nemotron artifact;
+         * ExternalSherpaBackend's streaming imports stay greedy (recorded
+         * at that site).
+         */
+        internal const val STREAMING_DECODING_METHOD = "modified_beam_search"
+
+        /** TASK-874: beam width matching the A/B arm that won. */
+        internal const val STREAMING_MAX_ACTIVE_PATHS = 4
+
         private const val TAG = "SherpaBackend"
 
         // Required model files for a nemo_transducer (Parakeet TDT) model.
@@ -89,7 +106,7 @@ class SherpaBackend(
             // GH #68 + TASK-667: every other loader (qwen3's vocab lives in the
             // tokenizer dir; plain zipformers of every k2-fsa release carry no
             // encoder metadata the plain-transducer loader would read;
-            // desktop-decoded clean on the pinned 1.13.8) demands nothing.
+            // desktop-decoded clean on the pinned sherpa version) demands nothing.
             // Demanding vocab_size for "" rejected the catalog's OWN
             // zipformer entries at import time. The wrong-family guard for
             // "" is the file-shape plan (encoder/decoder/joiner roles), not
@@ -124,7 +141,7 @@ class SherpaBackend(
          * the same buffer. Empty/missing file returns every key as missing.
          *
          * This prevents native crashes: sherpa-onnx calls exit(255) when required metadata
-         * (e.g. vocab_size) is missing, killing the process with no catchable exception.
+         * (e.g. vocab_size) is missing, killing the process with no catchable exception (1.13.x behavior; 2.0.0 converts these to catchable Java exceptions, #3988).
          */
         fun missingOnnxMetadata(
             file: File,
@@ -492,7 +509,7 @@ class SherpaBackend(
             // IO dispatcher (hashing is pure I/O and no caller convention
             // should decide that). The completeness check above catches
             // missing and truncated files; this catches corrupt CONTENT,
-            // which the native loader answers with a process abort
+            // which the native loader answers with a process abort (at the 1.13.x pin; since the 2.0.0 bump the constructor exception is catchable, #3988)
             // ("Protobuf parsing failed") and every retry re-aborts on the
             // same bytes. Structural checks run for every file; SHA-256 for
             // files the catalog pins. The failed files STAY ON DISK (the
@@ -665,6 +682,10 @@ class SherpaBackend(
                 sampleRate = 16000,
                 featureDim = 80,
             ),
+            // TASK-874 (pending device leg): beam beats greedy on Nemotron
+            // streaming per the desktop A/B; see STREAMING_DECODING_METHOD.
+            decodingMethod = STREAMING_DECODING_METHOD,
+            maxActivePaths = STREAMING_MAX_ACTIVE_PATHS,
         )
         onlineRecognizer = OnlineRecognizer(config = recognizerConfig)
     }
@@ -690,14 +711,13 @@ class SherpaBackend(
             return transcribeAudioStreaming(samples, sampleRate, prompt) {}
         }
 
-        // beginWork BEFORE reading the recognizer: claiming work first closes
-        // the idle-unload race (a timer fire that already reserved the unload
-        // still wins, but then this read sees the post-unload null).
-        keepAlive.beginWork()
-        try {
+        // Claim work BEFORE reading the recognizer: withWork claiming first
+        // closes the idle-unload race (a timer fire that already reserved the
+        // unload still wins, but then this read sees the post-unload null).
+        return keepAlive.withWork {
             val rec = offlineRecognizer
-                ?: return Result.failure(TranscriptionException.NotInitialized())
-            return withContext(Dispatchers.IO) {
+                ?: return@withWork Result.failure(TranscriptionException.NotInitialized())
+            withContext(Dispatchers.IO) {
             // Release the native OfflineStream on EVERY path (happy, exception, blank-result)
             // so the JNI handle is freed deterministically, not left to GC finalization.
             var stream: OfflineStream? = null
@@ -781,8 +801,6 @@ class SherpaBackend(
                 stream?.release()
             }
             }
-        } finally {
-            keepAlive.endWork()
         }
     }
 
@@ -797,14 +815,13 @@ class SherpaBackend(
             return transcribeAudio(samples, sampleRate, prompt)
         }
 
-        keepAlive.beginWork()
-        try {
+        return keepAlive.withWork {
             // TASK-789 review T1: unload() resets the language field
             // mid-bracket; capture it with the recognizer local.
             val lang = language
             val rec = onlineRecognizer
-                ?: return Result.failure(TranscriptionException.NotInitialized())
-            return withContext(Dispatchers.IO) {
+                ?: return@withWork Result.failure(TranscriptionException.NotInitialized())
+            withContext(Dispatchers.IO) {
             var stream: OnlineStream? = null
             try {
                 Log.d(TAG, "Transcribing audio: ${samples.size} samples at ${sampleRate}Hz")
@@ -880,8 +897,6 @@ class SherpaBackend(
                 stream?.release()
             }
             }
-        } finally {
-            keepAlive.endWork()
         }
     }
 

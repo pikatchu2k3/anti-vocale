@@ -26,8 +26,11 @@ package com.antivocale.app.transcription
  *
  * Normalization: cue texts prefer the recognizer's own chunk text (exact
  * character alignment, whitespace-insensitive); when the token sequence does
- * not align, tokens join instead: sherpa's U+2581 (LOWER ONE EIGHTH BLOCK)
- * word-start marker becomes a space, a token starting with closing punctuation
+ * not align, tokens join instead: character-level CTC streams glue their
+ * pieces directly (the stream-level discriminator is the explicit
+ * whitespace token), every other stream space-joins; sherpa's U+2581
+ * (LOWER ONE EIGHTH BLOCK) word-start marker becomes a space, a token
+ * starting with closing punctuation
  * (. , ! ? ; : )) glues to the previous word without a preceding space, runs
  * of spaces collapse, and cues whose text is blank drop. Cues never overlap.
  */
@@ -49,9 +52,47 @@ object SentenceCueBuilder {
     private val MULTIPLE_SPACES = Regex(" {2,}")
 
     /**
+     * TASK-851: maps a chunk-relative time to the ORIGINAL audio timeline.
+     * A VAD-merged chunk is a concatenation of speech segments with the
+     * silence between them STRIPPED, so token times compress with every
+     * merge boundary; a flat chunkStartMs shift lands every segment after
+     * the first early by the accumulated stripped silence (the drift that
+     * mis-timed subtitles and made gap-skipping cut real speech). Each
+     * anchor is (bufferMs, originalMs) at a constituent segment's start,
+     * emitted by AudioPreprocessor's group merge; within a segment the two
+     * timelines advance identically (no stripping inside a segment), so the
+     * piecewise map is exact. Empty or single-anchor input degenerates to
+     * the flat shift.
+     */
+    fun originalTimelineMs(
+        chunkRelativeMs: Long,
+        chunkStartMs: Long,
+        anchors: List<Pair<Long, Long>>,
+    ): Long {
+        if (anchors.size < 2) return chunkStartMs + chunkRelativeMs
+        // The last anchor at or before the time; anchors are buffer-ordered
+        // by construction. A time before the first anchor (defensive) falls
+        // back to it.
+        var anchor = anchors.first()
+        for (a in anchors) {
+            if (a.first <= chunkRelativeMs) anchor = a else break
+        }
+        return anchor.second + (chunkRelativeMs - anchor.first)
+    }
+
+    /**
      * Builds the sentence cues of one chunk. [chunkStartMs]/[chunkEndMs] are the
      * chunk's range on the audio's timeline; token times are relative to the
-     * chunk. [chunkText] is the recognizer's own text for this chunk: when the
+     * chunk; [anchors] (TASK-851, default flat) restores the original
+     * timeline inside VAD-merged chunks (see [originalTimelineMs]). The
+     * anchors carry ABSOLUTE original-clip times and their FIRST entry is
+     * (0, chunkStartMs), so the flat and anchor paths agree at the chunk
+     * start; [chunkStartMs] is not added again in the anchor branch.
+     * CUE GROUPING runs on the MAPPED timeline (the tokens are mapped up
+     * front): pause splits and the reading-speed cap must see the REAL
+     * gaps, not silence-stripped ones, or one cue spans a whole merged
+     * group across long original silences (code review F1).
+     * [chunkText] is the recognizer's own text for this chunk: when the
      * token sequence aligns to it (whitespace-stripped concatenation matches
      * exactly; trailing whitespace and word-start markers are skipped, real
      * trailing characters abort), cue texts are cut from it verbatim,
@@ -65,19 +106,44 @@ object SentenceCueBuilder {
         chunkStartMs: Long,
         chunkEndMs: Long,
         chunkText: String? = null,
+        anchors: List<Pair<Long, Long>> = emptyList(),
     ): List<TimedSegment> {
         if (tokens.isEmpty()) return emptyList()
         val lo = minOf(chunkStartMs, chunkEndMs)
         val hi = maxOf(chunkStartMs, chunkEndMs)
+        // TASK-851 review F1: map the WHOLE token list up front, so cue
+        // grouping (pause splits, the reading-speed cap) sees the REAL
+        // gaps: a merged chunk's buffer compresses every stripped silence,
+        // and grouping on compressed times let one cue span a whole group
+        // across long original silences (also hiding them from TASK-841's
+        // gap skipping). Text alignment uses the ORIGINAL list: alignToText
+        // slices by token INDEX, and the copy preserves order and count.
         val aligned = chunkText?.let { text -> alignToText(tokens, text)?.let { spans -> text to spans } }
+        val toks = if (anchors.size < 2) tokens.map {
+            it.copy(startMs = chunkStartMs + it.startMs, endMs = chunkStartMs + it.endMs)
+        } else tokens.map {
+            it.copy(
+                startMs = originalTimelineMs(it.startMs, chunkStartMs, anchors),
+                endMs = originalTimelineMs(it.endMs, chunkStartMs, anchors))
+        }
+        val charCtcStream = isCharCtcStream(tokens)
         val cues = mutableListOf<TimedSegment>()
-        for ((first, last) in cueBounds(tokens)) {
+        for ((first, last) in cueBounds(toks)) {
             val text = aligned?.let { (source, spans) ->
                 source.substring(spans[first].first, spans[last].second).trim()
-            } ?: joinText(tokens, first, last)
+            } ?: joinText(tokens, first, last, charCtcStream)
             if (text.isBlank()) continue
-            val start = (chunkStartMs + tokens[first].startMs).coerceIn(lo, hi)
-            val end = (chunkStartMs + tokens[last].endMs).coerceIn(lo, hi).coerceAtLeast(start)
+            val start = toks[first].startMs.coerceIn(lo, hi)
+            val end = toks[last].endMs.coerceIn(lo, hi).coerceAtLeast(start)
+            // TASK-541 item 1 (observed on device, 2026-10-24): a cue whose
+            // tokens all sit past chunkEnd clamps to start==end and renders
+            // as a zero-duration flash line in SRT/VTT. Two real cases in
+            // the on-device cue store, both a LONE TRAILING PUNCTUATION
+            // MARK at the exact chunk boundary ('.' at 60000ms, '。' at
+            // 90000ms, the 60s-chunk era) - the model's trailing token with
+            // no speech under it. Drop those (no visible text is lost);
+            // a flash cue carrying real WORDS stays visible.
+            if (start == end && text.none { it.isLetterOrDigit() }) continue
             // Trim a previous cue that would reach past this start, keeping its
             // duration non-negative. Full non-overlap holds for the monotonic
             // token starts every wired sherpa family produces; badly inverted
@@ -87,11 +153,9 @@ object SentenceCueBuilder {
                     cues[cues.size - 1] = previous.copy(endMs = maxOf(start, previous.startMs))
                 }
             }
-            // TASK-678: the cue's tokens ride along (shifted to absolute
-            // ms), transient fuel for the speaker re-split.
-            val cueTokens = tokens.subList(first, last + 1).map {
-                it.copy(startMs = it.startMs + chunkStartMs, endMs = it.endMs + chunkStartMs)
-            }
+            // TASK-678: the cue's tokens ride along (absolute ms, already
+            // mapped), transient fuel for the speaker re-split.
+            val cueTokens = toks.subList(first, last + 1).toList()
             cues.add(TimedSegment(start, end, text, tokens = cueTokens))
         }
         return mergePunctuationOnlyCues(cues)
@@ -145,7 +209,7 @@ object SentenceCueBuilder {
         return if (spans != null) {
             chunkText.substring(spans[fromIndex].first, spans[toIndex].second).trim()
         } else {
-            joinText(tokens, fromIndex, toIndex)
+            joinText(tokens, fromIndex, toIndex, isCharCtcStream(tokens))
         }
     }
 
@@ -266,22 +330,44 @@ object SentenceCueBuilder {
         return i >= 0 && text[i] in SENTENCE_ENDERS
     }
 
-    private fun joinText(tokens: List<TimedToken>, first: Int, last: Int): String {
+    private fun joinText(
+        tokens: List<TimedToken>,
+        first: Int,
+        last: Int,
+        charCtcStream: Boolean,
+    ): String {
         val sb = StringBuilder()
-        for (i in first..last) appendNormalized(sb, normalized(tokens[i].text))
+        for (i in first..last) appendToken(sb, normalized(tokens[i].text), spaceSeparator = !charCtcStream)
         return MULTIPLE_SPACES.replace(sb.toString(), " ").trim()
     }
 
     /** Joins one normalized token, gluing closing punctuation to the previous word. */
-    private fun appendNormalized(sb: StringBuilder, normalized: String) {
+    private fun appendToken(sb: StringBuilder, normalized: String, spaceSeparator: Boolean) {
         val glued = normalized.trimStart()
         if (sb.isNotEmpty() && glued.isNotEmpty() && glued[0] in CLOSING_PUNCTUATION) {
             sb.append(glued)
             return
         }
-        if (sb.isNotEmpty() && sb.last() != ' ') sb.append(' ')
+        if (spaceSeparator && sb.isNotEmpty() && sb.last() != ' ') sb.append(' ')
         sb.append(normalized)
     }
+
+    /**
+     * TASK-541 item 2: a character-level CTC STREAM joins its tokens with no
+     * separator (the pieces compose: "o","n","e" is "one"). The stream-level
+     * discriminator is the EXPLICIT whitespace token: the omnilingual CTC
+     * vocab (real tokens.txt, 99.96% single-char pieces) carries a literal
+     * " " piece and emits it between words, while sentencepiece vocabs never
+     * do (the U+2581 marker replaces it; a bare marker token is NOT blank,
+     * so marker streams keep the space join). Computed ONCE per stream, not
+     * per cue: a char-CTC cue range with no space token of its own (a
+     * one-word cue after a pause split) is still a char stream (review F1,
+     * proven by repro: the per-range form rendered "o n e."). Deliberately
+     * NOT handled: sentencepiece continuation pieces, which are
+     * string-indistinguishable from plain word tokens.
+     */
+    private fun isCharCtcStream(tokens: List<TimedToken>): Boolean =
+        tokens.any { it.text.isBlank() }
 
     private fun normalized(raw: String): String = raw.replace(WORD_START_MARKER, ' ')
 }

@@ -2,7 +2,6 @@
 <resources>
     <!-- Terminology: user-facing "транскрипция" is translated as "распознавание" (common word)
          instead of the Android-typical "транскрипция", per native-speaker feedback (issue #36). -->
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Модели</string>
@@ -169,7 +168,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (потоковая)</string>
-    <string name="nemotron_description">~640 МБ • Потоковый преобразователь</string>
+    <string name="nemotron_description">~640 МБ • Потоковая • Точность важнее скорости</string>
     <string name="nemotron_download_confirm_title">Скачать %1$s?</string>
     <string name="nemotron_download_confirm_message">Будет загружено ~%1$d МБ. Nemotron 3.5, многоязычная потоковая модель распознавания речи.</string>
     <string name="nemotron_download">Скачать Nemotron</string>
@@ -181,6 +180,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326 МБ • Быстрая • Распознавание русской речи с пунктуацией</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17 МБ • Очень быстро • 7 языков, автоопределение</string>
+    <string name="benchmark_unsupported_engine">Бенчмарк не поддерживается для этого движка</string>
+    <string name="model_info_best_for_whistle">Самый быстрый запуск на устройстве: 17 МБ, 7 языков, мгновенный первый текст</string>
+    <string name="model_info_notes_whistle">Точность ниже Parakeet на итальянском; музыка может распознаться как текст (нет музыкального фильтра)</string>
     <string name="gigaam_download_confirm_title">Скачать GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">Будет загружено ~%1$d МБ. GigaAM v3, модель распознавания речи только для русского языка от Сбера с высокой точностью для русского.</string>
     <string name="gigaam_download">Скачать GigaAM</string>
@@ -1284,4 +1288,40 @@
     </plurals>
     <string name="folder_watch_period_label">Интервал проверки</string>
     <string name="folder_watch_grant_failed">Не удалось сохранить доступ к этой папке, поэтому она не была добавлена. Выберите её ещё раз.</string>
+
+    <!-- Резервная копия и перенос (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Воспроизвести аудио</string>
+    <string name="result_pause_audio">Приостановить аудио</string>
+    <string name="duplicate_found_title">Уже расшифровано</string>
+    <string name="duplicate_found_message">Этот файл уже расшифрован с помощью %1$s.</string>
+    <string name="duplicate_found_open">Открыть результат</string>
+    <string name="duplicate_found_again">Расшифровать заново</string>
+    <string name="result_language_advisory">Эта модель определяет язык сама. Чтобы закрепить %1$s, выберите язык в настройках (модели, учитывающие эту настройку, например Whisper, отмечены там).</string>
+    <string name="result_skip_silences">Пропускать тишину</string>
+    <string name="result_playback_speed">Скорость воспроизведения (%1$s)</string>
+
+    <string name="backup_transfer_title">Резервная копия и перенос</string>
+    <string name="backup_transfer_summary">Сохраните настройки и историю в файл или восстановите их на другом устройстве</string>
+    <string name="backup_export_title">Экспорт резервной копии</string>
+    <string name="backup_export_description">Записывает один файл с настройками и всей историей расшифровок. Файл в открытом виде: кто им владеет, может прочитать каждую расшифровку и каждое имя отправителя.</string>
+    <string name="backup_export_action">Создать файл копии</string>
+    <string name="backup_import_title">Импорт резервной копии</string>
+    <string name="backup_import_description">Добавляет на это устройство настройки и прошлые расшифровки из файла копии. То, что уже есть, сохраняется.</string>
+    <string name="backup_import_action">Выбрать файл копии</string>
+    <string name="backup_export_progress">Запись копии…</string>
+    <string name="backup_import_progress">Чтение копии…</string>
+    <string name="backup_export_done">Копия сохранена</string>
+    <string name="backup_export_failed">Не удалось записать копию</string>
+    <string name="backup_import_done">Импортировано: %1$d, пропущено: %2$d</string>
+    <string name="backup_import_failed">Не удалось прочитать файл копии</string>
+    <string name="backup_import_history_failed">Настройки импортированы, но не удалось добавить историю. Повторить безопасно.</string>
+    <string name="backup_disclosure_title">Перед экспортом</string>
+    <string name="backup_disclosure_body">Копия содержит каждую расшифровку, имя отправителя и метку говорящего в читаемом виде. Передавайте её только тем, кому доверяете.</string>
+    <string name="keyword_biasing_title">Приоритет ключевых слов (Whistle)</string>
+    <string name="keyword_biasing_description">Имена, места или термины, которые модель Whistle должна предпочитать, по одному в строке. Действует со следующей расшифровки, без перезагрузки.</string>
+    <string name="keyword_biasing_placeholder">Один термин на строку</string>
+    <string name="freeze_protection_title">Защита фоновой расшифровки</string>
+    <string name="freeze_protection_description">Держит беззвучный аудиопоток активным во время расшифровки, чтобы агрессивные экономии батареи не приостанавливали приложение. Включите, если расшифровка останавливается при выключенном экране (некоторые Oppo, Realme, OnePlus и Vivo).</string>
 </resources>

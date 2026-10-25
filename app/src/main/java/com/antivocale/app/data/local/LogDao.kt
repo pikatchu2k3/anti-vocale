@@ -24,6 +24,48 @@ interface LogDao {
     suspend fun deleteAll()
 
     /**
+     * TASK-844 (GH #158): the backup export's paged FULL-ROW read. Every
+     * LogEntity column (the lean list queries above intentionally drop
+     * segments and firstPassTranscript; an archive that dropped them would
+     * lose cues and two-pass text on migration). Keyset-paged on timestamp
+     * DESC: never load the whole history into the heap (the 256MB lesson
+     * two comments up). [beforeTimestamp] = Long.MAX_VALUE starts the walk.
+     */
+    @Query("SELECT * FROM logs WHERE timestamp < :beforeTimestamp " +
+        "ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun pageBefore(beforeTimestamp: Long, limit: Int): List<LogEntity>
+
+    /**
+     * TASK-842 (GH #157 part 3): the duplicate guard's lookup, newest match
+     * first. modelName is the display name the row stores (the only per-row
+     * model key): the guard compares against the ACTIVE model's display name
+     * and documents that. Null contentHash rows (legacy, text-only) never
+     * match: the guard is off for them by construction. SUCCESS-only (review
+     * F1): the dialog's copy promises a result to open; a FAILED run must
+     * retry naturally and an in-flight duplicate must queue, not prompt.
+     */
+    @Query("SELECT * FROM logs WHERE contentHash = :contentHash AND modelName = :modelName " +
+        "AND status = 'SUCCESS' ORDER BY timestamp DESC LIMIT 1")
+    suspend fun findByContentHashAndModel(contentHash: String, modelName: String): LogEntity?
+
+    /**
+     * TASK-842: the automatic voice-note leg. A completed row with the same
+     * stable voicenote taskId means this exact note already transcribed
+     * (PTT names are unique per note): the silent dedup skips it.
+     */
+    @Query("SELECT * FROM logs WHERE taskId = :taskId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun findLatestByTaskId(taskId: String): LogEntity?
+
+    /**
+     * TASK-844: the import's batch write. OnConflictStrategy.REPLACE keyed
+     * on id makes a re-import of the same archive a no-op (idempotent
+     * merge, never a duplicate) and a same-id row a replace, both the
+     * designed semantics.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(rows: List<LogEntity>)
+
+    /**
      * Bounded recent-first query for the Logs UI (TASK-340 Fix 2a): the previous
      * unbounded getAll let the whole history pile into the 256MB heap, and the
      * ViewModel remaps the full list into new objects on every interim Room write.
@@ -43,7 +85,7 @@ interface LogDao {
      */
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason FROM logs ORDER BY timestamp DESC LIMIT 500")
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash FROM logs ORDER BY timestamp DESC LIMIT 500")
     fun getAll(): Flow<List<LogEntity>>
 
     // TASK-613: RAW query, ESCAPE-clause-aware. Room interfaces cannot give a
@@ -56,7 +98,7 @@ interface LogDao {
     // "%" matching the newest 500 rows regardless of the query).
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
         "ORDER BY timestamp DESC LIMIT 500")
     fun searchAllRaw(query: String): Flow<List<LogEntity>>
 

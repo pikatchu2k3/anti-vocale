@@ -11,6 +11,9 @@ import com.antivocale.app.ui.components.LanguageOption
 import com.antivocale.app.ui.components.TranscriptionLanguagePicker
 import com.antivocale.app.ui.components.languageOptionsFor
 import com.antivocale.app.ui.components.transcriptionPickerFor
+import com.antivocale.app.BuildConfig
+import com.antivocale.app.data.BackupArchiveCodec
+import com.antivocale.app.data.BackupHistoryCodec
 import com.antivocale.app.data.DiscoveredModel
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.HuggingFaceApiClient
@@ -51,6 +54,7 @@ import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.util.LocaleManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
+import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -95,6 +99,8 @@ class SettingsViewModel @Inject constructor(
     // TASK-271: permission grants have no observable state, so the grant
     // paths poke the coordinator for a re-evaluation.
     private val voiceNoteDetectionCoordinator: com.antivocale.app.data.VoiceNoteDetectionCoordinator,
+    // TASK-826: the grant-acceptance policy's owner (see acceptVoiceNoteGrant).
+    private val voiceNoteTreeGrant: com.antivocale.app.data.VoiceNoteTreeGrant,
     private val shareShortcutManager: ShareShortcutManager,
     private val backendRegistry: BackendRegistry,
     private val shortcutIconStore: ShortcutIconStore,
@@ -135,6 +141,7 @@ class SettingsViewModel @Inject constructor(
             WarmedPrefs(
                 modelConfigured = !preferencesManager.modelPath.first().isNullOrBlank(),
                 punctuationPrompt = preferencesManager.punctuationPrompt.first(),
+                keywordBiasing = preferencesManager.keywordBiasing.first(),
                 summaryPrompt = preferencesManager.summaryPrompt.first(),
                 transcriptionAdvancedExpanded =
                     preferencesManager.settingsTranscriptionAdvancedExpanded.first(),
@@ -144,6 +151,7 @@ class SettingsViewModel @Inject constructor(
     private data class WarmedPrefs(
         val modelConfigured: Boolean,
         val punctuationPrompt: String,
+        val keywordBiasing: String = "",
         val summaryPrompt: String,
         /** TASK-588.1: seeds the advanced-reveal state (no first-frame flash). */
         val transcriptionAdvancedExpanded: Boolean,
@@ -254,6 +262,14 @@ class SettingsViewModel @Inject constructor(
             initialValue = PreferencesManager.DEFAULT_VAD_ENABLED
         )
 
+    // GH #67 (scoped): the silent-audio freezer protection, opt-in.
+    val freezeProtectionEnabled: StateFlow<Boolean> = preferencesManager.freezeProtectionEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_FREEZE_PROTECTION_ENABLED
+        )
+
     // Progressive transcription display preference
     val progressiveTranscription: StateFlow<Boolean> = preferencesManager.progressiveTranscription
         .stateIn(
@@ -358,6 +374,14 @@ class SettingsViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = warmedPrefs.summaryPrompt
+        )
+
+    /** TASK-858: whistle keyword-biasing terms; blank = off. */
+    val currentKeywordBiasing: StateFlow<String> = preferencesManager.keywordBiasing
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = warmedPrefs.keywordBiasing
         )
 
     // TASK-491: welcome-tour state; NOT version-keyed (an update never
@@ -637,10 +661,20 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * The persisted tree URI read once from the store. The picker
-     * callback's release step needs the STORED value: the StateFlow's
-     * .value can still be its initialValue before DataStore's first
-     * emission lands, and releasing nothing there would strand the old
+     * TASK-826: the acceptance sequence (take, validate, release-old,
+     * save) lives in [com.antivocale.app.data.VoiceNoteTreeGrant] so the
+     * Settings callback and the debug SPI grant activity run the same
+     * policy; the caller maps outcomes to UI.
+     */
+    suspend fun acceptVoiceNoteGrant(uri: android.net.Uri): com.antivocale.app.data.VoiceNoteTreeGrant.GrantOutcome =
+        voiceNoteTreeGrant.acceptGrant(uri)
+
+    /**
+     * The persisted tree URI read once from the store. Callers that must
+     * see the STORED value (today: the Remove path's slot release) read
+     * this, never the StateFlow's
+     * .value: .value can still be its initialValue before DataStore's
+     * first emission lands, and acting on that would strand the old
      * grant slot (review F9, 2026-10-13).
      */
     suspend fun currentVoiceNoteTreeUri(): String? =
@@ -684,6 +718,14 @@ class SettingsViewModel @Inject constructor(
     fun refreshVoiceNoteDetectionGate() {
         voiceNoteDetectionCoordinator.pokePermissionState()
     }
+
+    /**
+     * TASK-827: the coordinator-owned gate state (one derivation; the
+     * Settings grant card renders this instead of re-deriving the
+     * conjunction).
+     */
+    val voiceNoteGateState: StateFlow<com.antivocale.app.data.VoiceNoteGateState> =
+        voiceNoteDetectionCoordinator.gateState
 
     // ---- TASK-681: LAN offload (OmniVoice) ----
 
@@ -1137,6 +1179,15 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * Saves the freeze-protection preference (GH #67 scoped).
+     */
+    fun saveFreezeProtectionEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveFreezeProtectionEnabled(enabled)
+        }
+    }
+
+    /**
      * Saves the progressive transcription preference.
      */
     fun saveProgressiveTranscription(enabled: Boolean) {
@@ -1298,6 +1349,10 @@ class SettingsViewModel @Inject constructor(
 
     fun saveSignatureEnabled(enabled: Boolean) {
         viewModelScope.launch { preferencesManager.saveSignatureEnabled(enabled) }
+    }
+
+    fun saveKeywordBiasing(terms: String) {
+        viewModelScope.launch { preferencesManager.saveKeywordBiasing(terms) }
     }
 
     fun saveSignatureText(text: String) {
@@ -1694,6 +1749,119 @@ class SettingsViewModel @Inject constructor(
             shortcutIconStore.clear(backendId)
             refreshShareIconBackends()
             shareShortcutManager.refresh()
+        }
+    }
+
+    // ---- TASK-843/844: the backup archive (GH #158) ----
+
+    /** The backup page's operation state; one terminal outcome per action. */
+    sealed interface BackupState {
+        data object Idle : BackupState
+        data object Exporting : BackupState
+        data object Importing : BackupState
+
+        /**
+         * [messageRes] formatted with [args] (int positions). [export]
+         * scopes the terminal outcome to its own card: the page renders
+         * one outcome line per action, not both (a shared un-scoped state
+         * showed the export result under the import card too).
+         */
+        data class Done(
+            val export: Boolean,
+            val messageRes: Int,
+            val args: List<Int> = emptyList(),
+        ) : BackupState
+
+        data class Failed(val export: Boolean, val messageRes: Int) : BackupState
+    }
+
+    private val _backupState = MutableStateFlow<BackupState>(BackupState.Idle)
+    val backupState: StateFlow<BackupState> = _backupState.asStateFlow()
+
+    /** Clears a terminal outcome so the page stops showing it. */
+    fun resetBackupState() {
+        _backupState.value = BackupState.Idle
+    }
+
+    /**
+     * Writes the full archive to the SAF pick: whitelisted settings plus
+     * the whole history streamed page-by-page onto the output stream (the
+     * history never buffers as one heap copy; the 256MB lesson). Runs on
+     * IO in viewModelScope like the model-bundle export (a compose scope
+     * would cancel the zip mid-write when the page closes).
+     */
+    fun exportBackup(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        _backupState.value = BackupState.Exporting
+        try {
+            val values = preferencesManager.exportPortableSettings()
+            val out = getApplication<Application>().contentResolver.openOutputStream(uri)
+                ?: error("cannot open export target $uri")
+            out.use {
+                ZipOutputStream(it).use { zip ->
+                    BackupArchiveCodec.writeSettingsEntries(
+                        zip, values, BuildConfig.VERSION_NAME, System.currentTimeMillis())
+                    BackupHistoryCodec.writeHistoryEntry(zip) { before, limit ->
+                        logDao.pageBefore(before, limit)
+                    }
+                }
+            }
+            Log.i(TAG, "backup exported -> $uri (${values.size} settings keys)")
+            _backupState.value = BackupState.Done(export = true, messageRes = R.string.backup_export_done)
+        } catch (e: Exception) {
+            Log.w(TAG, "backup export failed", e)
+            _backupState.value = BackupState.Failed(export = true, messageRes = R.string.backup_export_failed)
+        }
+    }
+
+    /**
+     * Reads the SAF pick: the settings apply in ONE DataStore transaction
+     * (whitelist-gated), the history rows merge idempotently (REPLACE on
+     * the row id, streamed chunk-by-chunk straight off the zip stream so
+     * the heap never holds the archive or the history whole, the 256MB
+     * lesson), and malformed rows drop and count. Two passes over two
+     * fresh streams (validation first, then the merge) instead of one
+     * full-buffer copy. An unreadable archive applies NOTHING. A history
+     * write failure after the settings applied leaves the settings
+     * applied and reports its OWN outcome (the generic read-failure
+     * string would misreport what happened); the retry is idempotent.
+     */
+    fun importBackup(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        _backupState.value = BackupState.Importing
+        try {
+            val resolver = getApplication<Application>().contentResolver
+            val settings = resolver.openInputStream(uri)?.use {
+                BackupArchiveCodec.readSettings(it)
+            } ?: error("cannot open import source $uri")
+            if (settings == null) {
+                _backupState.value = BackupState.Failed(
+                    export = false, messageRes = R.string.backup_import_failed)
+                return@launch
+            }
+            preferencesManager.importPortableSettings(settings)
+            try {
+                var imported = 0
+                val dropped = resolver.openInputStream(uri)?.use { stream ->
+                    BackupArchiveCodec.openHistoryReader(stream)?.let { reader ->
+                        BackupHistoryCodec.readHistoryEntryChunked(reader) { chunk ->
+                            imported += chunk.size
+                            logDao.insertAll(chunk)
+                        }
+                    } ?: 0
+                } ?: 0
+                Log.i(TAG, "backup imported: ${settings.size} keys, $imported rows, $dropped dropped")
+                _backupState.value = BackupState.Done(
+                    export = false,
+                    messageRes = R.string.backup_import_done,
+                    args = listOf(imported, dropped))
+            } catch (e: Exception) {
+                Log.w(TAG, "backup history merge failed", e)
+                _backupState.value = BackupState.Failed(
+                    export = false, messageRes = R.string.backup_import_history_failed)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "backup import failed", e)
+            _backupState.value = BackupState.Failed(
+                export = false, messageRes = R.string.backup_import_failed)
         }
     }
 }

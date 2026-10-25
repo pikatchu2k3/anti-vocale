@@ -51,6 +51,15 @@ interface TranscriptionBackend {
         get() = false
 
     /**
+     * TASK-872: true when this backend's OWN output already carries speaker
+     * attribution, so the GH #83 post-pass must not run on top of it (it
+     * would double-label every cue). VibeVoice emits literal "Speaker N:"
+     * text; its transcript IS the diarization.
+     */
+    val emitsNativeSpeakerLabels: Boolean
+        get() = false
+
+    /**
      * TASK-681: whole-file transcription from the ORIGINAL container, no
      * phone-side decode. Backends that upload or hash the file as-is (the
      * LAN-offload OmniVoice backend) override this; every decode-based
@@ -248,6 +257,13 @@ sealed class BackendConfig {
         val apiKey: String,
         val model: String,
     ) : BackendConfig()
+
+    /** TASK-853: the Cactus Whistle engine (single .cact file). */
+    data class WhistleConfig(
+        val cactPath: String,
+        /** ISO code among the engine's seven, or blank = detect. */
+        val language: String = "",
+    ) : BackendConfig()
 }
 
 /**
@@ -282,10 +298,13 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
      * corrupt model directory and routes the History row to the re-download
      * message ONLY on this verdict, while a generic [ModelLoadError] (OOM,
      * NNAPI, metadata) must delete nothing. The rejected bytes would otherwise
-     * reach OfflineRecognizer.newFromFile, whose native Ort::Exception escapes
-     * the JNI boundary and aborts the process (uncatchable from Kotlin;
-     * upstream k2-fsa/sherpa-onnx#3987), so this validation is the only
-     * barrier.
+     * reach OfflineRecognizer.newFromFile. Since the sherpa-onnx v2.0.0
+     * bump, native constructor exceptions surface as catchable Java
+     * exceptions (upstream k2-fsa/sherpa-onnx#3988; at the 1.13.x pin they
+     * escaped the JNI boundary and aborted the process, #3987), so this
+     * validation is now the FIRST barrier rather than the only one: the
+     * gate stays regardless (the typed verdict drives the catalog
+     * dir-heal; a raw Ort::Exception does not).
      */
     class CorruptModelFiles(detail: String) : ModelLoadError(detail)
 
@@ -364,6 +383,7 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
     class RemoteServerError(val statusCode: Int, val serverDetail: String) :
         TranscriptionException("Remote server error HTTP $statusCode: $serverDetail")
 }
+
 
 /**
  * TASK-625: whether this failure belongs to the memory class (the pre-flight

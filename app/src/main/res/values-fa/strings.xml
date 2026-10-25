@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">مدل‌ها</string>
@@ -180,7 +179,7 @@
     <!-- Nemotron 3.5 streaming -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (جریانی)</string>
-    <string name="nemotron_description">~640MB • ترنسدیوسر جریانی</string>
+    <string name="nemotron_description">~640MB • جریانی • کیفیت به جای سرعت</string>
     <string name="nemotron_download_confirm_title">%1$s دانلود شود؟</string>
     <string name="nemotron_download_confirm_message">حدود %1$dMB دانلود خواهد شد. Nemotron 3.5 یک مدل ASR چندزبانه جریانی است.</string>
     <string name="nemotron_download">دانلود Nemotron</string>
@@ -192,6 +191,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • سریع • ASR روسی با نشانه‌گذاری</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • بسیار سریع • 7 زبان، تشخیص خودکار</string>
+    <string name="benchmark_unsupported_engine">محک برای این موتور پشتیبانی نمی‌شود</string>
+    <string name="model_info_best_for_whistle">سریع‌ترین شروع روی دستگاه: 17 مگابایت، 7 زبان، متن اول فوری</string>
+    <string name="model_info_notes_whistle">دقت کمتر از Parakeet در ایتالیایی؛ موسیقی می‌تواند به متن تبدیل شود (بدون فیلتر موسیقی)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 دانلود شود؟</string>
     <string name="gigaam_download_confirm_message">حدود %1$dMB دانلود خواهد شد. GigaAM v3 یک مدل ASR فقط‌روسی از Sber با دقت عالی روی روسی است.</string>
     <string name="gigaam_download">دانلود GigaAM</string>
@@ -1262,4 +1266,40 @@
     </plurals>
     <string name="folder_watch_period_label">بازه اسکن</string>
     <string name="folder_watch_grant_failed">دسترسی به آن پوشه قابل حفظ نبود، بنابراین اضافه نشد. دوباره انتخابش کنید.</string>
+
+    <!-- پشتیبان‌گیری و انتقال (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">پخش صدا</string>
+    <string name="result_pause_audio">توقف صدا</string>
+    <string name="duplicate_found_title">قبلاً رونوشت شده</string>
+    <string name="duplicate_found_message">این فایل قبلاً با %1$s رونوشت شده است.</string>
+    <string name="duplicate_found_open">باز کردن نتیجه</string>
+    <string name="duplicate_found_again">رونوشت دوباره</string>
+    <string name="result_language_advisory">این مدل زبان را خودتش تشخیص می‌دهد. برای قفل کردن %1$s، زبان را در تنظیمات انتخاب کنید (مدل‌هایی که به این تنظیم پایبندند، مانند Whisper، آنجا مشخص شده‌اند).</string>
+    <string name="result_skip_silences">رد کردن سکوت‌ها</string>
+    <string name="result_playback_speed">سرعت پخش (%1$s)</string>
+
+    <string name="backup_transfer_title">پشتیبان‌گیری و انتقال</string>
+    <string name="backup_transfer_summary">تنظیمات و تاریخچه‌تان را در یک فایل ذخیره کنید یا روی دستگاه دیگری بازیابی کنید</string>
+    <string name="backup_export_title">برون‌بری پشتیبان</string>
+    <string name="backup_export_description">یک فایل با تنظیمات شما و تمام تاریخچهٔ رونوشت‌ها نوشته می‌شود. فایل متن ساده است: هر کس آن را داشته باشد می‌تواند هر رونوشت و هر نام فرستنده را بخواند.</string>
+    <string name="backup_export_action">ساخت فایل پشتیبان</string>
+    <string name="backup_import_title">درون‌ریزی پشتیبان</string>
+    <string name="backup_import_description">از یک فایل پشتیبان، تنظیمات و رونوشت‌های گذشته به این دستگاه افزوده می‌شود. آنچه از قبل دارید حفظ می‌شود.</string>
+    <string name="backup_import_action">انتخاب فایل پشتیبان</string>
+    <string name="backup_export_progress">در حال نوشتن پشتیبان…</string>
+    <string name="backup_import_progress">در حال خواندن پشتیبان…</string>
+    <string name="backup_export_done">پشتیبان ذخیره شد</string>
+    <string name="backup_export_failed">نوشتن پشتیبان ممکن نشد</string>
+    <string name="backup_import_done">درون‌ریزی‌شده: %1$d، نادیده‌گرفته: %2$d</string>
+    <string name="backup_import_failed">خواندن فایل پشتیبان ممکن نشد</string>
+    <string name="backup_import_history_failed">تنظیمات درون‌ریزی شد، اما افزودن تاریخچه ممکن نشد. تلاش دوباره بی‌خطر است.</string>
+    <string name="backup_disclosure_title">پیش از برون‌بری</string>
+    <string name="backup_disclosure_body">پشتیبان شامل هر رونوشت، نام فرستنده و برچسب گوینده به صورت متن خوانا است. آن را فقط با مقصدهای مطمئن به اشتراک بگذارید.</string>
+    <string name="keyword_biasing_title">گرایش کلیدواژه‌ای (Whistle)</string>
+    <string name="keyword_biasing_description">نام‌ها، مکان‌ها یا اصطلاحاتی که مدل Whistle باید ترجیح دهد، در هر خط یک مورد. از رونویسی بعدی اعمال می‌شود، بدون بارگذاری مجدد.</string>
+    <string name="keyword_biasing_placeholder">در هر خط یک عبارت</string>
+    <string name="freeze_protection_title">محافظت از رونویسی پس‌زمینه</string>
+    <string name="freeze_protection_description">در طول رونویسی یک جریان صوتی بی‌صدا فعال نگه می‌دارد تا صرفه‌جویان تهاجمی باتری برنامه را متوقف نکنند. اگر رونویسی با خاموش شدن صفحه متوقف می‌شود، این را روشن کنید (برخی گوشی‌های Oppo، Realme، OnePlus و Vivo).</string>
 </resources>

@@ -16,8 +16,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import com.antivocale.app.R
+import com.antivocale.app.MainActivity
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.data.VoiceNoteDuplicateGuard
 import com.antivocale.app.receiver.ChooserBroadcastReceiver
+import com.antivocale.app.service.AudioRequestIntent
 import com.antivocale.app.service.InferenceEnqueue
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.service.ResultNotificationFactory
@@ -26,6 +29,7 @@ import com.antivocale.app.util.AppNotificationChannel
 import com.antivocale.app.util.SharedAudioHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dagger.hilt.EntryPoint
@@ -76,6 +80,13 @@ interface BackendRegistryEntryPoint {
      * decode the container before dispatching transcription.
      */
     fun audioPreprocessor(): com.antivocale.app.audio.AudioPreprocessor
+
+    /** TASK-842: the display-name derivation the rows use (the guard's
+     *  hash+model lookup must mirror the name the run will stamp). */
+    fun transcriptionOrchestrator(): com.antivocale.app.transcription.TranscriptionOrchestrator
+
+    /** TASK-842: the duplicate guard's DAO lookup. */
+    fun duplicateGuard(): com.antivocale.app.data.VoiceNoteDuplicateGuard
 
     /**
      * The process-lifetime scope (TASK-438 rule: no hand-built scopes). The
@@ -415,14 +426,26 @@ class ShareReceiverActivity : Activity() {
                 }
             }
 
+            // TASK-842: the intake content hash, once, on IO (the
+            // interactive duplicate guard's key; rides the service intent
+            // so the row carries it for FUTURE intakes).
+            val contentHash = appEntryPoint.duplicateGuard().hashOnIo(localPath)
+
             // External-family share target: the sentinel must become a concrete external:<id>
             // BEFORE any consumer (subtitle branch, timeout worker, service intent) sees it.
             if (backendOverride == EXTERNAL_FAMILY_BACKEND_ID) {
-                showExternalModelChooser(taskId, localPath, appEntryPoint.externalModelStore())
+                showExternalModelChooser(
+                    taskId, localPath, appEntryPoint.externalModelStore(), contentHash)
                 return@launch
             }
 
-            dispatch(taskId, localPath, backendOverride)
+            if (contentHash != null &&
+                offerDuplicateDialogIfNeeded(taskId, localPath, backendOverride, contentHash)
+            ) {
+                return@launch  // the dialog owns the request from here
+            }
+
+            dispatch(taskId, localPath, backendOverride, contentHash)
         }
     }
 
@@ -433,7 +456,12 @@ class ShareReceiverActivity : Activity() {
      * Suspending: the record read is a DataStore access and must not park the
      * main thread (the TASK-517 rule); the caller already runs on Main.
      */
-    private suspend fun showExternalModelChooser(taskId: String, localPath: String, store: com.antivocale.app.data.ExternalModelStore) {
+    private suspend fun showExternalModelChooser(
+        taskId: String,
+        localPath: String,
+        store: com.antivocale.app.data.ExternalModelStore,
+        contentHash: String? = null,
+    ) {
         // The copy runs on the app scope and can outlive this Activity: a
         // recreation (or the recreation guard's finish()) between copy and
         // chooser leaves no window to attach a dialog to. The share is
@@ -465,7 +493,12 @@ class ShareReceiverActivity : Activity() {
                 val chosen = records[which]
                 Log.i(TAG, "External model chosen via share chooser: ${chosen.backendId}")
                 appScope.launch(Dispatchers.Main) {
-                    dispatch(taskId, localPath, chosen.backendId)
+                    if (contentHash != null &&
+                        offerDuplicateDialogIfNeeded(taskId, localPath, chosen.backendId, contentHash)
+                    ) {
+                        return@launch  // the dialog owns the request from here
+                    }
+                    dispatch(taskId, localPath, chosen.backendId, contentHash)
                 }
             }
             .setOnCancelListener {
@@ -478,7 +511,12 @@ class ShareReceiverActivity : Activity() {
     /** The subtitle probe branch plus the default ASR path, shared by every
      *  entry. Suspending: callers run it inside their own coroutine on Main
      *  (no nested launch hop). */
-    private suspend fun dispatch(taskId: String, localPath: String, backendOverride: String?) {
+    private suspend fun dispatch(
+        taskId: String,
+        localPath: String,
+        backendOverride: String?,
+        contentHash: String? = null,
+    ) {
         // TASK-517: the subtitle probe (MediaExtractor on potentially
         // GB-scale videos) and the preference reads inside offerIfTracks
         // are blocking IO; they ran on this Activity's MAIN thread, in ANR
@@ -489,7 +527,8 @@ class ShareReceiverActivity : Activity() {
                 this@ShareReceiverActivity, taskId, localPath,
                 source = InferenceService.SOURCE_SHARE,
                 sourcePackage = sourcePackage,
-                backendOverride = backendOverride)
+                backendOverride = backendOverride,
+                contentHash = contentHash)
         }
 
         // GH #18: the decode probe gates only the ASR path; subtitle-only
@@ -534,13 +573,71 @@ class ShareReceiverActivity : Activity() {
                 sourcePackage,
                 localPath)
         }
-        val serviceIntent = buildServiceIntent(taskId, localPath, requestType = TaskerRequestReceiver.REQUEST_TYPE_AUDIO, trackIndex = -1, backendOverride = backendOverride, senderName = senderName)
+        val serviceIntent = AudioRequestIntent.make(
+            this, InferenceService.SOURCE_SHARE, taskId, localPath,
+            sourcePackage = sourcePackage,
+            backendOverride = backendOverride,
+            senderName = senderName,
+            contentHash = contentHash)
 
         // F6: unified enqueue (trampoline fallback on the API 31+
         // restriction). The Failed branch is the no-signal case (e.g.
         // FGS restricted AND notifications unavailable): say so instead of
         // toasting "transcription started" over a lost request.
         enqueueAndFinish(taskId, serviceIntent, "InferenceService")
+    }
+
+    /**
+     * TASK-842 (GH #157 part 3): the interactive duplicate guard. Looks up
+     * the fresh copy's content hash against completed rows FOR THE MODEL
+     * THIS RUN WOULD USE (the same display-name derivation the row will
+     * stamp); on a hit, the platform dialog (this Activity's precedent)
+     * offers open-or-reprocess and OWNS the request. Returns true when the
+     * dialog took over (the caller must not dispatch); false when there is
+     * no duplicate (the caller proceeds) or the Activity is already gone
+     * (reprocess is the safe default: never lose a share over a dialog).
+     * A destroy between the entry check and the show re-check falls back
+     * to reprocess the same way.
+     */
+    private suspend fun offerDuplicateDialogIfNeeded(
+        taskId: String,
+        localPath: String,
+        backendOverride: String?,
+        contentHash: String,
+    ): Boolean {
+        if (isFinishing || isDestroyed) return false
+        val hit = appEntryPoint.duplicateGuard()
+            .lookup(this, appEntryPoint.transcriptionOrchestrator(), contentHash, backendOverride)
+            ?: return false
+        val existing = hit.row
+        // Three suspension points sit between the entry check and show():
+        // re-check here so a destroy in that window cannot BadToken-crash.
+        if (isFinishing || isDestroyed) return false
+        Log.i(TAG, "Duplicate content for model=${hit.modelName}: opening-or-reprompting taskId=${existing.taskId}")
+
+        fun openExisting() {
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                putExtra(MainActivity.EXTRA_HIGHLIGHT_TASK_ID, existing.taskId)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            cleanup()
+            finish()
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.duplicate_found_title)
+            .setMessage(getString(R.string.duplicate_found_message, hit.modelName))
+            .setPositiveButton(R.string.duplicate_found_open) { _, _ -> openExisting() }
+            .setNegativeButton(R.string.duplicate_found_again) { _, _ ->
+                appScope.launch(Dispatchers.Main) {
+                    dispatch(taskId, localPath, backendOverride, contentHash)
+                }
+            }
+            // A dismiss outside the buttons is ambiguous: OPEN is the
+            // conservative arm (no recompute, the user still lands on the
+            // transcript).
+            .setOnCancelListener { openExisting() }
+            .show()
+        return true
     }
 
     /**
@@ -551,11 +648,8 @@ class ShareReceiverActivity : Activity() {
      * standard success funnel with the cues preserved.
      */
     private fun dispatchSubtitleImport(taskId: String, localPath: String) {
-        val serviceIntent = buildServiceIntent(
-            taskId, localPath,
-            requestType = TaskerRequestReceiver.REQUEST_TYPE_SUBTITLE_IMPORT,
-            trackIndex = -1,
-            backendOverride = null)
+        val serviceIntent = AudioRequestIntent.subtitleImport(
+            this, taskId, localPath, sourcePackage = sourcePackage)
 
         enqueueAndFinish(taskId, serviceIntent, "subtitle import")
     }
@@ -586,31 +680,6 @@ class ShareReceiverActivity : Activity() {
 
         cleanup()
         finish()
-    }
-
-    /**
-     * Builds the [InferenceService] intent with the common extras shared by every path
-     * (ASR, subtitle extraction, and the choice-notification tap actions).
-     */
-    private fun buildServiceIntent(
-        taskId: String,
-        localPath: String,
-        requestType: String,
-        trackIndex: Int,
-        backendOverride: String?,
-        senderName: String? = null,
-    ): Intent = Intent(this, InferenceService::class.java).apply {
-        putExtra(TaskerRequestReceiver.EXTRA_REQUEST_TYPE, requestType)
-        putExtra(TaskerRequestReceiver.EXTRA_FILE_PATH, localPath)
-        putExtra(TaskerRequestReceiver.EXTRA_TASK_ID, taskId)
-        sourcePackage?.let { putExtra(EXTRA_SOURCE_PACKAGE, it) }
-        senderName?.let { putExtra(InferenceService.EXTRA_SENDER_NAME, it) }
-        // Don't pass a prompt - let InferenceService use the default from settings
-        putExtra(InferenceService.EXTRA_SOURCE, InferenceService.SOURCE_SHARE)
-        backendOverride?.let { putExtra(InferenceService.EXTRA_BACKEND_OVERRIDE, it) }
-        if (requestType == TaskerRequestReceiver.REQUEST_TYPE_SUBTITLES) {
-            putExtra(TaskerRequestReceiver.EXTRA_SUBTITLE_TRACK_INDEX, trackIndex)
-        }
     }
 
     private fun cleanup() {

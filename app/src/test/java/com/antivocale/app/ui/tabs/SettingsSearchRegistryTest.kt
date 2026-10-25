@@ -29,9 +29,11 @@ class SettingsSearchRegistryTest {
         batteryExemptionOffered: Boolean = false,
         refinementOn: Boolean = false,
         speakerIdEnabled: Boolean = false,
+        isWhistleBackend: Boolean = false,
         transcriptionHintRes: Int? = null,
     ) = SettingsSearchState(
         isLlmBackend = isLlmBackend,
+        isWhistleBackend = isWhistleBackend,
         isModelLoaded = isModelLoaded,
         gemmaConfigured = gemmaConfigured,
         punctuationPromptForced = punctuationPromptForced,
@@ -136,7 +138,8 @@ class SettingsSearchRegistryTest {
     fun `group membership matches the tree clusters`() {
         val members = mapOf(
             SettingsSearchGroup.DECODING to listOf(
-                SettingsSearchId.VAD, SettingsSearchId.PROGRESSIVE,
+                SettingsSearchId.VAD, SettingsSearchId.FREEZE_PROTECTION,
+                SettingsSearchId.PROGRESSIVE,
                 SettingsSearchId.EARLY_PREVIEW, SettingsSearchId.REFINEMENT,
                 SettingsSearchId.REFINEMENT_MODEL),
             SettingsSearchGroup.GEMMA_TEXT to listOf(
@@ -205,6 +208,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.ACTIVE_MODEL,
                 SettingsSearchId.TRANSCRIPTION_LANGUAGE,
                 SettingsSearchId.VAD,
+                SettingsSearchId.FREEZE_PROTECTION,
                 SettingsSearchId.PROGRESSIVE, SettingsSearchId.EARLY_PREVIEW,
                 SettingsSearchId.REFINEMENT,
                 SettingsSearchId.PUNCTUATION_MODE,
@@ -227,6 +231,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.ACTIVE_MODEL,
                 SettingsSearchId.TRANSCRIPTION_LANGUAGE,
                 SettingsSearchId.VAD,
+                SettingsSearchId.FREEZE_PROTECTION,
                 SettingsSearchId.PROGRESSIVE, SettingsSearchId.EARLY_PREVIEW,
                 SettingsSearchId.REFINEMENT,
                 SettingsSearchId.DIARIZATION_HUB,
@@ -251,6 +256,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.ACTIVE_MODEL,
                 SettingsSearchId.TRANSCRIPTION_LANGUAGE,
                 SettingsSearchId.VAD,
+                SettingsSearchId.FREEZE_PROTECTION,
                 SettingsSearchId.PROGRESSIVE, SettingsSearchId.EARLY_PREVIEW,
                 SettingsSearchId.REFINEMENT,
                 SettingsSearchId.SUMMARIZE,
@@ -291,6 +297,12 @@ class SettingsSearchRegistryTest {
         assertSingleAddition(
             visibleIds(SettingsSearchSection.TRANSCRIPTION, state(summarizeOn = true)),
             SettingsSearchId.SUMMARY_PROMPT, SettingsSearchId.SUMMARIZE,
+        )
+        // TASK-858: the whistle-only keyword card enters search only on the
+        // Whistle backend, right after the default-prompt hub.
+        assertSingleAddition(
+            visibleIds(SettingsSearchSection.TRANSCRIPTION, state(isWhistleBackend = true)),
+            SettingsSearchId.KEYWORD_BIASING, SettingsSearchId.SUMMARIZE,
         )
         // 2026-09-30 regroup: the identities card moved to the diarization
         // subpage; the gate flip changes the hub's res() (the union test),
@@ -355,16 +367,17 @@ class SettingsSearchRegistryTest {
     @Test
     fun `advanced vocabularies gain the battery card after a background kill`() {
         // The 2026-10-01 sub-grouping order: the kill-recovery offer, the
-        // ungrouped head (performance, HuggingFace auth, per-app), then the
-        // terminal Integrations cluster (share targets, subtitle choice,
-        // automation; TASK-835 collapsed the two voice-note entries into
-        // the hub that opens their subpage).
+        // ungrouped head (performance, HuggingFace auth, per-app, backup),
+        // then the terminal Integrations cluster (share targets, subtitle
+        // choice, automation; TASK-835 collapsed the two voice-note entries
+        // into the hub that opens their subpage).
         val base = visibleIds(SettingsSearchSection.ADVANCED, state())
         assertEquals(
             listOf(
                 SettingsSearchId.PERFORMANCE_HUB,
                 SettingsSearchId.HUGGINGFACE_AUTH,
                 SettingsSearchId.PER_APP_SETTINGS,
+                SettingsSearchId.BACKUP_HUB,
                 SettingsSearchId.SHARE_TARGETS,
                 SettingsSearchId.SUBTITLE_TIMEOUT,
                 SettingsSearchId.AUTOMATION_HUB,
@@ -415,6 +428,20 @@ class SettingsSearchRegistryTest {
         assertTrue(vocab.contains(R.string.voice_note_detection_description))
         assertTrue(vocab.contains(R.string.voice_note_folder_card_title))
         assertTrue(vocab.contains(R.string.voice_note_folder_card_desc))
+    }
+
+    @Test
+    fun `the backup hub carries both children's vocabulary`() {
+        // TASK-843/844: the hub opens the subpage hosting export + import;
+        // both cards' strings are searchable THROUGH it, like every hub.
+        val hub = SETTINGS_SEARCH_CARDS.first { it.id == SettingsSearchId.BACKUP_HUB }
+        val vocab = hub.res(state())
+        assertTrue(vocab.contains(R.string.backup_transfer_title))
+        assertTrue(vocab.contains(R.string.backup_transfer_summary))
+        assertTrue(vocab.contains(R.string.backup_export_title))
+        assertTrue(vocab.contains(R.string.backup_export_description))
+        assertTrue(vocab.contains(R.string.backup_import_title))
+        assertTrue(vocab.contains(R.string.backup_import_description))
     }
 
     @Test

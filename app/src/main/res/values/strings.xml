@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
+    <string name="app_name" translatable="false">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Models</string>
@@ -186,7 +186,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (streaming)</string>
-    <string name="nemotron_description">~640MB • Streaming transducer</string>
+    <string name="nemotron_description">~640MB • Streaming • Accuracy over speed</string>
     <string name="nemotron_download_confirm_title">Download %1$s?</string>
     <string name="nemotron_download_confirm_message">This will download ~%1$dMB. Nemotron 3.5 is a streaming multilingual ASR model.</string>
     <string name="nemotron_download">Download Nemotron</string>
@@ -198,6 +198,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • Fast • Russian ASR with punctuation</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • Very fast • 7 languages, detected automatically</string>
+    <string name="benchmark_unsupported_engine">Benchmarking is not supported for this engine</string>
+    <string name="model_info_best_for_whistle">Fastest on-device start: 17 MB, 7 languages, instant first text</string>
+    <string name="model_info_notes_whistle">Word accuracy trails Parakeet on Italian; music can transcribe as text (the engine has no music filter)</string>
     <string name="gigaam_download_confirm_title">Download GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">This will download ~%1$dMB. GigaAM v3 is a Russian-only ASR model from Sber with strong Russian accuracy.</string>
     <string name="gigaam_download">Download GigaAM</string>
@@ -575,6 +580,9 @@
     <string name="summary_prompt_title">Summary prompt</string>
     <string name="signature_setting_title">Transcription signature (AI disclaimer)</string>
     <string name="signature_setting_description">Adds a signature line to every transcript that leaves the app: copies, shares and exported files. The app\'s own screens keep the plain text.</string>
+    <string name="keyword_biasing_title">Keyword biasing (Whistle)</string>
+    <string name="keyword_biasing_description">Names, places or jargon the Whistle model should favour, one per line. Applies to the next transcription, no reload needed.</string>
+    <string name="keyword_biasing_placeholder">One term per line</string>
     <string name="signature_text_title">Signature text</string>
     <string name="signature_text_description">Leave empty to use the standard disclaimer.</string>
     <string name="signature_position_title">Position</string>
@@ -1272,4 +1280,37 @@
     </plurals>
     <string name="folder_watch_period_label">Scan interval</string>
     <string name="folder_watch_grant_failed">Could not keep access to that folder, so it was not added. Try picking it again.</string>
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Play audio</string>
+    <string name="result_pause_audio">Pause audio</string>
+    <string name="duplicate_found_title">Already transcribed</string>
+    <string name="duplicate_found_message">This file was already transcribed with %1$s.</string>
+    <string name="duplicate_found_open">Open result</string>
+    <string name="duplicate_found_again">Transcribe again</string>
+    <string name="result_language_advisory">This model detects the language by itself. To lock %1$s, pick the language in Settings (models that honor the language setting, like Whisper, are listed there).</string>
+    <string name="result_skip_silences">Skip silences</string>
+    <string name="result_playback_speed">Playback speed (%1$s)</string>
+
+    <!-- Backup and transfer (TASK-843/844, GH #158) -->
+    <string name="backup_transfer_title">Backup and transfer</string>
+    <string name="backup_transfer_summary">Save your settings and history to a file, or restore them on another device</string>
+    <string name="backup_export_title">Export backup</string>
+    <string name="backup_export_description">Writes one file with your settings and your full transcription history. The file is plaintext: anyone who has it can read every transcript and sender name.</string>
+    <string name="backup_export_action">Create backup file</string>
+    <string name="backup_import_title">Import backup</string>
+    <string name="backup_import_description">Adds settings and past transcriptions from a backup file to this device. What you already have is kept.</string>
+    <string name="backup_import_action">Choose backup file</string>
+    <string name="backup_export_progress">Writing the backup…</string>
+    <string name="backup_import_progress">Reading the backup…</string>
+    <string name="backup_export_done">Backup saved</string>
+    <string name="backup_export_failed">Could not write the backup</string>
+    <string name="backup_import_done">Imported: %1$d, skipped: %2$d</string>
+    <string name="backup_import_failed">Could not read the backup file</string>
+    <string name="backup_import_history_failed">Settings imported, but the history could not be added. Retrying is safe.</string>
+    <string name="backup_disclosure_title">Before you export</string>
+    <string name="backup_disclosure_body">The backup contains every transcript, sender name, and speaker label in readable text. Share it only with places you trust.</string>
+    <!-- GH #67 (scoped): opt-in freezer protection for background transcription -->
+    <string name="freeze_protection_title">Background transcription protection</string>
+    <string name="freeze_protection_description">Keeps a silent audio stream active during transcription so aggressive battery managers cannot suspend the app. Turn this on if transcription stalls when the screen is off (some Oppo, Realme, OnePlus and Vivo phones).</string>
 </resources>

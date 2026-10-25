@@ -28,7 +28,22 @@ class ModelAudioLimitCatalogTest {
         "qwen3-asr" to AudioLimit.ChunkedAnyLength, // 30s cap + 30s chunks (its own native cap)
         "nemotron-streaming" to AudioLimit.NoKnownLimit, // streaming, no cap
         "gigaam" to AudioLimit.ChunkedAnyLength, // 30s chunks (TASK-448: quality degrades from ~60s, collapses by ~90s per pass)
+        // TASK-853: whole-clip (the engine windows past 30s internally), no
+        // declared cap: NoKnownLimit.
+        "whistle" to AudioLimit.NoKnownLimit,
+        // TASK-365: the LLM chunks at 30s and concatenates (the pre-fold
+        // label's own semantics, now via the catalog flag).
+        "llm" to AudioLimit.ChunkedAnyLength,
     )
+
+    @Test
+    fun `the llm backend exposes the chunk size the label derives from`() {
+        // Moved from ModelAudioLimitLlmCoherenceTest (its subject became the
+        // catalog pin above; this backend fact stays).
+        val backend = LlmTranscriptionBackend(io.mockk.mockk(relaxed = true))
+        assertEquals(LlmTranscriptionBackend.AUDIO_CHUNK_SECONDS, backend.maxChunkDurationSeconds)
+        assertTrue(backend.maxChunkDurationSeconds > 0)
+    }
 
     @Test
     fun `model-list audio limit is unchanged for every entry`() {

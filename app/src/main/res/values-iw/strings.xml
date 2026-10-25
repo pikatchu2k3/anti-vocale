@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">מודלים</string>
@@ -181,7 +180,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (סטרימינג)</string>
-    <string name="nemotron_description">~640MB • טרנסדוסר בסטרימינג</string>
+    <string name="nemotron_description">~640MB • סטרימינג • איכות על פני מהירות</string>
     <string name="nemotron_download_confirm_title">להוריד את %1$s?</string>
     <string name="nemotron_download_confirm_message">פעולה זו תוריד כ-%1$dMB. Nemotron 3.5 הוא מודל ASR רב-לשוני בסטרימינג.</string>
     <string name="nemotron_download">הורדת Nemotron</string>
@@ -193,6 +192,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • מהיר • ASR ברוסית עם פיסוק</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17 מ״ב • מהיר מאוד • 7 שפות, זיהוי אוטומטי</string>
+    <string name="benchmark_unsupported_engine">מדד ביצועים אינו נתמך עבור מנוע זה</string>
+    <string name="model_info_best_for_whistle">ההתחלה המהירה ביותר במכשיר: 17 מ״ב, 7 שפות, טקסט ראשון מיידי</string>
+    <string name="model_info_notes_whistle">דיוק נמוך מ-Parakeet באיטלקית; מוזיקה עשויה להיתמלל כטקסט (אין מסנן מוזיקה)</string>
     <string name="gigaam_download_confirm_title">להוריד את GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">פעולה זו תוריד כ-%1$dMB. GigaAM v3 הוא מודל ASR לרוסית בלבד של Sber עם דיוק גבוה ברוסית.</string>
     <string name="gigaam_download">הורדת GigaAM</string>
@@ -1268,4 +1272,40 @@
     </plurals>
     <string name="folder_watch_period_label">מרווח סריקה</string>
     <string name="folder_watch_grant_failed">לא הייתה אפשרות לשמור על גישה לתיקייה, ולכן היא לא נוספה. נסו לבחור אותה שוב.</string>
+
+    <!-- גיבוי והעברה (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">נגן שמע</string>
+    <string name="result_pause_audio">השהה שמע</string>
+    <string name="duplicate_found_title">כבר תומלל</string>
+    <string name="duplicate_found_message">קובץ זה כבר תומלל עם %1$s.</string>
+    <string name="duplicate_found_open">פתח תוצאה</string>
+    <string name="duplicate_found_again">תמלל שוב</string>
+    <string name="result_language_advisory">המודל הזה מזהה את השפה לבד. כדי לנעול %1$s, בחרו את השפה בהגדרות (מודלים שמכבדים את הגדרת השפה, כמו Whisper, מצוינים שם).</string>
+    <string name="result_skip_silences">דלג על שקט</string>
+    <string name="result_playback_speed">מהירות נגינה (%1$s)</string>
+
+    <string name="backup_transfer_title">גיבוי והעברה</string>
+    <string name="backup_transfer_summary">שמרו את ההגדרות וההיסטוריה לקובץ, או שחזרו אותם במכשיר אחר</string>
+    <string name="backup_export_title">ייצוא גיבוי</string>
+    <string name="backup_export_description">כותב קובץ אחד עם ההגדרות שלכם וכל היסטוריית התמלילים. הקובץ הוא טקסט גלוי: מי שמחזיק בו יכול לקרוא כל תמליל וכל שם שולח.</string>
+    <string name="backup_export_action">יצירת קובץ גיבוי</string>
+    <string name="backup_import_title">ייבוא גיבוי</string>
+    <string name="backup_import_description">מוסיף למכשיר הזה הגדרות ותמלילים קודמים מקובץ גיבוי. מה שכבר יש לכם נשמר.</string>
+    <string name="backup_import_action">בחירת קובץ גיבוי</string>
+    <string name="backup_export_progress">כותב את הגיבוי…</string>
+    <string name="backup_import_progress">קורא את הגיבוי…</string>
+    <string name="backup_export_done">הגיבוי נשמר</string>
+    <string name="backup_export_failed">לא ניתן היה לכתוב את הגיבוי</string>
+    <string name="backup_import_done">יובאו: %1$d, דילגו: %2$d</string>
+    <string name="backup_import_failed">לא ניתן היה לקרוא את קובץ הגיבוי</string>
+    <string name="backup_import_history_failed">ההגדרות יובאו, אך לא ניתן היה להוסיף את ההיסטוריה. ניתן לנסות שוב בבטחה.</string>
+    <string name="backup_disclosure_title">לפני הייצוא</string>
+    <string name="backup_disclosure_body">הגיבוי מכיל כל תמליל, שם שולח ותווית דובר בטקסט קריא. שתפו אותו רק עם יעדים מהימנים.</string>
+    <string name="keyword_biasing_title">הטיית מילות מפתח (Whistle)</string>
+    <string name="keyword_biasing_description">שמות, מקומות או מונחים שהמודל Whistle צריך להעדיף, אחד בכל שורה. חל מהתמלול הבא, בלי טעינה מחדש.</string>
+    <string name="keyword_biasing_placeholder">מונח אחד בכל שורה</string>
+    <string name="freeze_protection_title">הגנת תמלול ברקע</string>
+    <string name="freeze_protection_description">מחזיק זרימת שמע שקטה פעילה במהלך התמלול כדי שחוסכי סוללה אגרסיביים לא ישהו את האפליקציה. הפעל אם התמלול נעצר כשהמסך כבוי (חלק מטלפוני Oppo‏, Realme‏, OnePlus ו־Vivo).</string>
 </resources>

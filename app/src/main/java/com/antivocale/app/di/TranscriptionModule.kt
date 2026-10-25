@@ -2,12 +2,16 @@ package com.antivocale.app.di
 
 import com.antivocale.app.data.DefaultExternalModelRecordsProvider
 import com.antivocale.app.data.ExternalModelRecordsProvider
+import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.manager.LlmManager
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.transcription.SherpaBackend
 import com.antivocale.app.transcription.TranscriptionBackend
+import com.antivocale.app.transcription.WhistleBackend
+import kotlinx.coroutines.CoroutineScope
+
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,6 +41,16 @@ class TranscriptionModule {
 
         // One SherpaBackend instance per bundled catalog entry: the model family and
         // tuning all come from the catalog, so the instances differ only in entry id.
+        // TASK-853: the Cactus Whistle engine (17MB, seven languages,
+        // the Needle runtime through WhistleNative).
+        @Provides
+        @IntoSet
+        @Singleton
+        fun provideWhistleBackend(
+            @ApplicationScope scope: CoroutineScope,
+            preferences: PreferencesManager,
+        ): TranscriptionBackend = WhistleBackend(scope, preferences)
+
         @Provides
         @IntoSet
         @Singleton

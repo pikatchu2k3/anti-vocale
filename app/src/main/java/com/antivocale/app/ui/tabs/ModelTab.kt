@@ -11,6 +11,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedVisibility
@@ -76,13 +79,12 @@ import com.antivocale.app.transcription.ModelFamilySupport
 import com.antivocale.app.transcription.AudioLimit
 import com.antivocale.app.transcription.ModelInfoProvider
 import com.antivocale.app.transcription.audioLimitForCatalogEntry
-import com.antivocale.app.transcription.audioLimitForVariants
 import com.antivocale.app.transcription.ModelVariant
 import com.antivocale.app.transcription.SherpaModelDownloader
 import androidx.compose.ui.text.style.TextOverflow
+import com.antivocale.app.ui.components.ReadOnlyDropdownField
 import com.antivocale.app.ui.components.DownloadButtonState
 import com.antivocale.app.ui.components.DownloadProgressView
-import com.antivocale.app.ui.components.SubPageScrollScaffold
 import com.antivocale.app.ui.components.InfoIconButton
 import com.antivocale.app.ui.components.VariantOverflowMenu
 import com.antivocale.app.ui.components.LanguageFilterBar
@@ -137,7 +139,6 @@ fun ModelTab(
     val uiState by viewModel.uiState.collectAsState()
     val activeBackendId by viewModel.activeBackendId.collectAsState()
     val activeModelLabel by viewModel.activeModelLabel.collectAsState()
-    val downloadUiState by viewModel.downloadUiState.collectAsState()
     val catalogStates by viewModel.catalogStates.collectAsState()
 
     // Transcription active state — used to warn about destructive operations
@@ -321,6 +322,21 @@ fun ModelTab(
     }
 
     val scrollState = rememberScrollState()
+
+    // TASK-365: set by the models:gemma nav token; the llm entry's positioned
+    // callback fills the Ref (a PLAIN holder: writes cause no recomposition,
+    // so the per-scroll-frame callbacks stay free) and the effect scrolls on
+    // the flag alone. positionInParent is the exact content offset (the
+    // card is a direct child of the scrolled Column), so no container math.
+    var pendingGemmaReveal by remember { mutableStateOf(false) }
+    val gemmaRevealCoords = remember { arrayOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    LaunchedEffect(pendingGemmaReveal) {
+        val coords = gemmaRevealCoords[0]
+        if (pendingGemmaReveal && coords != null) {
+            pendingGemmaReveal = false
+            scrollState.scrollTo(coords.positionInParent().y.toInt())
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // Language filter state. TASK-685 (GH #112): the selection is persisted
@@ -329,18 +345,8 @@ fun ModelTab(
     // it by writing the explicit-clear value (""), never the untouched one.
     val filterLanguageCode by viewModel.modelFilterLanguage.collectAsState()
 
-    val visibleGemmaVariants = remember(filterLanguageCode) {
-        filterVariants(ModelDownloader.ModelVariant.entries, filterLanguageCode) { it.supportedLanguageCodes }
-    }
-
     // Auto-scroll when download error occurs (license requirement, auth error, etc.)
     // This scrolls to the error area so user can see what went wrong
-    LaunchedEffect(downloadUiState.downloadError) {
-        if (downloadUiState.downloadError != null) {
-            delay(150) // Small delay to let the UI update first
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
 
     // TASK-373: a repo with exactly one .litertlm asset imports directly,
     // skipping the candidate picker.
@@ -378,53 +384,7 @@ fun ModelTab(
                     )
                 }
             }
-            viewModel.clearDownloadError()
         }
-    }
-
-    // Delete confirmation dialog
-    if (downloadUiState.modelToDelete != null) {
-        val deletingModelName = downloadUiState.modelToDelete?.displayName ?: ""
-        val isActiveModel = uiState.modelName == deletingModelName
-        DeleteConfirmationDialog(
-            modelName = deletingModelName,
-            isTranscribing = isTranscribing,
-            isActiveModel = isActiveModel,
-            onConfirm = { viewModel.confirmDeleteModel() },
-            onDismiss = { viewModel.dismissDeleteDialog() }
-        )
-    }
-
-    // Gemma download confirmation dialog. TASK-427: the same pre-download
-    // fit hint as the catalog, on the heaviest models in the app.
-    if (downloadUiState.showDownloadDialog) {
-        val variant = downloadUiState.selectedVariant
-        val (gemmaHintRes, gemmaHintColor) = variantFitHint(context, variant?.estimatedSizeMB ?: 0L)
-        DownloadConfirmationDialog(
-            title = stringResource(R.string.gemma_download_confirm_title, variant?.displayName ?: "Gemma"),
-            message = stringResource(R.string.gemma_download_confirm_message, variant?.estimatedSizeMB?.toInt() ?: 0),
-            fitHintRes = gemmaHintRes,
-            fitHintColor = gemmaHintColor,
-            onConfirm = { viewModel.confirmDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
-        )
-    }
-
-    // Gemma "update available" confirmation dialog (re-download a stale artifact, e.g. a
-    // pre-2026-05-05 copy without the MTP drafter). Only reachable while the
-    // MTP_SPECULATIVE_DECODING_ENABLED build flag is on (see ModelDownloadSection).
-    if (downloadUiState.modelToUpdate != null) {
-        val variant = downloadUiState.modelToUpdate
-        val (updateHintRes, updateHintColor) = variantFitHint(context, variant?.estimatedSizeMB ?: 0L)
-        DownloadConfirmationDialog(
-            title = stringResource(R.string.gemma_update_confirm_title, variant?.displayName ?: "Gemma"),
-            message = stringResource(R.string.gemma_update_confirm_message, variant?.estimatedSizeMB?.toInt() ?: 0),
-            confirmButtonText = stringResource(R.string.model_update_button),
-            fitHintRes = updateHintRes,
-            fitHintColor = updateHintColor,
-            onConfirm = { viewModel.confirmUpdateModel() },
-            onDismiss = { viewModel.dismissUpdateDialog() }
-        )
     }
 
     // External-model delete confirmation dialog
@@ -596,9 +556,12 @@ fun ModelTab(
         )
     }
 
-    var showGemmaDownloads by remember { mutableStateOf(false) }
+    // TASK-846: SAVEABLE with an explicit key (the Settings subpage family
+    // lesson, applied to the Models equivalent): a process death or
+    // unhandled config change while this screen's flows are in flight must
+    // re-compose the screen so pending results land in place; the explicit
+    // key keeps the slot stable across future flag insertions.
     // TASK-815: the programmatic scroll riding a models:gemma nav request.
-    var gemmaScroll by remember { mutableStateOf<AppNavigation.ScrollRequest?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -671,6 +634,7 @@ fun ModelTab(
         // sections hide behind "Browse all languages" (their installed models
         // still surface as fully functional cards inside the recommendations).
         val catalogEntriesVisible = if (showCuratedSection) emptyList() else viewModel.catalogEntries
+        val hasToken by viewModel.hasHuggingFaceToken.collectAsState()
         if (showCuratedSection) {
             CuratedLanguageSection(
                 profile = curatedProfile,
@@ -697,6 +661,17 @@ fun ModelTab(
         // One generic section per catalog entry — all model-specific behavior lives in the
         // catalog, never in hard-coded per-model UI.
         catalogEntriesVisible.forEach { entry ->
+            // TASK-865/C: stub builds hide the Whistle card, EXCEPT when
+            // on-disk cleanup work keeps the card on stub builds: the
+            // variant card is the only removal surface (the startup cleaner
+            // deliberately keeps current-named dirs), so hiding it would
+            // strand up to 17 MB after a same-keystore flavor switch.
+            // TASK-870 closes the stub-build corner of this exception: an
+            // orphaned dir offers Clear, never a fresh download of an
+            // unloadable engine. (A corrupted dir on a FULL build still
+            // hits Idle; there the re-download is loadable, so benign.)
+            if (BuiltInBackendIds.hiddenOnStubBuild(entry.id)
+                && !catalogStates[entry.id].hasCleanupWork()) return@forEach
             val visibleVariants = remember(entry.id, filterLanguageCode) {
                 filterVariants(CatalogVariantUi.forEntry(entry.id), filterLanguageCode) { it.supportedLanguageCodes }
             }
@@ -706,13 +681,85 @@ fun ModelTab(
                     benchmarkViewModel = benchmarkViewModel,
                     entry = entry,
                     onExportBundle = ::launchBundleExport,
+                    // TASK-365: the models:gemma reveal scrolls here. The
+                    // positioned callback may fire BEFORE the nav flag lands
+                    // (first layout precedes the broadcast's effect), so the
+                    // coordinates are HELD and a LaunchedEffect on the flag
+                    // performs the scroll when both exist.
+                    modifier = if (com.antivocale.app.transcription.BuiltInBackendIds.isLlm(entry.id)) {
+                        Modifier.onGloballyPositioned { coords -> gemmaRevealCoords[0] = coords }
+                    } else Modifier,
                     state = catalogStates[entry.id] ?: ModelViewModel.ModelEntryUiState(),
                     activeBackendId = activeBackendId,
                     isTranscribing = isTranscribing,
                     visibleVariants = visibleVariants,
                     guardedModelSwitch = guardedSwitch,
-                    onInfoClick = { modelInfoVariant = it }
+                    onInfoClick = { modelInfoVariant = it },
+                    hasToken = hasToken,
+                    onNavigateToSettings = onNavigateToSettings,
                 )
+                // TASK-365 (2b): the .litertlm import card, relocated VERBATIM
+                // from the deleted Gemma sub-page (my placement call: directly
+                // under the entry it belongs to; the maintainer's eye pending).
+                if (entry.id == com.antivocale.app.transcription.LlmTranscriptionBackend.BACKEND_ID) {
+                Card(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+                ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // TASK-796 (approved mockup): title-only; the
+                // TASK-779 de-jargoned text stays.
+                Text(
+            text = stringResource(R.string.litert_card_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+                )
+                // TASK-796 trial round 2 (maintainer): the card
+                // states what it is for before the buttons.
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+            stringResource(R.string.litert_card_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+            onClick = { viewModel.openFilePicker() },
+            modifier = Modifier.fillMaxWidth()
+                ) {
+            ImportActionLabel(Icons.Default.FolderOpen, R.string.select_model_from_device)
+                }
+                OutlinedButton(
+            onClick = { showLitertLmUrlDialog = true },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            enabled = !uiState.litertLmImporting
+                ) {
+            ImportActionLabel(Icons.Default.CloudDownload, R.string.litertlm_import_from_url)
+                }
+                if (uiState.litertLmImporting) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+                // TASK-384: spinner alone is silent for talkback users
+                Text(
+                    stringResource(R.string.litertlm_importing),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+                }
+            }
+                }
+
+                }
             }
         }
 
@@ -756,9 +803,17 @@ fun ModelTab(
                 // models:import stays consumed one level down and expands
                 // Advanced because the catalog dialog only composes then.
                 if (request.destination.key == AppNavigation.MODEL_KEY_GEMMA) {
-                    gemmaScroll = request.scroll
+                    // TASK-365 (maintainer nudge): the sub-page is gone; the
+                    // token now SCROLLS the main list to the folded entry
+                    // (the reveal flag is consumed by the entry's positioned
+                    // callback below) instead of swallowing silently.
+                    pendingGemmaReveal = true
+                    // The curated view hides the catalog list (and with it the
+                    // llm entry): the token means SHOW me the entry, so leave
+                    // the curated mode too (and the reveal can never stay
+                    // armed: the entry composes immediately after).
+                    browseAllModels = true
                     onNavConsumed()
-                    showGemmaDownloads = true
                 } else {
                     advancedExpanded = true
                 }
@@ -769,12 +824,6 @@ fun ModelTab(
         // progress/cancel/error UI otherwise composes nowhere, and the
         // error auto-scroll above scrolls to a collapsed button. Fires on
         // the transition only; the user can collapse again freely.
-        val gemmaDownloadActive =
-            downloadUiState.variantDownloadStates.values.any { it.isDownloading } ||
-                downloadUiState.downloadError != null
-        LaunchedEffect(gemmaDownloadActive) {
-            if (gemmaDownloadActive) advancedExpanded = true
-        }
         Column(modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = { advancedExpanded = !advancedExpanded },
@@ -824,61 +873,6 @@ fun ModelTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
-
-                // TASK-775: the Gemma downloads live in a sub-page; the
-                // entry card is the compact pointer (maintainer direction).
-                if (visibleGemmaVariants.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        onClick = { showGemmaDownloads = true },
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // TASK-796 (approved mockup): no leading icon; the
-                            // chevron (the opening affordance) stays.
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.gemma_entry_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold)
-                                // TASK-779: the entry says what it opens.
-                                Text(
-                                    text = stringResource(R.string.gemma_entry_subtitle),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (gemmaDownloadActive) {
-                                    Text(
-                                        text = stringResource(R.string.downloading),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary)
-                                }
-                                // TASK-796 review F2: the .litertlm import's
-                                // only progress UI moved into the sub-page;
-                                // a user closing it mid-import would see
-                                // nothing anywhere, so the entry card shows
-                                // it too.
-                                if (uiState.litertLmImporting) {
-                                    Text(
-                                        text = stringResource(R.string.litertlm_importing),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 // ONNX (sherpa): the section Card carries the header; no
                 // separate label needed here.
@@ -948,110 +942,6 @@ fun ModelTab(
 
         // Extra spacer to ensure downloading card can be fully scrolled into view
         Spacer(modifier = Modifier.height(200.dp))
-        }
-
-        // TASK-775: the Gemma downloads sub-page. A sibling of the
-        // scrollable Column inside this Box: stacked on top (Box z-order),
-        // bounded constraints (no nested-scroll crash). The pass-through
-        // switch is a compromise: the guard stays on the main tab.
-        if (showGemmaDownloads) {
-            androidx.activity.compose.BackHandler { showGemmaDownloads = false }
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
-            ) {
-                // TASK-815: the scroll scaffold (nav-bar inset, pinned
-                // header, body wrapper, programmatic scroll); this header
-                // used to scroll away with the content before the 752 fold.
-                SubPageScrollScaffold(
-                    // TASK-796: matches the entry card that opens this
-                    // page (gemma_entry_title, now "Gemma AI models");
-                    // the inner downloads section carries its own
-                    // download_models title.
-                    titleRes = R.string.gemma_entry_title,
-                    onBack = { showGemmaDownloads = false },
-                    scrollRequest = gemmaScroll,
-                    onScrollConsumed = { gemmaScroll = null },
-                    // The old body had no Arrangement; the downloads
-                    // section owns its internal spacing.
-                    bodySpacing = androidx.compose.foundation.layout.Arrangement.Top,
-                ) { _ ->
-                        if (visibleGemmaVariants.isNotEmpty()) {
-                            ModelDownloadSection(
-                                viewModel = viewModel,
-                                context = context,
-                                onNavigateToSettings = onNavigateToSettings,
-                                activeModelName = uiState.modelName,
-                                visibleVariants = visibleGemmaVariants,
-                                guardedModelSwitch = { it() },
-                                onInfoClick = { modelInfoVariant = it },
-                            )
-                        }
-                        // SAF (OpenDocument) grants its own URI access, no storage permission
-                        // needed (TASK-301). TASK-746: the downloads live with this card.
-                        // TASK-796 (maintainer design review): moved INTO the Gemma
-                        // sub-page, so the Advanced surface shows one Gemma entry and
-                        // this page owns the whole Gemma world.
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                // TASK-796 (approved mockup): title-only; the
-                                // TASK-779 de-jargoned text stays.
-                                Text(
-                                    text = stringResource(R.string.litert_card_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                // TASK-796 trial round 2 (maintainer): the card
-                                // states what it is for before the buttons.
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    stringResource(R.string.litert_card_description),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedButton(
-                                    onClick = { viewModel.openFilePicker() },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    ImportActionLabel(Icons.Default.FolderOpen, R.string.select_model_from_device)
-                                }
-                                OutlinedButton(
-                                    onClick = { showLitertLmUrlDialog = true },
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    enabled = !uiState.litertLmImporting
-                                ) {
-                                    ImportActionLabel(Icons.Default.CloudDownload, R.string.litertlm_import_from_url)
-                                }
-                                if (uiState.litertLmImporting) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp
-                                        )
-                                        // TASK-384: spinner alone is silent for talkback users
-                                        Text(
-                                            stringResource(R.string.litertlm_importing),
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(200.dp))
-                }
-            }
         }
 
         SnackbarHost(
@@ -1162,6 +1052,11 @@ private fun CuratedLanguageSection(
                 is CuratedProfiles.Recommendation.Bundled -> {
                     // TASK-675: skip demoted entries (see demotedBackendIds above).
                     if (recommendation.entryId in demotedBackendIds) return@forEach
+                    // No profile recommends whistle today; a future one
+                    // inherits the hide (a curated card would offer the
+                    // download, which the present-state exception above
+                    // deliberately does not extend here).
+                    if (BuiltInBackendIds.hiddenOnStubBuild(recommendation.entryId)) return@forEach
                     val entry = BundledCatalog.byId(recommendation.entryId)
                     val variants = entry?.let {
                         CatalogVariantUi.forEntry(it.id).filter { variant ->
@@ -1394,134 +1289,6 @@ private fun RemoteOmnivoiceServiceCard(
     }
 }
 
-/**
- * Gemma LiteRT-LM download section using the shared [ModelVariantCard].
- */
-@Composable
-private fun ModelDownloadSection(
-    viewModel: ModelViewModel,
-    context: android.content.Context,
-    onNavigateToSettings: () -> Unit,
-    activeModelName: String,
-    visibleVariants: List<ModelDownloader.ModelVariant> = ModelDownloader.ModelVariant.entries,
-    guardedModelSwitch: (() -> Unit) -> Unit = {},
-    onInfoClick: (ModelVariant) -> Unit = {}
-) {
-    val downloadState by viewModel.downloadUiState.collectAsState()
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CloudDownload,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = stringResource(R.string.download_models),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = stringResource(R.string.gemma_advanced_features_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        // GH #49: audio-length capability. TASK-371: use the runtime
-                        // chunk size (the llm backend chunks + concatenates), so the
-                        // label says Any length like the other chunked models.
-                        val gemmaLimit = remember(visibleVariants) {
-                            audioLimitForVariants(
-                                visibleVariants,
-                                chunkDurationSeconds = LlmTranscriptionBackend.AUDIO_CHUNK_SECONDS)
-                        }
-                        AudioLimitLabel(gemmaLimit)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Model variant cards
-            visibleVariants.forEachIndexed { index, variant ->
-                val variantState = downloadState.variantDownloadStates[variant]
-                ModelVariantCard(
-                    state = ModelVariantCardState(
-                        variant = variant,
-                        isActive = activeModelName == stringResource(variant.titleResId),
-                        downloadProgress = variantState?.downloadProgress ?: 0f,
-                        downloadState = variantState?.downloadState ?: DownloadState.Idle,
-                        errorMessage = variantState?.errorMessage,
-                        partialDownload = variantState?.partialDownload,
-                        buttonState = when {
-                            variantState?.isDownloading == true -> DownloadButtonState.Downloading
-                            downloadState.staleModels.contains(variant) -> DownloadButtonState.UpdateAvailable
-                            downloadState.downloadedModels.contains(variant) -> DownloadButtonState.Downloaded
-                            variantState?.partialDownload != null -> DownloadButtonState.PartiallyDownloaded
-                            else -> DownloadButtonState.Idle
-                        }
-                    ),
-                    downloadButtonTextResId = R.string.download,
-                    onDownloadClick = { viewModel.showDownloadDialog(variant) },
-                    onCancelClick = { viewModel.cancelDownload(variant) },
-                    onResumeClick = { viewModel.resumeDownload(variant) },
-                    onClearPartialClick = { viewModel.clearPartialDownload(variant) },
-                    onUseClick = { guardedModelSwitch { viewModel.useDownloadedModel(variant) } },
-                    onUpdateClick = { viewModel.showUpdateDialog(variant) },
-                    onDeleteClick = { viewModel.showDeleteDialog(variant) },
-                    onInfoClick = { onInfoClick(variant) }
-                )
-
-                // Auth warning for gated models when no token is configured
-                if (variant.requiresAuth && !downloadState.hasToken) {
-                    val tokenWarning = stringResource(R.string.requires_huggingface_token)
-                    val addSettings = stringResource(R.string.add_in_settings)
-                    val errorColor = MaterialTheme.colorScheme.error
-                    val primaryColor = MaterialTheme.colorScheme.primary
-                    val authWarningText = remember(tokenWarning, addSettings, errorColor, primaryColor) {
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(color = errorColor)) {
-                                append(tokenWarning + " ")
-                            }
-                            withStyle(SpanStyle(
-                                color = primaryColor,
-                                textDecoration = TextDecoration.Underline
-                            )) {
-                                append(addSettings)
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    // TASK-384: Text+clickable with Button role; ClickableText has no role for talkback
-                    Text(
-                        text = authWarningText,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.clickable(role = Role.Button) { onNavigateToSettings() }
-                    )
-                }
-
-                if (index < visibleVariants.lastIndex) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
-        }
-    }
-}
-
 // ==================== Catalog model section (generic) ====================
 
 /**
@@ -1535,6 +1302,8 @@ private fun CatalogModelSection(
     viewModel: ModelViewModel,
     benchmarkViewModel: BenchmarkViewModel,
     entry: CatalogEntry,
+    /** TASK-365: the models:gemma reveal scrolls to the entry via this. */
+    modifier: Modifier = Modifier,
     /** TASK-742: the bundle-export hook (launcher arm + remembered target). */
     onExportBundle: ((java.io.File, CatalogEntry, CatalogVariantUi) -> Unit)? = null,
     state: ModelViewModel.ModelEntryUiState,
@@ -1543,6 +1312,8 @@ private fun CatalogModelSection(
     visibleVariants: List<CatalogVariantUi>,
     guardedModelSwitch: (() -> Unit) -> Unit,
     onInfoClick: (ModelVariant) -> Unit,
+    hasToken: Boolean = true,
+    onNavigateToSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val savedPath by viewModel.savedModelPath(entry.id).collectAsState()
@@ -1572,7 +1343,7 @@ private fun CatalogModelSection(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 state.isAnyDownloading -> MaterialTheme.colorScheme.secondaryContainer
@@ -1651,7 +1422,12 @@ private fun CatalogModelSection(
                         // only if this entry is the active backend AND this variant's directory
                         // is the saved (auto-resolved) one, OR the active backend is this
                         // variant's linked record (a bundle-imported copy, TASK-801).
-                        isActive = (isEntryActive && savedPath?.endsWith(variant.dirName) == true) ||
+                        // A single-FILE layout (the litertlm entry: the saved
+                        // path is the file, not the variant dir) matches by
+                        // file name too; dir-based entries are unaffected.
+                        isActive = (isEntryActive && (
+                            savedPath?.endsWith(variant.dirName) == true ||
+                                variant.singleFileName?.let { savedPath?.endsWith(it) } == true)) ||
                             activeBackendId == state.linkedVariantBackendIds[variant.dirName],
                         downloadProgress = variantState?.downloadProgress ?: 0f,
                         downloadState = variantState?.downloadState ?: DownloadState.Idle,
@@ -1660,7 +1436,12 @@ private fun CatalogModelSection(
                         buttonState = when {
                             variantState?.isDownloading == true -> DownloadButtonState.Downloading
                             state.downloadedVariants.contains(variant.variantName) -> DownloadButtonState.Downloaded
-                            isOrphaned && needsExtraction -> DownloadButtonState.Orphaned
+                            // TASK-870: on stub builds an orphaned dir
+                            // must offer the clear affordance, never a
+                            // fresh download of an unloadable engine (the
+                            // 866 hide-exception's residual corner).
+                            isOrphaned && (needsExtraction
+                                || BuiltInBackendIds.hiddenOnStubBuild(entry.id)) -> DownloadButtonState.Orphaned
                             needsExtraction -> DownloadButtonState.NeedsExtraction
                             variantState?.partialDownload != null -> DownloadButtonState.PartiallyDownloaded
                             else -> DownloadButtonState.Idle
@@ -1695,7 +1476,13 @@ private fun CatalogModelSection(
                     onExtraActionClick = { viewModel.clearOrphanedFiles(entry.id, variant.variantName) },
                     onUseClick = { guardedModelSwitch { viewModel.useModel(entry.id, variant.variantName) } },
                     onDeleteClick = { viewModel.showDeleteDialog(entry.id, variant.variantName) },
-                    onBenchmarkClick = {
+                    // TASK-853: the benchmark infra builds a SHERPA config;
+                    // whistle would unload the warm engine and then fail the
+                    // config-type check. TASK-365: the LLM entry joins the
+                    // same gate (no benchmark config builder for it either).
+                    onBenchmarkClick = if (BuiltInBackendIds.isWhistle(entry.id)
+                        || entry.id == com.antivocale.app.transcription.LlmTranscriptionBackend.BACKEND_ID) null else {
+                        {
                         val path = SherpaModelDownloader.of(entry.id).getModelPath(context, variant.variantName)
                         if (path != null) {
                             benchmarkViewModel.startBenchmark(
@@ -1703,6 +1490,7 @@ private fun CatalogModelSection(
                                 path,
                                 context.countAwareString(variant.titleResId, variant.titleFormatArg())
                             )
+                        }
                         }
                     },
                     // TASK-742: offer the bundle share only for a present dir
@@ -1720,6 +1508,34 @@ private fun CatalogModelSection(
                     },
                     onInfoClick = { onInfoClick(variant) }
                 )
+                // TASK-365: the gated-repo warning (the pre-fold bespoke
+                // section's row, generalized): a requiresAuth variant with no
+                // stored token shows the add-in-settings pointer.
+                if (variant.requiresAuth && !hasToken) {
+                    val tokenWarning = stringResource(R.string.requires_huggingface_token)
+                    val addSettings = stringResource(R.string.add_in_settings)
+                    val errorColor = MaterialTheme.colorScheme.error
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    val authWarningText = remember(tokenWarning, addSettings, errorColor, primaryColor) {
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(color = errorColor)) {
+                                append(tokenWarning + " ")
+                            }
+                            withStyle(SpanStyle(
+                                color = primaryColor,
+                                textDecoration = TextDecoration.Underline
+                            )) {
+                                append(addSettings)
+                            }
+                        }
+                    }
+                    // TASK-384: Text+clickable with Button role; ClickableText has no role for talkback
+                    Text(
+                        text = authWarningText,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.clickable(role = Role.Button) { onNavigateToSettings() }
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
@@ -1821,6 +1637,23 @@ private fun familyLabel(family: ModelFamily): String = stringResource(
     FAMILY_OPTIONS.first { it.first == family }.second)
 
 /**
+ * TASK-866: true when the entry has on-disk work whose removal or repair
+ * runs through the variant card (downloaded weights, an orphaned dir the
+ * startup cleaner deliberately keeps, or a pending extraction). Such an
+ * entry must stay visible even on stub builds; a null state (refresh not
+ * landed) counts as no work, hiding as before. On stub builds an
+ * orphaned dir renders the clear affordance (TASK-870), so the
+ * corrupted-dir corner only survives on FULL builds, where the Idle
+ * re-download is at least loadable and therefore benign.
+ */
+internal fun ModelViewModel.ModelEntryUiState?.hasCleanupWork(): Boolean =
+    this != null && (
+        downloadedVariants.isNotEmpty()
+            || orphanedVariants.isNotEmpty()
+            || variantsNeedingExtraction.isNotEmpty()
+        )
+
+/**
  * Family selection + conditional options for external-model imports. One immutable
  * holder so both import paths (folder and URL) share a single selection state.
  */
@@ -1900,15 +1733,12 @@ private fun CanaryLanguageDropdown(
         onExpandedChange = { expanded = it },
         modifier = modifier,
     ) {
-        OutlinedTextField(
+        ReadOnlyDropdownField(
             // endonyms everywhere (PR #66 policy): the field shows the native
             // name of the selected code, defaulting to English's.
             value = LanguageNames.nativeLanguageName(selected.ifBlank { "en" }),
-            onValueChange = {},
-            readOnly = true,
             label = { Text(stringResource(R.string.external_decode_language)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            singleLine = true,
+            expanded = expanded,
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1949,14 +1779,11 @@ private fun LanguageEndonymDropdown(
         onExpandedChange = { expanded = it },
         modifier = modifier
     ) {
-        OutlinedTextField(
+        ReadOnlyDropdownField(
             value = if (selected.isBlank()) blankText
             else LanguageNames.nativeLanguageName(selected),
-            onValueChange = {},
-            readOnly = true,
             label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            singleLine = true,
+            expanded = expanded,
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -2123,16 +1950,10 @@ private fun ExternalModelsSection(
                     onExpandedChange = { dropdownExpanded = it },
                     modifier = Modifier.padding(bottom = 8.dp)
                 ) {
-                    OutlinedTextField(
+                    ReadOnlyDropdownField(
                         value = familyLabel(selection.family),
-                        onValueChange = {},
-                        readOnly = true,
                         label = { Text(stringResource(R.string.external_family)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
-                        // TASK-755: a wrapped value grew the field vertically
-                        // (the maintainer's report); every read-only dropdown in
-                        // this file carries the same one-line guard.
-                        singleLine = true,
+                        expanded = dropdownExpanded,
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
                     ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
@@ -2199,15 +2020,12 @@ private fun ExternalModelsSection(
                         onExpandedChange = { ctcExpanded = it },
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
-                        OutlinedTextField(
+                        ReadOnlyDropdownField(
                             value = stringResource(
                                 CTC_SUBTYPE_LABELS.firstOrNull { it.first == selection.ctcModelType }
                                     ?.second ?: R.string.external_ctc_subtype_nemo),
-                            onValueChange = {},
-                            readOnly = true,
                             label = { Text(stringResource(R.string.external_ctc_subtype)) },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ctcExpanded) },
-                            singleLine = true,
+                            expanded = ctcExpanded,
                             modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
                         ExposedDropdownMenu(expanded = ctcExpanded, onDismissRequest = { ctcExpanded = false }) {

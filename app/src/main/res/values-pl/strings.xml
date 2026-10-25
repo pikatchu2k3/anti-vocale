@@ -3,7 +3,6 @@
      docs/localization/glossaries.md (TASK-351). Terminology: AOSP Settings
      values-pl conventions first; "transcription" = "transkrypcja". -->
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Modele</string>
@@ -185,7 +184,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (strumieniowanie)</string>
-    <string name="nemotron_description">~640MB • Transducer strumieniowy</string>
+    <string name="nemotron_description">~640MB • Streaming • Jakość zamiast szybkości</string>
     <string name="nemotron_download_confirm_title">Pobrać %1$s?</string>
     <string name="nemotron_download_confirm_message">To pobierze ok. %1$dMB. Nemotron 3.5 to wielojęzyczny strumieniowy model ASR.</string>
     <string name="nemotron_download">Pobierz Nemotron</string>
@@ -197,6 +196,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • Szybki • Rosyjski ASR z interpunkcją</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • Bardzo szybki • 7 języków, wykrywane automatycznie</string>
+    <string name="benchmark_unsupported_engine">Benchmark nie jest obslugiwany dla tego silnika</string>
+    <string name="model_info_best_for_whistle">Najszybszy start na urządzeniu: 17 MB, 7 języków, natychmiastowy pierwszy tekst</string>
+    <string name="model_info_notes_whistle">Mniejsza dokładność niż Parakeet w języku włoskim; muzyka może zostać zapisana jako tekst (brak filtra muzyki)</string>
     <string name="gigaam_download_confirm_title">Pobrać GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">To pobierze ok. %1$dMB. GigaAM v3 to rosyjski model ASR od Sber z wysoką dokładnością rosyjskiego.</string>
     <string name="gigaam_download">Pobierz GigaAM</string>
@@ -1283,4 +1287,40 @@
     </plurals>
     <string name="folder_watch_period_label">Interwał skanowania</string>
     <string name="folder_watch_grant_failed">Nie udało się zachować dostępu do tego folderu, więc nie został dodany. Wybierz go ponownie.</string>
+
+    <!-- Kopia zapasowa i przenoszenie (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Odtwórz audio</string>
+    <string name="result_pause_audio">Wstrzymaj audio</string>
+    <string name="duplicate_found_title">Już transkrybowane</string>
+    <string name="duplicate_found_message">Ten plik był już transkrybowany z %1$s.</string>
+    <string name="duplicate_found_open">Otwórz wynik</string>
+    <string name="duplicate_found_again">Transkrybuj ponownie</string>
+    <string name="result_language_advisory">Ten model sam wykrywa język. Aby zablokować %1$s, wybierz język w Ustawieniach (modele, które respektują to ustawienie, np. Whisper, są tam zaznaczone).</string>
+    <string name="result_skip_silences">Pomijaj ciszę</string>
+    <string name="result_playback_speed">Prędkość odtwarzania (%1$s)</string>
+
+    <string name="backup_transfer_title">Kopia zapasowa i przenoszenie</string>
+    <string name="backup_transfer_summary">Zapisz ustawienia i historię w pliku albo przywróć je na innym urządzeniu</string>
+    <string name="backup_export_title">Eksportuj kopię zapasową</string>
+    <string name="backup_export_description">Zapisuje jeden plik z ustawieniami i całą historią transkrypcji. Plik jest zwykłym tekstem: każdy, kto go posiada, może przeczytać wszystkie transkrypcje i nazwy nadawców.</string>
+    <string name="backup_export_action">Utwórz plik kopii zapasowej</string>
+    <string name="backup_import_title">Importuj kopię zapasową</string>
+    <string name="backup_import_description">Dodaje na tym urządzeniu ustawienia i dawne transkrypcje z pliku kopii zapasowej. To, co już masz, zostaje zachowane.</string>
+    <string name="backup_import_action">Wybierz plik kopii zapasowej</string>
+    <string name="backup_export_progress">Zapisywanie kopii…</string>
+    <string name="backup_import_progress">Odczytywanie kopii…</string>
+    <string name="backup_export_done">Kopia zapisana</string>
+    <string name="backup_export_failed">Nie udało się zapisać kopii</string>
+    <string name="backup_import_done">Zaimportowano: %1$d, pominięto: %2$d</string>
+    <string name="backup_import_failed">Nie udało się odczytać pliku kopii</string>
+    <string name="backup_import_history_failed">Zaimportowano ustawienia, ale nie udało się dodać historii. Ponowna próba jest bezpieczna.</string>
+    <string name="backup_disclosure_title">Zanim wyeksportujesz</string>
+    <string name="backup_disclosure_body">Kopia zawiera każdą transkrypcję, nazwę nadawcy i etykietę mówcy jako czytelny tekst. Udostępniaj ją tylko zaufanym odbiorcom.</string>
+    <string name="keyword_biasing_title">Wzmacnianie słów kluczowych (Whistle)</string>
+    <string name="keyword_biasing_description">Nazwy, miejsca lub żargon, które model Whistle powinien preferować, po jednym w wierszu. Zastosowane od następnej transkrypcji, bez przeładowania.</string>
+    <string name="keyword_biasing_placeholder">Jeden termin na wiersz</string>
+    <string name="freeze_protection_title">Ochrona transkrypcji w tle</string>
+    <string name="freeze_protection_description">Utrzymuje cichy strumień audio podczas transkrypcji, aby agresywne oszczędzacze baterii nie wstrzymywały aplikacji. Włącz, jeśli transkrypcja zatrzymuje się po wyłączeniu ekranu (niektóre telefony Oppo, Realme, OnePlus i Vivo).</string>
 </resources>

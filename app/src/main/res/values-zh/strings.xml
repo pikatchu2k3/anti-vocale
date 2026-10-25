@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
     <string name="model_tab">模型</string>
     <string name="logs_tab">历史</string>
     <string name="settings_tab">设置</string>
@@ -154,7 +153,7 @@
     <string name="qwen3_asr_deleted">%1$s 已删除</string>
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5（流式）</string>
-    <string name="nemotron_description">约 640MB · 流式转换器</string>
+    <string name="nemotron_description">约 640MB · 流式 · 质量优先于速度</string>
     <string name="nemotron_download_confirm_title">下载 %1$s？</string>
     <string name="nemotron_download_confirm_message">将下载约 %1$dMB。Nemotron 3.5 是流式多语言 ASR 模型。</string>
     <string name="nemotron_download">下载 Nemotron</string>
@@ -164,6 +163,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">约 326MB · 快速 · 带标点的俄语 ASR</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • 非常快 • 7 种语言，自动检测</string>
+    <string name="benchmark_unsupported_engine">此引擎不支持性能测试</string>
+    <string name="model_info_best_for_whistle">设备上最快的启动：17MB，7 种语言，即时出字</string>
+    <string name="model_info_notes_whistle">意大利语准确率低于 Parakeet；音乐可能被转成文字（无音乐过滤器）</string>
     <string name="gigaam_download_confirm_title">下载 GigaAM v3？</string>
     <string name="gigaam_download_confirm_message">将下载约 %1$dMB。GigaAM v3 是 Sber 出品的纯俄语 ASR 模型，标点表现很强。</string>
     <string name="gigaam_download">下载 GigaAM</string>
@@ -879,7 +883,7 @@
     <string name="voice_note_detection_title">语音消息转录</string>
     <string name="voice_note_detection_description">在应用运行时自动转录新到达的 WhatsApp 语音消息。若 Android 阻止后台启动，一键通知即可开始。仅在转录时读取消息，且在本机进行；关闭时不读取任何内容。需要音频访问权限。</string>
     <string name="voice_note_detection_grant_hint">音频访问已关闭。点按可打开应用设置并启用；授权后转录随即开始。</string>
-    <string name="voice_note_folder_grant_rejected">That is not the WhatsApp Voice Notes folder. Pick the folder named WhatsApp Voice Notes and try again.</string>
+    <string name="voice_note_folder_grant_rejected">这不是 WhatsApp Voice Notes 文件夹。请选择名为 WhatsApp Voice Notes 的文件夹，然后重试。</string>
     <string name="voice_note_folder_card_title">语音消息文件夹</string>
     <string name="voice_note_folder_card_state_granted">已授权</string>
     <string name="voice_note_folder_card_state_missing">未授权</string>
@@ -1090,4 +1094,40 @@
     <plurals name="transcription_partial">
         <item quantity="other">转写不完整（%1$d 个分块失败）</item>
     </plurals>
+
+    <!-- 备份与迁移 (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">播放音频</string>
+    <string name="result_pause_audio">暂停音频</string>
+    <string name="duplicate_found_title">已转录</string>
+    <string name="duplicate_found_message">此文件已使用 %1$s 转录过。</string>
+    <string name="duplicate_found_open">打开结果</string>
+    <string name="duplicate_found_again">重新转录</string>
+    <string name="result_language_advisory">此模型会自行检测语言。要锁定%1$s，请在设置中选择语言（遵循语言设置的模型（如 Whisper）会在那里注明）。</string>
+    <string name="result_skip_silences">跳过静音</string>
+    <string name="result_playback_speed">播放速度（%1$s）</string>
+
+    <string name="backup_transfer_title">备份与迁移</string>
+    <string name="backup_transfer_summary">将设置和历史记录保存到文件，或在其他设备上恢复</string>
+    <string name="backup_export_title">导出备份</string>
+    <string name="backup_export_description">将设置和完整的转写历史写入一个文件。该文件为明文：持有它的任何人都可以读取每条转写和每个发件人姓名。</string>
+    <string name="backup_export_action">创建备份文件</string>
+    <string name="backup_import_title">导入备份</string>
+    <string name="backup_import_description">从备份文件将设置和过去的转写添加到此设备。你已有的内容会被保留。</string>
+    <string name="backup_import_action">选择备份文件</string>
+    <string name="backup_export_progress">正在写入备份…</string>
+    <string name="backup_import_progress">正在读取备份…</string>
+    <string name="backup_export_done">备份已保存</string>
+    <string name="backup_export_failed">无法写入备份</string>
+    <string name="backup_import_done">已导入 %1$d 条，跳过 %2$d 条</string>
+    <string name="backup_import_failed">无法读取备份文件</string>
+    <string name="backup_import_history_failed">设置已导入，但无法添加历史记录。重试是安全的。</string>
+    <string name="backup_disclosure_title">导出之前</string>
+    <string name="backup_disclosure_body">备份以可读文本形式包含每条转写、发件人姓名和说话者标签。只与你信任的对象分享。</string>
+    <string name="keyword_biasing_title">关键词偏置（Whistle）</string>
+    <string name="keyword_biasing_description">Whistle 模型应优先考虑的名称、地点或术语，每行一个。下次转录即生效，无需重新加载。</string>
+    <string name="keyword_biasing_placeholder">每行一个词</string>
+    <string name="freeze_protection_title">后台转写保护</string>
+    <string name="freeze_protection_description">在转写期间保持一个静音音频流处于活动状态，使激进的省电管理无法挂起应用。如果锁屏后转写会停止，请开启此项（部分 Oppo、Realme、OnePlus 和 Vivo 手机）。</string>
 </resources>

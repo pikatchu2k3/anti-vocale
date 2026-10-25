@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">मॉडल्स</string>
@@ -161,7 +160,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (स्ट्रीमिंग)</string>
-    <string name="nemotron_description">~640MB • स्ट्रीमिंग ट्रांसड्यूसर</string>
+    <string name="nemotron_description">~640MB • स्ट्रीमिंग • गति से गुणवत्ता</string>
     <string name="nemotron_download_confirm_title">%1$s डाउनलोड करें?</string>
     <string name="nemotron_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। Nemotron 3.5 एक स्ट्रीमिंग बहुभाषी ASR मॉडल है।</string>
     <string name="nemotron_download">Nemotron डाउनलोड करें</string>
@@ -173,6 +172,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • तेज़ • विराम चिह्नों सहित रूसी ASR</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • बहुत तेज़ • 7 भाषाएँ, अपने आप पहचानी जाती हैं</string>
+    <string name="benchmark_unsupported_engine">इस इंजन के लिए बेंचमार्क समर्थित नहीं है</string>
+    <string name="model_info_best_for_whistle">डिवाइस पर सबसे तेज़ शुरुआत: 17MB, 7 भाषाएँ, तुरंत पहला टेक्स्ट</string>
+    <string name="model_info_notes_whistle">इटालियन में Parakeet से कम सटीक; संगीत टेक्स्ट बन सकता है (कोई संगीत फ़िल्टर नहीं)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 डाउनलोड करें?</string>
     <string name="gigaam_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा। GigaAM v3, Sber का सिर्फ़ रूसी भाषा वाला ASR मॉडल है जिसकी रूसी सटीकता मज़बूत है।</string>
     <string name="gigaam_download">GigaAM डाउनलोड करें</string>
@@ -991,7 +995,7 @@
     <string name="voice_note_detection_title">वॉइस नोट ट्रांसक्रिप्शन</string>
     <string name="voice_note_detection_description">ऐप चलते समय नई WhatsApp वॉयेस नोट आते ही ट्रांसक्राइब करता है। Android बैकग्राउंड शुरुआत रोके तो एक टैप वाली नोटिफिकेशन से शुरू होता है। नोट केवल ट्रांसक्रिप्शन के लिए पढ़ा जाता है, इसी डिवाइस पर; बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
     <string name="voice_note_detection_grant_hint">ऑडियो एक्सेस बंद है। ऐप सेटिंग्स खोलकर सक्षम करने के लिए टैप करें; अनुमति मिलते ही ट्रांसक्रिप्शन शुरू हो जाता है।</string>
-    <string name="voice_note_folder_grant_rejected">That is not the WhatsApp Voice Notes folder. Pick the folder named WhatsApp Voice Notes and try again.</string>
+    <string name="voice_note_folder_grant_rejected">यह WhatsApp Voice Notes फ़ोल्डर नहीं है। WhatsApp Voice Notes नाम का फ़ोल्डर चुनकर फिर से प्रयास करें।</string>
     <string name="voice_note_folder_card_title">वॉइस नोट फ़ोल्डर</string>
     <string name="voice_note_folder_card_state_granted">अनुमति दी गई</string>
     <string name="voice_note_folder_card_state_missing">अनुमति नहीं है</string>
@@ -1256,4 +1260,40 @@
     </plurals>
     <string name="folder_watch_period_label">स्कैन अंतराल</string>
     <string name="folder_watch_grant_failed">उस फ़ोल्डर तक पहुँच बनाए नहीं रखी जा सकी, इसलिए उसे जोड़ा नहीं गया। कृपया उसे फिर से चुनें।</string>
+
+    <!-- बैकअप और स्थानांतरण (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">ऑडियो चलाएँ</string>
+    <string name="result_pause_audio">ऑडियो रोकें</string>
+    <string name="duplicate_found_title">पहले से ट्रांसक्राइब किया गया</string>
+    <string name="duplicate_found_message">यह फ़ाइल पहले %1$s के साथ ट्रांसक्राइब की जा चुकी है।</string>
+    <string name="duplicate_found_open">परिणाम खोलें</string>
+    <string name="duplicate_found_again">फिर से ट्रांसक्राइब करें</string>
+    <string name="result_language_advisory">यह मॉडल भाषा स्वयं पहचानता है। %1$s को लॉक करने के लिए सेटिंग में भाषा चुनें (भाषा सेटिंग का पालन करने वाले मॉडल, जैसे Whisper, वहाँ सूचीबद्ध हैं)।</string>
+    <string name="result_skip_silences">मौन छोड़ें</string>
+    <string name="result_playback_speed">प्लेबैक गति (%1$s)</string>
+
+    <string name="backup_transfer_title">बैकअप और स्थानांतरण</string>
+    <string name="backup_transfer_summary">अपनी सेटिंग्स और इतिहास को एक फ़ाइल में सहेजें, या किसी दूसरे डिवाइस पर पुनर्स्थापित करें</string>
+    <string name="backup_export_title">बैकअप निर्यात करें</string>
+    <string name="backup_export_description">आपकी सेटिंग्स और पूरा ट्रांसक्रिप्शन इतिहास एक ही फ़ाइल में लिखा जाता है। फ़ाइल सादे पाठ में है: जिसके पास यह फ़ाइल है, वह हर ट्रांसक्रिप्शन और हर भेजने वाले का नाम पढ़ सकता है।</string>
+    <string name="backup_export_action">बैकअप फ़ाइल बनाएँ</string>
+    <string name="backup_import_title">बैकअप आयात करें</string>
+    <string name="backup_import_description">बैकअप फ़ाइल से इस डिवाइस पर सेटिंग्स और पिछले ट्रांसक्रिप्शन जुड़ जाते हैं। आपके पास पहले से जो है, वह बना रहता है।</string>
+    <string name="backup_import_action">बैकअप फ़ाइल चुनें</string>
+    <string name="backup_export_progress">बैकअप लिखा जा रहा है…</string>
+    <string name="backup_import_progress">बैकअप पढ़ा जा रहा है…</string>
+    <string name="backup_export_done">बैकअप सहेजा गया</string>
+    <string name="backup_export_failed">बैकअप नहीं लिखा जा सका</string>
+    <string name="backup_import_done">आयातित: %1$d, छोड़े गए: %2$d</string>
+    <string name="backup_import_failed">बैकअप फ़ाइल नहीं पढ़ी जा सकी</string>
+    <string name="backup_import_history_failed">सेटिंग्स आयात हो गईं, लेकिन इतिहास जोड़ा नहीं जा सका। दोबारा कोशिश करना सुरक्षित है।</string>
+    <string name="backup_disclosure_title">निर्यात से पहले</string>
+    <string name="backup_disclosure_body">बैकअप में हर ट्रांसक्रिप्शन, भेजने वाले का नाम और वक्ता लेबल पढ़ने योग्य पाठ में होते हैं। इसे केवल भरोसेमंद जगहों पर साझा करें।</string>
+    <string name="keyword_biasing_title">कीवर्ड पक्षपात (Whistle)</string>
+    <string name="keyword_biasing_description">नाम, स्थान या शब्दावली जिन्हें Whistle मॉडल को प्राथमिकता देनी चाहिए, प्रति पंक्ति एक। अगली ट्रांसक्रिप्शन से लागू, बिना पुनः लोड।</string>
+    <string name="keyword_biasing_placeholder">प्रति पंक्ति एक शब्द</string>
+    <string name="freeze_protection_title">बैकग्राउंड ट्रांस्क्रिप्शन सुरक्षा</string>
+    <string name="freeze_protection_description">ट्रांस्क्रिप्शन के दौरान एक मौन ऑडियो स्ट्रीम सक्रिय रखता है ताकि आक्रामक बैटरी सेवर ऐप को निलंबित न कर सकें। यदि स्क्रीन बंद होने पर ट्रांस्क्रिप्शन रुकता है तो इसे चालू करें (कुछ Oppo, Realme, OnePlus और Vivo फ़ोन)।</string>
 </resources>

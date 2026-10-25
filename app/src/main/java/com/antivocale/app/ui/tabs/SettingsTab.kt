@@ -21,18 +21,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import kotlin.math.roundToInt
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
@@ -71,23 +68,17 @@ import com.antivocale.app.BuildConfig
 import com.antivocale.app.R
 import com.antivocale.app.ui.AppNavigation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BuiltInBackendIds
-import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.transcription.diarization.SpeakerEnrollError
-import com.antivocale.app.data.DiscoveredModel
 import com.antivocale.app.data.HuggingFaceTokenManager
-import com.antivocale.app.data.HuggingFaceOAuthConfig
-import com.antivocale.app.data.ModelSource
 import com.antivocale.app.ui.components.SearchField
 import com.antivocale.app.ui.components.CardTitleRow
 import com.antivocale.app.ui.components.VoiceNoteFolderGrantCard
@@ -99,6 +90,7 @@ import com.antivocale.app.ui.components.GroupHeader
 import com.antivocale.app.ui.components.HF_TOKEN_SETTINGS_URL
 import com.antivocale.app.ui.components.OAuthLoginSection
 import com.antivocale.app.ui.components.SectionCard
+import com.antivocale.app.ui.components.rememberResultPlayback
 import com.antivocale.app.ui.components.SettingsDropdown
 import com.antivocale.app.ui.components.TokenInputField
 import com.antivocale.app.ui.components.ToggleSettingCard
@@ -112,16 +104,13 @@ import com.antivocale.app.ui.screens.SpeakerSettingsScreen
 import com.antivocale.app.ui.screens.PerformanceSettingsScreen
 import com.antivocale.app.ui.screens.AutomationSettingsScreen
 import com.antivocale.app.ui.theme.TextScale
-import com.antivocale.app.ui.theme.ThemeType
 import com.antivocale.app.util.AutomationBroadcastSnippet
 import com.antivocale.app.util.ClipboardWriter
 import com.antivocale.app.util.FeedbackHelper
-import com.antivocale.app.util.LanguageNames
 import com.antivocale.app.util.SubtitleFormatter
 import com.antivocale.app.util.ToastCompat
 import java.io.File
 import com.antivocale.app.service.InferenceService
-import com.antivocale.app.ui.components.LanguageOption
 import com.antivocale.app.ui.components.EditablePromptCard
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
 
@@ -142,6 +131,7 @@ fun SettingsTab(
     val outputFolderUri by viewModel.outputFolderUri.collectAsState()
     val transcriptExportFormat by viewModel.transcriptExportFormat.collectAsState()
     val vadEnabled by viewModel.vadEnabled.collectAsState()
+    val freezeProtection by viewModel.freezeProtectionEnabled.collectAsState()
     val progressiveEnabled by viewModel.progressiveTranscription.collectAsState()
     val earlyPreviewEnabled by viewModel.earlyPreviewEnabled.collectAsState()
     val interruptedRunNotifications by viewModel.interruptedRunNotifications.collectAsState()
@@ -164,15 +154,30 @@ fun SettingsTab(
     val isTranscribing by InferenceService.isTranscribing.collectAsState()
     val scrollState = rememberScrollState()
     var tokenPasswordVisible by remember { mutableStateOf(false) }
-    var showOAuthConfigDialog by remember { mutableStateOf(false) }
-    var showPerAppSettings by remember { mutableStateOf(false) }
-    var showPromptSettings by remember { mutableStateOf(false) }
-    var showIconSettings by remember { mutableStateOf(false) }
-    var showExportSettings by remember { mutableStateOf(false) }
-    var showSpeakerSettings by remember { mutableStateOf(false) }
-    var showPerformanceSettings by remember { mutableStateOf(false) }
-    var showAutomationSettings by remember { mutableStateOf(false) }
-    var showVoiceNoteSettings by remember { mutableStateOf(false) }
+    // TASK-846: SAVEABLE (the TASK-763 saveable-primitives lesson, applied
+    // to the family), each with an EXPLICIT key so a future flag inserted
+    // mid-list cannot shift a sibling's restored slot. The triggers are
+    // process death and the UNHANDLED config changes (uiMode, locale,
+    // density, font scale; orientation is handled in place by
+    // MainActivity's configChanges): then a plain remember flag dies
+    // false, the subpage never recomposes, and the ActivityResultRegistry
+    // STASHES the pending pick instead of delivering it (androidx.activity
+    // 1.8.2: mPendingResults, fired at the next register under the same
+    // key), so the user returns to the main tree and the pick only lands,
+    // out of context, on a later open of that subpage. Saveable flags
+    // re-compose the subpage during restore, the launcher re-registers
+    // under its restored key, and the pick lands in place. Deliberate
+    // consequence (desirable, matching searchQuery): a subpage now also
+    // survives a tab switch, not just process death.
+    var showPerAppSettings by rememberSaveable("showPerAppSettings") { mutableStateOf(false) }
+    var showPromptSettings by rememberSaveable("showPromptSettings") { mutableStateOf(false) }
+    var showIconSettings by rememberSaveable("showIconSettings") { mutableStateOf(false) }
+    var showExportSettings by rememberSaveable("showExportSettings") { mutableStateOf(false) }
+    var showSpeakerSettings by rememberSaveable("showSpeakerSettings") { mutableStateOf(false) }
+    var showPerformanceSettings by rememberSaveable("showPerformanceSettings") { mutableStateOf(false) }
+    var showAutomationSettings by rememberSaveable("showAutomationSettings") { mutableStateOf(false) }
+    var showVoiceNoteSettings by rememberSaveable("showVoiceNoteSettings") { mutableStateOf(false) }
+    var showBackupTransfer by rememberSaveable("showBackupTransfer") { mutableStateOf(false) }
 
     // The ONE sub-page clear (TASK-632): system back and every nav-effect
     // branch share it, so a future sub-page flag cannot be cleared in one
@@ -186,6 +191,7 @@ fun SettingsTab(
         showPerformanceSettings = false
         showAutomationSettings = false
         showVoiceNoteSettings = false
+        showBackupTransfer = false
     }
 
     // 2026-09-30 regroup: system back on ANY subpage must return to the
@@ -193,7 +199,8 @@ fun SettingsTab(
     // these flags; without this, back from a subpage closes the app).
     androidx.activity.compose.BackHandler(enabled = showIconSettings || showExportSettings ||
         showPromptSettings || showPerAppSettings || showSpeakerSettings ||
-        showPerformanceSettings || showAutomationSettings || showVoiceNoteSettings) {
+        showPerformanceSettings || showAutomationSettings || showVoiceNoteSettings ||
+        showBackupTransfer) {
         closeSubPages()
     }
     // TASK-625 deep-link carrier: the memory-failure notification action
@@ -238,6 +245,7 @@ fun SettingsTab(
                     "performance" -> showPerformanceSettings = true
                     "automation" -> showAutomationSettings = true
                     "voice_notes" -> showVoiceNoteSettings = true
+                    "backup" -> showBackupTransfer = true
                 }
             }
             is AppNavigation.Destination.SettingsRow -> {
@@ -309,6 +317,8 @@ fun SettingsTab(
     // for six weeks (found in the 2026-09-13 settings audit; the status card
     // was rendering for Parakeet users and hiding from Gemma users).
     val isLlmBackend = BuiltInBackendIds.isLlm(uiState.transcriptionBackend)
+    // TASK-858: the whistle-only keyword-biasing card's gate.
+    val isWhistleBackend = BuiltInBackendIds.isWhistle(uiState.transcriptionBackend)
     val isModelLoaded by viewModel.llmIsReadyFlow.collectAsState()
     // TASK-574: tick the countdown every second while a live deadline exists;
     // the getter is a plain read, so without the producer the banner would
@@ -415,6 +425,14 @@ fun SettingsTab(
             onScrollConsumed = { pendingSubPageScroll = null },
             onBack = { showAutomationSettings = false },
         )
+    } else if (showBackupTransfer) {
+        // TASK-843/844 (the N>=2 subpage rule): export + import on one page.
+        BackupTransferScreen(
+            viewModel = viewModel,
+            initialScroll = pendingSubPageScroll,
+            onScrollConsumed = { pendingSubPageScroll = null },
+            onBack = { showBackupTransfer = false },
+        )
     } else {
     // TASK-628: compact rendering while search is active (descriptions
     // capped: see SETTINGS_SEARCH_COMPACT_DESCRIPTION_LINES) so matched
@@ -459,6 +477,7 @@ fun SettingsTab(
         // vocabulary can never drift from the tree.
         val searchState = SettingsSearchState(
             isLlmBackend = isLlmBackend,
+            isWhistleBackend = isWhistleBackend,
             isModelLoaded = isModelLoaded,
             gemmaConfigured = gemmaConfigured,
             punctuationPromptForced = currentPunctuationMode == PunctuationPolicy.PREF_ALWAYS,
@@ -805,6 +824,23 @@ fun SettingsTab(
                 )
             }
 
+            // GH #67 (scoped): opt-in freezer protection. Ungated: any ROM
+            // can read the toggle; only freezer-ROM users need to turn it
+            // on (the description names which phones).
+            val freezeTitle = stringResource(R.string.freeze_protection_title)
+            val freezeDescription = stringResource(R.string.freeze_protection_description)
+            SearchFilterRow(searchQuery, SettingsSearchId.FREEZE_PROTECTION, searchState) {
+                ToggleSettingCard(
+                    icon = Icons.Default.GraphicEq,
+                    title = freezeTitle,
+                    description = freezeDescription,
+                    checked = freezeProtection,
+                    onCheckedChange = { enabled ->
+                        viewModel.saveFreezeProtectionEnabled(enabled)
+                    }
+                )
+            }
+
             // GH #43: two-pass transcription (instant preview, then refine).
             val refinementTitle = stringResource(R.string.refinement_title)
             val refinementDescription = stringResource(R.string.refinement_description)
@@ -1069,6 +1105,20 @@ fun SettingsTab(
                             onOpen = { showPromptSettings = true },
                         )
                 }
+                }
+
+                // TASK-858: the whistle engine's keyword-biasing terms. The
+                // EditablePromptCard contract (commit on focus loss, the
+                // 500-char cap at the impl layer) fits: a term list is a
+                // short free-text preference. Request-time by design (the
+                // backend reads the flow per decode; no reload).
+                if (isWhistleBackend) {
+                    SearchFilterRow(searchQuery, SettingsSearchId.KEYWORD_BIASING, searchState) {
+                        KeywordBiasingCard(
+                            terms = viewModel.currentKeywordBiasing.collectAsState().value,
+                            onSave = { viewModel.saveKeywordBiasing(it) },
+                        )
+                    }
                 }
 
                 // Maintainer decision 2026-09-30: diarization settings moved
@@ -1850,6 +1900,20 @@ fun SettingsTab(
                 )
             }
 
+            // TASK-843/844 (the N>=2 subpage rule): the backup entries
+            // (export + import) on one page. ABOVE the Integrations label:
+            // data management, not an integration, and the search registry
+            // leaves it ungrouped (the tree grouping must match). The hub's
+            // registry vocabulary is the union of its own and both
+            // children's strings.
+            SearchFilterRow(searchQuery, SettingsSearchId.BACKUP_HUB, searchState) {
+                SettingsHubCard(
+                    titleRes = R.string.backup_transfer_title,
+                    summaryRes = R.string.backup_transfer_summary,
+                    leadingIcon = Icons.Default.Archive,
+                ) { showBackupTransfer = true }
+            }
+
             SettingsGroupLabel(SettingsSearchGroup.INTEGRATIONS, searchState)
 
             // Advanced Sharing Card
@@ -2014,37 +2078,37 @@ internal fun VoiceNoteSettingsScreen(
             if (com.antivocale.app.data.VoiceNoteDetectionPermission.detectionAvailable()) {
             val voiceNoteDetectionEnabled by viewModel.voiceNoteDetectionEnabled.collectAsState()
             var voiceNoteAudioPermissionGranted by remember { mutableStateOf(false) }
+            // TASK-827: the grant card renders the COORDINATOR's own state
+            // (one derivation of the conjunction, updated by every
+            // reconcile pass); this screen no longer re-derives it. The
+            // coordinator's pokes below refresh the state on resume.
+            val voiceNoteGateState by viewModel.voiceNoteGateState.collectAsState()
+            // The card wants grant-held semantics, but gateState carries the
+            // whole conjunction: Inactive merely means the preference is off
+            // (or a reconcile hop has not landed yet after a toggle), NOT
+            // that the grant died. Remember the last RESOLVED grant verdict
+            // and let only Active/GrantMissing move it: the off->on toggle
+            // then never flashes the error-colored state for a frame (review
+            // F1; the pre-827 remembered probe behaved the same way).
             var voiceNoteGrantHeld by remember { mutableStateOf(false) }
-            // Declared before recomputeGrantHeld: the recompute reads the
-            // STORE (see currentVoiceNoteTreeUri), which suspends.
-            val grantScope = rememberCoroutineScope()
-            fun recomputeGrantHeld() {
-                // The STORED value, never the StateFlow's .value (still the
-                // initialValue before DataStore's first emission; review
-                // R2-3): a stale null would flash the card un-granted and
-                // (pre-fix) hide the Remove action.
-                grantScope.launch(Dispatchers.IO) {
-                    voiceNoteGrantHeld = viewModel.currentVoiceNoteTreeUri()?.let {
-                        com.antivocale.app.util.TreeUris
-                            .holdsPersistableReadGrant(context, android.net.Uri.parse(it))
-                    } ?: false
-                }
+            when (voiceNoteGateState) {
+                com.antivocale.app.data.VoiceNoteGateState.Active -> voiceNoteGrantHeld = true
+                com.antivocale.app.data.VoiceNoteGateState.GrantMissing -> voiceNoteGrantHeld = false
+                else -> {}
             }
+            val grantScope = rememberCoroutineScope()
             RecheckOnResume {
                 val granted =
                     com.antivocale.app.data.VoiceNoteDetectionPermission.granted(context)
                 if (granted != voiceNoteAudioPermissionGranted) {
                     voiceNoteAudioPermissionGranted = granted
-                    // A grant or revoke made OUTSIDE this screen (the system
-                    // dialog answered by a launcher, the app-settings page)
-                    // changes no preference value, so the coordinator must
-                    // be poked to re-evaluate its conjunction.
-                    viewModel.refreshVoiceNoteDetectionGate()
                 }
-                // The tree grant can die with the URI string unchanged
-                // (folder deleted and recreated, OEM cleanup): the probe
-                // re-runs on every resume, not only on URI changes.
-                recomputeGrantHeld()
+                // UNCONDITIONAL poke (TASK-827): a grant or revoke made
+                // outside this screen changes no preference value, and the
+                // tree grant can die with the URI string unchanged (folder
+                // recreated, OEM cleanup); the coordinator's reconcile
+                // re-probes both and its gateState refreshes the card.
+                viewModel.refreshVoiceNoteDetectionGate()
             }
             val audioPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
@@ -2080,45 +2144,26 @@ internal fun VoiceNoteSettingsScreen(
                 ActivityResultContracts.OpenDocumentTree()
             ) { uri ->
                 if (uri == null) return@rememberLauncherForActivityResult
-                // Binder work off the main thread, the output-folder
-                // picker's pattern; the take must precede the validation
-                // query or the query itself is denied.
-                grantScope.launch(Dispatchers.IO) {
-                    if (!com.antivocale.app.util.TreeUris
-                            .takePersistableReadGrant(context, uri)
-                    ) {
-                        // A non-persistable OEM grant would die at process
-                        // death: refuse it, the row stays for a retry.
-                        Log.w("SettingsTab", "voice-note grant take failed for $uri")
-                        return@launch
-                    }
-                    if (!com.antivocale.app.data.VoiceNoteTreeGrant
-                            .looksLikeVoiceNotesTree(context, uri)
-                    ) {
-                        // A wrong tree would surface only as offers that
-                        // cancel on tap: refuse it AND give the grant slot
-                        // back (the platform caps persisted grants).
-                        com.antivocale.app.util.TreeUris
-                            .releasePersistableReadGrant(context, uri)
-                        withContext(Dispatchers.Main) {
+                // TASK-826: the take-validate-release-old-save sequence is
+                // the tree grant's own policy now (acceptGrant); this
+                // callback maps outcomes to UI. IO inside acceptGrant.
+                grantScope.launch {
+                    when (val outcome = viewModel.acceptVoiceNoteGrant(uri)) {
+                        com.antivocale.app.data.VoiceNoteTreeGrant.GrantOutcome.TakeFailed ->
+                            // A non-persistable OEM grant would die at process
+                            // death: refuse it, the row stays for a retry.
+                            Log.w("SettingsTab", "voice-note grant take failed for $uri")
+                        com.antivocale.app.data.VoiceNoteTreeGrant.GrantOutcome.WrongFolder ->
+                            // A wrong tree would surface only as notes that
+                            // never resolve: the grant slot was given back,
+                            // tell the user and leave the row for a retry.
+                            // (grantScope is Main; the binder work already
+                            // happened inside acceptGrant's IO hop.)
                             ToastCompat.show(
                                 context, R.string.voice_note_folder_grant_rejected,
                                 Toast.LENGTH_LONG)
-                        }
-                        return@launch
+                        is com.antivocale.app.data.VoiceNoteTreeGrant.GrantOutcome.Saved -> {}
                     }
-                    // A replacement pick abandons the old URI: release its
-                    // grant slot (platform cap 128/512) before overwriting.
-                    // The STORED value, not the StateFlow's: .value is still
-                    // the initialValue null until DataStore's first emission
-                    // reaches the flow, and a fast re-pick would leak the
-                    // old slot (review F9).
-                    val old = viewModel.currentVoiceNoteTreeUri()
-                    if (old != null && old != uri.toString()) {
-                        com.antivocale.app.util.TreeUris
-                            .releasePersistableReadGrant(context, android.net.Uri.parse(old))
-                    }
-                    viewModel.saveVoiceNoteTreeUri(uri.toString())
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2159,10 +2204,10 @@ internal fun VoiceNoteSettingsScreen(
                     }
                 }
                 // A saved URI whose grant died (folder recreated, OEM
-                // cleanup) must re-offer the card: gating only on the string
-                // would strand the user with no re-pick path. recompute-
-                // GrantHeld runs on resume; a URI change recomputes here.
-                LaunchedEffect(voiceNoteTreeUri) { recomputeGrantHeld() }
+                // cleanup) must re-offer the card: the coordinator's own
+                // collector re-evaluates the gate on every URI emission
+                // (the URI flow is part of its combine), so gateState
+                // recomposes this card with no screen-side effect.
                 var voiceNoteGrantSheetVisible by remember { mutableStateOf(false) }
                 if (voiceNoteDetectionEnabled && voiceNoteAudioPermissionGranted) {
                     // TASK-272: the folder-grant card (mockup at the repo
@@ -2264,6 +2309,144 @@ internal fun VoiceNoteSettingsScreen(
                 }
             }
 
+    }
+}
+
+/**
+ * TASK-843/844 (the N>=2 subpage rule): the backup-and-transfer page:
+ * export (settings + full history to one SAF-picked zip, behind the
+ * plaintext disclosure dialog) and import (merge into this device). The
+ * ViewModel owns the archive work; this page owns the pickers, the
+ * disclosure, and the one-line outcome per action.
+ */
+@Composable
+internal fun BackupTransferScreen(
+    viewModel: SettingsViewModel,
+    initialScroll: AppNavigation.ScrollRequest? = null,
+    onScrollConsumed: () -> Unit = {},
+    onBack: () -> Unit,
+) {
+    val backupState by viewModel.backupState.collectAsState()
+    var showExportDisclosure by remember { mutableStateOf(false) }
+
+    // The export target is a fresh document every time (CreateDocument):
+    // no persisted grant, nothing to take; the SAF pick IS the consent.
+    // The state resets INSIDE the callbacks, not at button-tap: a cancelled
+    // pick must not wipe the other card's still-relevant outcome.
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.resetBackupState()
+            viewModel.exportBackup(uri)
+        }
+    }
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.resetBackupState()
+            viewModel.importBackup(uri)
+        }
+    }
+
+    if (showExportDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showExportDisclosure = false },
+            title = { Text(stringResource(R.string.backup_disclosure_title)) },
+            text = { Text(stringResource(R.string.backup_disclosure_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExportDisclosure = false
+                    exportPicker.launch(backupFileName())
+                }) { Text(stringResource(R.string.backup_export_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportDisclosure = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+
+    SubPageScrollScaffold(
+        titleRes = R.string.backup_transfer_title,
+        onBack = onBack,
+        scrollRequest = initialScroll,
+        onScrollConsumed = onScrollConsumed,
+        bodySpacing = Arrangement.spacedBy(12.dp),
+    ) { _ ->
+        SectionCard(
+            icon = Icons.Default.Archive,
+            title = stringResource(R.string.backup_export_title),
+            description = stringResource(R.string.backup_export_description),
+        ) {
+            Button(
+                onClick = { showExportDisclosure = true },
+                enabled = backupState !is SettingsViewModel.BackupState.Exporting &&
+                    backupState !is SettingsViewModel.BackupState.Importing,
+            ) { Text(stringResource(R.string.backup_export_action)) }
+            BackupOutcomeRow(backupState, export = true)
+        }
+
+        SectionCard(
+            icon = Icons.Default.FileDownload,
+            title = stringResource(R.string.backup_import_title),
+            description = stringResource(R.string.backup_import_description),
+        ) {
+            Button(
+                onClick = { importPicker.launch(arrayOf("*/*")) },
+                enabled = backupState !is SettingsViewModel.BackupState.Exporting &&
+                    backupState !is SettingsViewModel.BackupState.Importing,
+            ) { Text(stringResource(R.string.backup_import_action)) }
+            BackupOutcomeRow(backupState, export = false)
+        }
+    }
+}
+
+/** The export file name: dated, one per day is plenty (SAF overwrites on re-pick). */
+private fun backupFileName(): String =
+    "anti-vocale-backup-" +
+        java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date()) + ".zip"
+
+/**
+ * The in-flight/terminal outcome line, scoped to ONE card by [export]: a
+ * shared unscoped row rendered the export result under the import card
+ * too (the state flow is one per page, not per action).
+ */
+@Composable
+private fun BackupOutcomeRow(state: SettingsViewModel.BackupState, export: Boolean) {
+    when (state) {
+        SettingsViewModel.BackupState.Idle -> Unit
+        SettingsViewModel.BackupState.Exporting -> if (export) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(
+                text = stringResource(R.string.backup_export_progress),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        SettingsViewModel.BackupState.Importing -> if (!export) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(
+                text = stringResource(R.string.backup_import_progress),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        is SettingsViewModel.BackupState.Done -> if (state.export == export) {
+            Text(
+                text = stringResource(state.messageRes, *state.args.toTypedArray()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        is SettingsViewModel.BackupState.Failed -> if (state.export == export) {
+            Text(
+                text = stringResource(state.messageRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
@@ -2658,10 +2841,31 @@ private fun FeedbackSection(
                 // Version row (TASK-459): lets users tell which build they run;
                 // the versionCode identifies the exact per-ABI build (F-Droid
                 // can serve an older version for days after a release)
+                val context = LocalContext.current
                 InfoRow(
                     icon = Icons.Default.Info,
                     title = stringResource(R.string.settings_feedback_version_title),
-                    value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+                    value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    // GH #156: one tap puts the full environment line on the
+                    // clipboard (the string the bug-report template wants,
+                    // one field per fact); the toast confirms with the
+                    // shared copied_to_clipboard string.
+                    onCopy = {
+                        val line = com.antivocale.app.util.FeedbackHelper.environmentLine(
+                            versionName = BuildConfig.VERSION_NAME,
+                            versionCode = BuildConfig.VERSION_CODE.toLong(),
+                            flavor = BuildConfig.FLAVOR,
+                            buildType = BuildConfig.BUILD_TYPE,
+                            androidVersion = "${android.os.Build.VERSION.RELEASE} " +
+                                "(API ${android.os.Build.VERSION.SDK_INT})",
+                            device = "${android.os.Build.MANUFACTURER} " +
+                                "${android.os.Build.MODEL}".trim(),
+                        )
+                        com.antivocale.app.util.ClipboardWriter.copy(
+                            context, "environment", line)
+                        ToastCompat.show(
+                            context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT)
+                    }
                 )
 
                 // Replay the first-install tour on demand (TASK-491; the only
@@ -2711,9 +2915,21 @@ private fun RecheckOnResume(probe: () -> Unit) {
  * have a different shape and stay inline).
  */
 @Composable
-private fun InfoRow(icon: ImageVector, title: String, value: String) {
+private fun InfoRow(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    // GH #156 (TASK-839): null keeps the row informational (the default for
+    // every caller); non-null makes it a copy trigger with a trailing icon.
+    onCopy: (() -> Unit)? = null,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onCopy == null) Modifier
+                else Modifier.clickable(role = Role.Button) { onCopy() }
+            ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2727,6 +2943,14 @@ private fun InfoRow(icon: ImageVector, title: String, value: String) {
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f)
         )
+        if (onCopy != null) {
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
@@ -3071,31 +3295,11 @@ internal fun SpeakerIdentitiesCard(viewModel: SettingsViewModel) {
         if (uri != null) viewModel.enrollSpeakerSample(uri)
     }
 
-    // One replay player: a new play stops the previous one; released on
-    // leaving the composition (TASK-670).
-    var replayPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
-    DisposableEffect(Unit) {
-        onDispose {
-            replayPlayer?.release()
-            replayPlayer = null
-        }
-    }
-    val replaySample: (File) -> Unit = { sample ->
-        replayPlayer?.release()
-        replayPlayer = runCatching {
-            android.media.MediaPlayer().apply {
-                setDataSource(sample.absolutePath)
-                setOnPreparedListener { it.start() }
-                // Review R8: a failed async prepare must release the player
-                // (not linger in the error state holding its fd), and a
-                // COMPLETED player releases too (previously it sat until
-                // the next replay tap or leaving the composition).
-                setOnErrorListener { mp, _, _ -> mp.release(); true }
-                setOnCompletionListener { it.release() }
-                prepareAsync()
-            }
-        }.getOrNull()
-    }
+    // TASK-849: the shared playback controller replaces the hand-rolled
+    // replay player (TASK-670's one-live-player + release-on-exit
+    // discipline, now with the audio-focus handling the replay always
+    // lacked: a replay no longer overlaps another app's music).
+    val replayPlayback = rememberResultPlayback()
 
     SectionCard(
         icon = Icons.Default.RecordVoiceOver,
@@ -3112,7 +3316,9 @@ internal fun SpeakerIdentitiesCard(viewModel: SettingsViewModel) {
         for (identity in identities) {
             SpeakerIdentityRow(
                 identity = identity,
-                onReplay = { viewModel.speakerSampleFile(identity.id)?.let(replaySample) },
+                samplePath = viewModel.speakerSampleFile(identity.id)?.absolutePath,
+                taskId = speakerSampleTaskId(identity.id),
+                playback = replayPlayback,
                 onDelete = { viewModel.deleteSpeakerIdentity(identity.id) },
             )
         }
@@ -3145,12 +3351,28 @@ internal fun SpeakerIdentitiesCard(viewModel: SettingsViewModel) {
     }
 }
 
+/** TASK-849: the replay's stable per-sample taskId (ONE owner: the
+ *  playing-state derivation must match the toggle exactly). */
+private fun speakerSampleTaskId(id: String) = "speaker-sample-$id"
+
 @Composable
 private fun SpeakerIdentityRow(
     identity: com.antivocale.app.transcription.diarization.SpeakerIdentity,
-    onReplay: () -> Unit,
+    /** Null = the sample file is gone: the button disables (History's
+     *  honest-affordance rule), never a silent no-op. */
+    samplePath: String?,
+    taskId: String,
+    playback: com.antivocale.app.ui.components.ResultPlaybackController,
     onDelete: () -> Unit,
 ) {
+    // Row-scoped collection (the controller family's rule, History's
+    // PlaybackControls pattern): the 200ms progress tick recomposes this
+    // row only, never the whole card.
+    val now by playback.state.collectAsState()
+    val isPlaying = now?.let { it.taskId == taskId && it.playing } == true
+    val filePresent = remember(samplePath) {
+        com.antivocale.app.ui.components.playbackFileExists(samplePath)
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -3164,8 +3386,15 @@ private fun SpeakerIdentityRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconButton(onClick = onReplay) {
-            Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.speaker_id_replay))
+        IconButton(
+            onClick = { playback.toggle(taskId, samplePath) },
+            enabled = filePresent,
+        ) {
+            Icon(
+                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = stringResource(
+                    if (isPlaying) R.string.result_pause_audio
+                    else R.string.speaker_id_replay))
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.speaker_id_delete))
@@ -3305,6 +3534,19 @@ private fun SignatureTextCard(
     placeholderRes = R.string.signature_default_text,
 )
 
+/** TASK-858: the whistle keyword-biasing editor (the EditablePromptCard shape). */
+@Composable
+private fun KeywordBiasingCard(
+    terms: String,
+    onSave: (String) -> Unit,
+) = EditablePromptCard(
+    prompt = terms,
+    onSave = onSave,
+    titleRes = R.string.keyword_biasing_title,
+    descriptionRes = R.string.keyword_biasing_description,
+    placeholderRes = R.string.keyword_biasing_placeholder,
+)
+
 @Composable
 private fun signaturePositionLabel(value: String): String = when (value) {
     "prepend" -> stringResource(R.string.signature_position_prepend)
@@ -3373,14 +3615,14 @@ internal enum class SettingsSearchId {
     REFINEMENT, REFINEMENT_MODEL, DIARIZATION_HUB, VAD, PROGRESSIVE, EARLY_PREVIEW,
     INTERRUPTED_RUN_NOTIFICATIONS,
     PUNCTUATION_MODE, PUNCTUATION_PROMPT, SUMMARIZE, SUMMARY_PROMPT, SIGNATURE,
-    DEFAULT_PROMPT, KEEP_ALIVE_TIMEOUT,
+    DEFAULT_PROMPT, KEYWORD_BIASING, KEEP_ALIVE_TIMEOUT, FREEZE_PROTECTION,
     // Appearance
     THEME, APP_ICON, APP_LANGUAGE, SWIPE_ACTION, CONVERSATION_GROUPING,
     COMPACT_RESULT_ACTIONS, TECHNICAL_DETAILS, LANGUAGE_CHIP, RETRANSCRIBE, ADVANCED_SHARE_FORMATS,
     // Advanced
     BATTERY_EXEMPTION, HUGGINGFACE_AUTH, PERFORMANCE_HUB,
     SHARE_TARGETS, SUBTITLE_TIMEOUT, AUTOMATION_HUB, VOICE_NOTE_HUB, PER_APP_SETTINGS,
-    SHARE_SHORTCUT_ICONS,
+    SHARE_SHORTCUT_ICONS, BACKUP_HUB,
     // Feedback
     FEEDBACK,
 }
@@ -3413,6 +3655,8 @@ internal enum class SettingsSearchGroup(val labelRes: Int) {
  */
 internal data class SettingsSearchState(
     val isLlmBackend: Boolean,
+    /** TASK-858: the keyword-biasing card exists only on the whistle backend. */
+    val isWhistleBackend: Boolean,
     val isModelLoaded: Boolean,
     val gemmaConfigured: Boolean,
     /**
@@ -3481,6 +3725,7 @@ internal fun SettingsSearchCard.outerSectionGate(state: SettingsSearchState): Bo
         state.gemmaConfigured && !state.isLlmBackend
     SettingsSearchId.SUMMARY_PROMPT -> state.gemmaConfigured
     SettingsSearchId.DEFAULT_PROMPT -> state.isLlmBackend
+    SettingsSearchId.KEYWORD_BIASING -> state.isWhistleBackend
     else -> true
 }
 
@@ -3517,6 +3762,11 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     SettingsSearchCard(
         SettingsSearchId.VAD, SettingsSearchSection.TRANSCRIPTION,
         listOf(R.string.vad_title, R.string.vad_description),
+        group = SettingsSearchGroup.DECODING,
+    ),
+    SettingsSearchCard(
+        SettingsSearchId.FREEZE_PROTECTION, SettingsSearchSection.TRANSCRIPTION,
+        listOf(R.string.freeze_protection_title, R.string.freeze_protection_description),
         group = SettingsSearchGroup.DECODING,
     ),
     SettingsSearchCard(
@@ -3586,6 +3836,16 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
         visible = { s -> s.isLlmBackend },
         group = SettingsSearchGroup.GEMMA_TEXT,
         advanced = true,
+    ),
+    SettingsSearchCard(
+        SettingsSearchId.KEYWORD_BIASING, SettingsSearchSection.TRANSCRIPTION,
+        listOf(R.string.keyword_biasing_title, R.string.keyword_biasing_description,
+            R.string.keyword_biasing_placeholder),
+        visible = { s -> s.isWhistleBackend },
+        // Deliberately ungrouped: the DECODING cluster lives inside the
+        // advanced reveal (a contiguous tree run the registry pins); this
+        // card renders in the basic block beside the model-specific
+        // default-prompt hub, and a one-card group header would be noise.
     ),
     // The GH #83 speaker-labels toggle.
     // Maintainer decision 2026-09-30: the diarization hub. Union
@@ -3718,6 +3978,17 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     SettingsSearchCard(
         SettingsSearchId.PER_APP_SETTINGS, SettingsSearchSection.ADVANCED,
         listOf(R.string.per_app_settings_title, R.string.per_app_settings_description),
+    ),
+    // TASK-843/844 (the N>=2 subpage rule): the backup hub, whose page
+    // hosts export + import. Static union vocabulary like the other hubs;
+    // UNGROUPED (data management, not an integration) and placed above
+    // the Integrations cluster to match the tree.
+    SettingsSearchCard(
+        SettingsSearchId.BACKUP_HUB, SettingsSearchSection.ADVANCED,
+        listOf(
+            R.string.backup_transfer_title, R.string.backup_transfer_summary,
+            R.string.backup_export_title, R.string.backup_export_description,
+            R.string.backup_import_title, R.string.backup_import_description),
     ),
     SettingsSearchCard(
         SettingsSearchId.SHARE_TARGETS, SettingsSearchSection.ADVANCED,

@@ -40,10 +40,14 @@ internal class FakePreferencesManager : PreferencesManager {
     val _signaturePosition = MutableStateFlow("append")
     val _outputFolderUri = MutableStateFlow<String?>(null)
     val _vadEnabled = MutableStateFlow(false)
+    val _freezeProtectionEnabled = MutableStateFlow(false)
+    override val freezeProtectionEnabled: Flow<Boolean> = _freezeProtectionEnabled
+    override suspend fun saveFreezeProtectionEnabled(enabled: Boolean) { _freezeProtectionEnabled.value = enabled }
     val _vadAdvisoryDismissed = MutableStateFlow(false)
     val _progressiveTranscription = MutableStateFlow(true)
     val _punctuationMode = MutableStateFlow(PreferencesManager.DEFAULT_PUNCTUATION_MODE)
     val _punctuationPrompt = MutableStateFlow("")
+    val _keywordBiasing = MutableStateFlow("")
     val _summarizeEnabled = MutableStateFlow(PreferencesManager.DEFAULT_SUMMARIZE_ENABLED)
     val _summaryPrompt = MutableStateFlow("")
     val _defaultPrompt = MutableStateFlow("")
@@ -117,6 +121,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val interruptedRunNotifications: Flow<Boolean> get() = _interruptedRunNotifications
     override val punctuationMode: Flow<String> get() = _punctuationMode
     override val punctuationPrompt: Flow<String> get() = _punctuationPrompt
+    override val keywordBiasing: Flow<String> get() = _keywordBiasing
     override val summarizeEnabled: Flow<Boolean> get() = _summarizeEnabled
     override val summaryPrompt: Flow<String> get() = _summaryPrompt
     override suspend fun saveSummaryPrompt(prompt: String) { _summaryPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
@@ -192,6 +197,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun getInterruptedRunNotifications(): Boolean = _interruptedRunNotifications.value
     override suspend fun savePunctuationMode(mode: String) { _punctuationMode.value = mode }
     override suspend fun savePunctuationPrompt(prompt: String) { _punctuationPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
+    override suspend fun saveKeywordBiasing(terms: String) { _keywordBiasing.value = terms.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveSummarizeEnabled(enabled: Boolean) { _summarizeEnabled.value = enabled }
     override suspend fun saveDefaultPrompt(prompt: String) { _defaultPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveThreadCount(threads: Int) { _threadCount.value = threads }
@@ -308,5 +314,14 @@ internal class FakePreferencesManager : PreferencesManager {
     }
     override suspend fun clearDemotedBackend(backendId: String) {
         _demotedBackends.value = _demotedBackends.value - backendId
+    }
+
+    // TASK-843: the portable-settings round-trip (in-memory mirror; the
+    // import filters by the whitelist like the real impl, so the
+    // ViewModel-level tests assert semantics the Impl does have).
+    val _portableSettings = MutableStateFlow<Map<String, Any>>(emptyMap())
+    override suspend fun exportPortableSettings(): Map<String, Any> = _portableSettings.value
+    override suspend fun importPortableSettings(values: Map<String, Any>) {
+        _portableSettings.value = values.filterKeys { BackupSettingsKeys.isPortable(it) }
     }
 }

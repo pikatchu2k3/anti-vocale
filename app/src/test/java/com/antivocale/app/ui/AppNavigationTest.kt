@@ -51,15 +51,15 @@ class AppNavigationTest {
     }
 
     @Test
-    fun `scrollable destinations are the scroll sub-pages plus the gemma page`() {
+    fun `scrollable destinations are the scroll sub-pages`() {
         // per_app is deliberately out of v1: its body is a LazyColumn.
         assertEquals(
-            setOf("automation", "performance", "speaker", "prompt", "icon_picker", "export", "voice_notes"),
+            setOf("automation", "performance", "speaker", "prompt", "icon_picker", "export", "voice_notes", "backup"),
             AppNavigation.SUBPAGE_KEYS.filter { key ->
                 AppNavigation.isScrollableDest(AppNavigation.parse("settings:$key")!!)
             }.toSet(),
         )
-        assertTrue(AppNavigation.isScrollableDest(AppNavigation.parse("models:gemma")!!))
+        assertFalse(AppNavigation.isScrollableDest(AppNavigation.parse("models:gemma")!!))
         assertFalse(AppNavigation.isScrollableDest(AppNavigation.parse("models:import")!!))
         assertFalse(AppNavigation.isScrollableDest(AppNavigation.parse("tab:history")!!))
         // The SPI error message derives from the same helper: pin that the
@@ -67,7 +67,7 @@ class AppNavigationTest {
         assertEquals(
             setOf("settings:automation", "settings:performance", "settings:speaker",
                 "settings:prompt", "settings:icon_picker", "settings:export",
-                "settings:voice_notes", "models:gemma"),
+                "settings:voice_notes", "settings:backup"),
             AppNavigation.scrollableDestTokens().toSet())
     }
 
@@ -90,7 +90,7 @@ class AppNavigationTest {
         // The four SettingsTab sections and the three sub-screens, pinned so
         // a UI rename without a parser update (or the reverse) fails here.
         assertEquals(setOf("transcription", "appearance", "advanced", "feedback"), AppNavigation.SECTION_KEYS)
-        assertEquals(setOf("icon_picker", "prompt", "per_app", "export", "speaker", "performance", "automation", "voice_notes"), AppNavigation.SUBPAGE_KEYS)
+        assertEquals(setOf("icon_picker", "prompt", "per_app", "export", "speaker", "performance", "automation", "voice_notes", "backup"), AppNavigation.SUBPAGE_KEYS)
         assertEquals(setOf("import", "gemma"), AppNavigation.MODEL_KEYS)
         assertEquals(listOf("history", "models", "settings"), AppNavigation.TAB_KEYS)
         // TASK-617 F2: the derived indices pin the TabRow ORDER, not just

@@ -51,6 +51,15 @@ internal class TestSpiOps(
     /** TASK-791 device proof: the unload op needs the live backend manager
      *  (same debug-passes-it story as the two params above). */
     private val backendManager: com.antivocale.app.transcription.TranscriptionBackendManager? = null,
+    /** TASK-826: the detection coordinator's armed flag, passed by the
+     *  debug receiver as { coordinator.armed }; null under the shared unit
+     *  fakes, where the op answers null for the field. */
+    private val detectionArmed: (() -> Boolean)? = null,
+    /** TASK-827 review F3: the coordinator's gate state next to armed, so a
+     *  scripted trial can see the DESIRED-vs-completed divergence the
+     *  coordinator's KDoc names (gateState=Active with armed=false after a
+     *  failed subscribe); same null-under-fakes story. */
+    private val detectionGateState: (() -> com.antivocale.app.data.VoiceNoteGateState)? = null,
 ) {
 
     suspend fun handle(
@@ -72,6 +81,9 @@ internal class TestSpiOps(
             OP_CLIPBOARD -> clipboard()
             OP_NOTIFICATIONS -> notifications()
             OP_UNLOAD -> unload()
+            OP_VOICE_NOTE_STATE -> voiceNoteState()
+            OP_MODEL_DOWNLOAD -> modelDownload(entry, value)
+            OP_CLEAR_ORPHANED -> clearOrphaned(entry, value)
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -93,6 +105,7 @@ internal class TestSpiOps(
         return JSONObject()
             .put("op", OP_GET)
             .put("vadEnabled", preferences.vadEnabled.first())
+            .put("freezeProtectionEnabled", preferences.freezeProtectionEnabled.first())
             .put("progressiveEnabled", preferences.progressiveTranscription.first())
             .put("earlyPreviewEnabled", preferences.earlyPreviewEnabled.first())
             .put("interruptedRunNotifications", preferences.interruptedRunNotifications.first())
@@ -112,6 +125,7 @@ internal class TestSpiOps(
             .put("activeModelPath", activeModelPath(backend) ?: JSONObject.NULL)
             .put("paths", paths)
             .put("summarizeEnabled", preferences.summarizeEnabled.first())
+            .put("keywordBiasing", preferences.keywordBiasing.first())
             .put("autoCopyEnabled", preferences.autoCopyEnabled.first())
             .put("signatureEnabled", preferences.signatureEnabled.first())
             .put("signatureText", preferences.signatureText.first())
@@ -195,6 +209,7 @@ internal class TestSpiOps(
      */
     private val booleanKeys: Map<String, suspend (Boolean) -> Unit> = mapOf(
         "vad" to preferences::saveVadEnabled,
+        "freeze_protection" to preferences::saveFreezeProtectionEnabled,
         "progressive" to preferences::saveProgressiveTranscription,
         // TASK-186: the early-preview gate (device trials flip it per clip).
         "early_preview" to preferences::saveEarlyPreviewEnabled,
@@ -259,6 +274,8 @@ internal class TestSpiOps(
     /** Free-text preferences: written as given, no parse. */
     private val textKeys: Map<String, suspend (String) -> Unit> = mapOf(
         "punctuation_prompt" to preferences::savePunctuationPrompt,
+        // TASK-858: the whistle keyword-biasing terms (newline-separated).
+        "keyword_biasing" to preferences::saveKeywordBiasing,
         "default_prompt" to preferences::saveDefaultPrompt,
         "summary_prompt" to preferences::saveSummaryPrompt,
         "signature_text" to preferences::saveSignatureText,
@@ -397,6 +414,8 @@ internal class TestSpiOps(
     private val blankClearingKeys = setOf(
         "external_catalog_url", "output_folder", "signature_text",
         "punctuation_prompt", "default_prompt", "summary_prompt",
+        // TASK-858: blank is the biasing's off (no terms).
+        "keyword_biasing",
         // TASK-740: blank is the pin's documented clear (inherit active).
         "refinement_model",
     )
@@ -421,7 +440,7 @@ internal class TestSpiOps(
      * echoing a truncated value for a verbatim key would recreate the exact
      * ack-vs-readback divergence this exists to close (TASK-485).
      */
-    private val promptCappedKeys = setOf("summary_prompt", "punctuation_prompt", "default_prompt")
+    private val promptCappedKeys = setOf("summary_prompt", "punctuation_prompt", "default_prompt", "keyword_biasing")
     private fun setAck(key: String, value: String, entry: String?): String = JSONObject()
         .put("op", OP_SET)
         .put("key", key)
@@ -571,6 +590,82 @@ internal class TestSpiOps(
     }
 
     /**
+     * The catalog entry/variant validation trio model_download and
+     * clear_orphaned share (TASK-668's gate round: the two copies had
+     * already drifted - one trimmed, one raw; raw wins, preserving
+     * model_download's shipped behavior). Returns the error payload, or
+     * null when the pair resolves.
+     */
+    private fun validateCatalogVariant(op: String, entry: String?, variant: String?): String? {
+        if (entry.isNullOrBlank() || variant.isNullOrBlank()) {
+            return JSONObject().put("op", op)
+                .put("error", "usage: op=$op entry=<catalog id> value=<variant name>").toString()
+        }
+        val catalogEntry = com.antivocale.app.data.catalog.BundledCatalog.byId(entry)
+            ?: return JSONObject().put("op", op)
+                .put("error", "unknown catalog entry '$entry'").toString()
+        if (catalogEntry.variant(variant) == null) {
+            return JSONObject().put("op", op)
+                .put("error", "entry '$entry' has no variant '$variant'").toString()
+        }
+        return null
+    }
+
+    /**
+     * TASK-365: dispatches a catalog model download through the SAME
+     * ExtractionService intent the UI confirm dialog builds (modelKey +
+     * variant), so download trials are one broadcast instead of scroll-tap-
+     * confirm. The service's own progress flows through its notification and
+     * the Models-tab state as usual. Requires the app context (the shared
+     * unit fakes answer the standard null-context error).
+     */
+    private fun modelDownload(entry: String?, variant: String?): String {
+        val context = requireContext(OP_MODEL_DOWNLOAD)
+        validateCatalogVariant(OP_MODEL_DOWNLOAD, entry, variant)?.let { return it }
+        val entryId = entry ?: error("validated")
+        val variantName = variant ?: error("validated")
+        // API 31+ rejects a foreground-service start from a backgrounded app
+        // with a typed exception; the deliberate arm names the remedy instead
+        // of leaking the platform message (the op=nav dest=models step is the
+        // documented foregrounding move).
+        return try {
+            androidx.core.content.ContextCompat.startForegroundService(
+                context,
+                com.antivocale.app.service.ExtractionService.downloadIntent(context, entryId, variantName))
+            JSONObject().put("op", OP_MODEL_DOWNLOAD)
+                .put("dispatched", "$entryId/$variantName")
+                .put("note", "progress rides the service notification and the Models-tab state")
+                .toString()
+        } catch (e: Exception) {
+            JSONObject().put("op", OP_MODEL_DOWNLOAD)
+                .put("error", "foreground-service start rejected; open the app first (op=nav dest=models)")
+                .toString()
+        }
+    }
+
+    /**
+     * TASK-870's lesson: the Orphaned/Clear path scriptable. Deletes the
+     * variant's directory directly (the same filesystem effect as the UI's
+     * clearOrphanedFiles; the Models tab re-derives its state on the next
+     * sweep). deleted=true is the dir-gone POSTCONDITION (also true when
+     * the dir did not exist; false is near-unreachable: only a missing
+     * dir-name mapping or a throwing delete). usage:
+     * op=clear_orphaned entry=<catalog id> value=<variant>.
+     */
+    private fun clearOrphaned(entry: String?, variant: String?): String {
+        val context = requireContext(OP_CLEAR_ORPHANED)
+        validateCatalogVariant(OP_CLEAR_ORPHANED, entry, variant)?.let { return it }
+        val entryId = entry ?: error("validated")
+        val variantName = variant ?: error("validated")
+        val removed = com.antivocale.app.transcription.SherpaModelDownloader.of(entryId)
+            .deleteModel(context, variantName)
+        return JSONObject().put("op", OP_CLEAR_ORPHANED)
+            .put("deleted", removed)
+            .put("variant", "$entryId/$variantName")
+            .toString()
+    }
+
+    /**
      * TASK-625 trial tool: posts the production memory-failure error
      * notification (the exact ResultNotificationFactory builder both error
      * surfaces use) so the Open-setting action can be exercised on device
@@ -672,6 +767,63 @@ internal class TestSpiOps(
     private fun requireContext(op: String): android.content.Context =
         appContext ?: error("$op requires a Context (debug receiver only)")
 
+    /**
+     * TASK-826: the voice-note detection trial's assertion surface, so a
+     * scripted device trial reads the coordinator's conjunction
+     * mechanically instead of logcat. Reports the four facts the arm gate
+     * consumes (preference, runtime audio permission, stored URI, LIVE
+     * grant) plus the armed flag itself and [willArm], the FULL arm
+     * conjunction evaluated server-side, detectionAvailable included (the
+     * production permission checker folds that platform term in, so on
+     * Android 10 armed is correctly false; audioPermissionGranted is the
+     * permission probe alone). A script asserts armed == willArm after a
+     * beat. willArm deliberately re-derives the conjunction INDEPENDENTLY
+     * of reconcile: calling the coordinator's own gate would make the
+     * assertion tautological, and a gate term added later surfaces here
+     * as a failed armed==willArm. Context-derived probes answer null
+     * under the shared unit fakes (the clipboard degrade story), and
+     * willArm follows: null in, null out, never a fabricated false.
+     */
+    private suspend fun voiceNoteState(): String {
+        val enabled = preferences.voiceNoteDetectionEnabled.first()
+        val uri = preferences.voiceNoteTreeUri.first()
+        val audioGranted = appContext?.let {
+            com.antivocale.app.data.VoiceNoteDetectionPermission.granted(it)
+        }
+        // No URI saved = no grant, honestly false; a saved URI under the
+        // fakes = probe unavailable, null.
+        val grantHeld = if (uri == null) {
+            false
+        } else {
+            appContext?.let {
+                com.antivocale.app.util.TreeUris
+                    .holdsPersistableReadGrant(it, android.net.Uri.parse(uri))
+            }
+        }
+        val armed = detectionArmed?.invoke()
+        // The coordinator's REAL conjunction, detectionAvailable included:
+        // the production permission checker folds it into audioReadGranted
+        // (AppModule), so on Android 10 the coordinator stays disarmed no
+        // matter what the three visible fields say (review F1).
+        val willArm: Boolean? =
+            if (audioGranted != null && grantHeld != null) {
+                enabled && audioGranted && grantHeld &&
+                    com.antivocale.app.data.VoiceNoteDetectionPermission.detectionAvailable()
+            } else {
+                null
+            }
+        return JSONObject()
+            .put("op", OP_VOICE_NOTE_STATE)
+            .put("enabled", enabled)
+            .put("treeUri", uri ?: JSONObject.NULL)
+            .put("audioPermissionGranted", audioGranted ?: JSONObject.NULL)
+            .put("grantHeld", grantHeld ?: JSONObject.NULL)
+            .put("armed", armed ?: JSONObject.NULL)
+            .put("gateState", detectionGateState?.invoke()?.javaClass?.simpleName ?: JSONObject.NULL)
+            .put("willArm", willArm ?: JSONObject.NULL)
+            .toString()
+    }
+
     private fun help(error: String? = null): String = JSONObject()
         .apply { error?.let { put("error", it) } }
         .put("op", OP_HELP)
@@ -684,7 +836,7 @@ internal class TestSpiOps(
             "usage",
             "am broadcast -n com.antivocale.app.debug/com.antivocale.app.receiver.TestSpiReceiver " +
                 "-a com.antivocale.app.TEST_SPI --es op=<${OPS.joinToString("|")}> " +
-                "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path only)] " +
+                "[--es key=<setKey> --es value=<newValue>] [--es entry=<catalogId> (sherpa_path/model_download/clear_orphaned)] " +
                 "[--es url=<entry-or-repo url> (import only)] [--es family=<ModelFamily> (import only, optional override)] "
             + "[--es model_type=<subtype> (import only, CTC: nemo_ctc/zipformer_ctc/omnilingual_ctc/paraformer)]")
         .put(
@@ -706,15 +858,25 @@ internal class TestSpiOps(
         const val OP_CLIPBOARD = "clipboard"
         const val OP_NOTIFICATIONS = "notifications"
         const val OP_UNLOAD = "unload"
+        /** TASK-365: dispatch a catalog model download (the UI confirm dialog's
+         *  action, scriptable: entry=<catalog id> value=<variant name>). */
+        const val OP_MODEL_DOWNLOAD = "model_download"
+        /** TASK-870's lesson: the Orphaned/Clear affordance had no scriptable
+         *  path, so its device trial fell back to UI taps (which synthetic
+         *  input cannot reach on the Compose button). Mirrors model_download's
+         *  arg shape: entry=<catalog id> value=<variant name>. */
+        const val OP_CLEAR_ORPHANED = "clear_orphaned"
+        const val OP_VOICE_NOTE_STATE = "voice_note_state"
         const val OP_HELP = "help"
 
         /**
          * Every op handle() dispatches; help() renders the array and the
-         * usage line from this one list. The receiver's op=nav (TASK-486)
-         * is deliberately absent: it is intercepted receiver-side before
-         * handle() runs, so it lives in the receiver's own table.
+         * usage line from this one list. The receiver's ops nav (TASK-486)
+         * and voice_note_grant_open (TASK-826) are deliberately absent:
+         * both are intercepted receiver-side before handle() runs, so they
+         * live in the receiver's own table.
          */
-        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_HELP)
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_HELP)
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024

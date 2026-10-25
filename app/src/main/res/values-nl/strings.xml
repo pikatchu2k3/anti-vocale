@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Anti-Vocale</string>
 
     <!-- Tab names -->
     <string name="model_tab">Modellen</string>
@@ -186,7 +185,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (streaming)</string>
-    <string name="nemotron_description">~640MB • Streaming-transducer</string>
+    <string name="nemotron_description">~640MB • Streaming • Kwaliteit boven snelheid</string>
     <string name="nemotron_download_confirm_title">%1$s downloaden?</string>
     <string name="nemotron_download_confirm_message">Dit downloadt ~%1$dMB. Nemotron 3.5 is een streaming meertalig ASR-model.</string>
     <string name="nemotron_download">Nemotron downloaden</string>
@@ -198,6 +197,11 @@
     <string name="gigaam_title">GigaAM v3</string>
     <string name="gigaam_description">~326MB • Snel • Russische ASR met interpunctie</string>
     <string name="gigaam_name">GigaAM v3</string>
+    <string name="whistle_name">Whistle (17 MB)</string>
+    <string name="whistle_description">~17MB • Zeer snel • 7 talen, automatisch gedetecteerd</string>
+    <string name="benchmark_unsupported_engine">Benchmarken wordt voor deze engine niet ondersteund</string>
+    <string name="model_info_best_for_whistle">Snelste start op het apparaat: 17 MB, 7 talen, direct eerste tekst</string>
+    <string name="model_info_notes_whistle">Minder nauwkeurig dan Parakeet in het Italiaans; muziek kan als tekst verschijnen (geen muziekfilter)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 downloaden?</string>
     <string name="gigaam_download_confirm_message">Dit downloadt ~%1$dMB. GigaAM v3 is een uitsluitend Russisch ASR-model van Sber met sterke Russische nauwkeurigheid.</string>
     <string name="gigaam_download">GigaAM downloaden</string>
@@ -1257,7 +1261,7 @@
     <string name="voice_note_identity_description">Labels transcribed voice notes with the sender\'s name, shared here or automatic. WhatsApp only for now. The name appears only when the note\'s notification arrived while this was on and its length matches (no guessed names); the waiting list lives in memory only. Requires notification access.</string>
     <string name="voice_note_identity_grant_hint">Notification access is off. Tap to open the system setting and enable it for this app.</string>
     <string name="voice_note_detection_title">Transcriptie van spraakberichten</string>
-    <string name="voice_note_detection_description">Transcribes new WhatsApp voice notes as they arrive, while the app is running. If Android blocks a background start, a one-tap notification starts it. A note is read only to transcribe it, on this device; while off, nothing is read. Requires audio access.</string>
+    <string name="voice_note_detection_description">Transcribeert nieuwe WhatsApp-spraakberichten zodra ze binnenkomen, terwijl de app draait. Als Android een achtergrondstart blokkeert, start een melding met één tik het alsnog. Een bericht wordt uitsluitend gelezen om het te transcriberen, op dit apparaat; uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
     <string name="voice_note_detection_grant_hint">Audio-toegang staat uit. Tik om de app-instellingen te openen en dit in te schakelen; transcriptie start zodra het is verleend.</string>
     <string name="voice_note_folder_grant_rejected">Dit is niet de map met WhatsApp-spraakberichten. Kies de map met de naam WhatsApp Voice Notes en probeer het opnieuw.</string>
     <string name="voice_note_folder_card_title">Map met spraakberichten</string>
@@ -1273,4 +1277,40 @@
     <string name="voice_note_folder_sheet_step2">Scroll omlaag langs het pad naar de map met spraakberichten:</string>
     <string name="voice_note_folder_sheet_step3">Tik met de map WhatsApp Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
     <string name="voice_note_folder_sheet_open">Kiezer openen</string>
+
+    <!-- Back-up en overdracht (TASK-843/844, GH #158) -->
+
+    <!-- TASK-840 (GH #157 pt 1): result-row playback -->
+    <string name="result_play_audio">Audio afspelen</string>
+    <string name="result_pause_audio">Audio pauzeren</string>
+    <string name="duplicate_found_title">Al getranscribeerd</string>
+    <string name="duplicate_found_message">Dit bestand is al getranscribeerd met %1$s.</string>
+    <string name="duplicate_found_open">Resultaat openen</string>
+    <string name="duplicate_found_again">Opnieuw transcriberen</string>
+    <string name="result_language_advisory">Dit model detecteert de taal zelf. Vergrendel %1$s door de taal in Instellingen te kiezen (modellen die de taalinstelling volgen, zoals Whisper, staan daar vermeld).</string>
+    <string name="result_skip_silences">Stiltes overslaan</string>
+    <string name="result_playback_speed">Afspeelsnelheid (%1$s)</string>
+
+    <string name="backup_transfer_title">Back-up en overdracht</string>
+    <string name="backup_transfer_summary">Bewaar je instellingen en geschiedenis in een bestand, of zet ze terug op een ander apparaat</string>
+    <string name="backup_export_title">Back-up exporteren</string>
+    <string name="backup_export_description">Schrijft één bestand met je instellingen en je volledige transcriptiegeschiedenis. Het bestand is platte tekst: wie het heeft, kan elke transcriptie en elke afzendernaam lezen.</string>
+    <string name="backup_export_action">Back-upbestand maken</string>
+    <string name="backup_import_title">Back-up importeren</string>
+    <string name="backup_import_description">Voegt instellingen en eerdere transcripties uit een back-upbestand toe aan dit apparaat. Wat je al hebt, blijft staan.</string>
+    <string name="backup_import_action">Back-upbestand kiezen</string>
+    <string name="backup_export_progress">Back-up schrijven…</string>
+    <string name="backup_import_progress">Back-up lezen…</string>
+    <string name="backup_export_done">Back-up opgeslagen</string>
+    <string name="backup_export_failed">Back-up schrijven mislukt</string>
+    <string name="backup_import_done">Geïmporteerd: %1$d, overgeslagen: %2$d</string>
+    <string name="backup_import_failed">Back-upbestand lezen mislukt</string>
+    <string name="backup_import_history_failed">Instellingen geïmporteerd, maar de geschiedenis kon niet worden toegevoegd. Opnieuw proberen is veilig.</string>
+    <string name="backup_disclosure_title">Voordat je exporteert</string>
+    <string name="backup_disclosure_body">De back-up bevat elke transcriptie, afzendernaam en sprekerlabels in leesbare tekst. Deel hem alleen met ontvangers die je vertrouwt.</string>
+    <string name="keyword_biasing_title">Sleutelwoord-voorkeur (Whistle)</string>
+    <string name="keyword_biasing_description">Namen, plaatsen of jargon die het Whistle-model moet bevoordelen, een per regel. Geldt vanaf de volgende transcriptie, zonder herladen.</string>
+    <string name="keyword_biasing_placeholder">Eén term per regel</string>
+    <string name="freeze_protection_title">Bescherming van achtergrondtranscriptie</string>
+    <string name="freeze_protection_description">Houdt tijdens de transcriptie een stille audiostream actief zodat agressieve batterijbesparers de app niet pauzeren. Zet dit aan als de transcriptie stopt wanneer het scherm uit is (sommige Oppo-, Realme-, OnePlus- en Vivo-toestellen).</string>
 </resources>

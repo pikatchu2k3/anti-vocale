@@ -32,12 +32,34 @@ class VoiceNoteAutoTranscriberTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    private fun impl(resolveResult: String?) = VoiceNoteAutoTranscriber(
+    private val resolvedUris = mutableListOf<String?>()
+
+    private fun impl(
+        resolveResult: String?,
+        alreadyTranscribed: Boolean = false,
+    ) = VoiceNoteAutoTranscriber(
         context,
-        mockk<VoiceNoteTreeGrant> { coEvery { resolve(any()) } returns resolveResult },
+        mockk<VoiceNoteTreeGrant> {
+            coEvery { resolve(any(), any()) } coAnswers {
+                resolvedUris += firstArg<String?>()
+                resolveResult
+            }
+        },
         mockk<AudioPreprocessor>(),
         VoiceNoteIdentityCache(),
+        mockk<VoiceNoteDuplicateGuard> {
+            coEvery { alreadyTranscribed(any()) } returns alreadyTranscribed
+        },
     )
+
+    @Test
+    fun `enqueue forwards the live tree uri into resolve`() = kotlinx.coroutines.runBlocking {
+        // TASK-832 review F1: the middle hop of the three-hop chain. The
+        // coordinator pins its own hand-off; this pins enqueue's.
+        impl(resolveResult = null)
+            .enqueue("/w/PTT-1.opus", 1_000L, treeUri = "content://tree/live")
+        assertEquals(listOf<String?>("content://tree/live"), resolvedUris)
+    }
 
     @Test
     fun `serviceIntent mirrors the share path's audio shape`() {
@@ -72,10 +94,24 @@ class VoiceNoteAutoTranscriberTest {
     }
 
     @Test
+    fun `a note already transcribed is silently deduped`() = runBlocking {
+        // TASK-842: WhatsApp re-delivering a completed note (redownload,
+        // folder scan) must not re-run the transcription; the guard skips
+        // BEFORE the grant resolve, so an already-transcribed note costs
+        // nothing.
+        impl(resolveResult = "/local/n.opus", alreadyTranscribed = true)
+            .enqueue("/w/PTT-1.opus", 1_000L, treeUri = "content://tree/test")
+        assertEquals(
+            "no service may start for a deduped note",
+            null,
+            shadowOf(context.applicationContext as android.app.Application).nextStartedService)
+    }
+
+    @Test
     fun `an unresolvable note enqueues nothing`() = runBlocking {
         // resolve returns null (no grant, folder moved, file deleted): the
         // honest skip, and nothing may start.
-        impl(resolveResult = null).enqueue("/gone/PTT-1.opus", 1_000L)
+        impl(resolveResult = null).enqueue("/gone/PTT-1.opus", 1_000L, treeUri = "content://tree/test")
         assertEquals(
             "no service may start for an unresolvable note",
             null,

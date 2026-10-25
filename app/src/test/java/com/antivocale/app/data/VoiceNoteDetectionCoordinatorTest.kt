@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,6 +42,7 @@ class VoiceNoteDetectionCoordinatorTest {
         val detections = MutableSharedFlow<VoiceNoteEntry>(extraBufferCapacity = 8)
         val detector = mockk<VoiceNoteDetector>()
         val enqueued = mutableListOf<String>()
+        val enqueuedUris = mutableListOf<String?>()
         val preferences = FakePreferencesManager()
         val treeGrant = mockk<VoiceNoteTreeGrant>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
@@ -49,7 +51,10 @@ class VoiceNoteDetectionCoordinatorTest {
             preferences,
             treeGrant,
             mockk<VoiceNoteAutoTranscriber> {
-                coEvery { enqueue(any(), any()) } coAnswers { enqueued += firstArg<String>() }
+                coEvery { enqueue(any(), any(), any()) } coAnswers {
+                    enqueued += firstArg<String>()
+                    enqueuedUris += thirdArg<String?>()
+                }
             },
             VoiceNotePermissionChecker { permissionGranted() },
             scope,
@@ -64,6 +69,7 @@ class VoiceNoteDetectionCoordinatorTest {
             every { detector.detections } returns detections
             every { detector.subscribe() } just Runs
             every { detector.dispose() } just Runs
+            every { detector.refresh() } just Runs
         }
 
         /**
@@ -102,7 +108,70 @@ class VoiceNoteDetectionCoordinatorTest {
         verify(exactly = 1) { h.detector.subscribe() }
         h.untilEnqueued(entry())
         assertEquals(listOf("/voice/PTT-1.opus"), h.enqueued)
+        // TASK-832: the LIVE uri travelled coordinator -> enqueue (a
+        // regression to a null pass-through skips every note silently).
+        assertEquals(listOf<String?>(TREE_URI), h.enqueuedUris)
         h.scope.cancel()
+    }
+
+    @Test
+    fun `a re-picked grant swaps the live uri without re-arming`() = runBlocking {
+        // TASK-832 review F1: the latest-wins field. A live-to-live re-pick
+        // short-circuits reconcile (shouldRun == active, no re-arm), so the
+        // STILL-RUNNING collector must see the NEW uri; capturing at arm
+        // time would strand every later note on the released old grant.
+        val h = Harness(permissionGranted = { true })
+        every { h.treeGrant.holdsGrant(any()) } returns true
+        h.coordinator.reconcile(prefEnabled = true, treeUri = "content://tree/a")
+        h.coordinator.reconcile(prefEnabled = true, treeUri = "content://tree/b")
+        // No second subscribe: the short-circuit path.
+        verify(exactly = 1) { h.detector.subscribe() }
+        h.untilEnqueued(entry())
+        assertEquals(listOf<String?>("content://tree/b"), h.enqueuedUris)
+        h.scope.cancel()
+    }
+
+    @Test
+    fun `armed mirrors the reconcile outcome in both directions`() = runBlocking {
+        // TASK-826: the SPI's voice_note_state reads this flag from a
+        // binder thread, so the pin is the FLAG, not just the observable
+        // side effects (subscribe/dispose already pinned by the siblings).
+        val h = Harness(permissionGranted = { true })
+        assertFalse(h.coordinator.armed)
+        h.coordinator.reconcile(prefEnabled = true, treeUri = TREE_URI)
+        assertTrue(h.coordinator.armed)
+        h.coordinator.reconcile(prefEnabled = false, treeUri = TREE_URI)
+        assertFalse(h.coordinator.armed)
+        h.scope.cancel()
+    }
+
+    @Test
+    fun `gateState is the one derivation the Settings card renders`() = runBlocking {
+        // TASK-827: every reconcile pass publishes the conjunction's
+        // outcome; the card renders this flow and nothing re-derives the
+        // conjunction screen-side. The four states are pinned through the
+        // same transitions the siblings drive.
+        val h = Harness(permissionGranted = { true })
+        assertEquals(VoiceNoteGateState.Inactive, h.coordinator.gateState.value)
+        h.coordinator.reconcile(prefEnabled = true, treeUri = TREE_URI)
+        assertEquals(VoiceNoteGateState.Active, h.coordinator.gateState.value)
+        h.coordinator.reconcile(prefEnabled = false, treeUri = TREE_URI)
+        assertEquals(VoiceNoteGateState.Inactive, h.coordinator.gateState.value)
+
+        val deadGrant = Harness(permissionGranted = { true })
+        every { deadGrant.treeGrant.holdsGrant(TREE_URI) } returns false
+        deadGrant.coordinator.reconcile(prefEnabled = true, treeUri = TREE_URI)
+        assertEquals(VoiceNoteGateState.GrantMissing, deadGrant.coordinator.gateState.value)
+        // The null-uri disjunct of the same branch (the Remove path's
+        // production route): never supply a non-null URI alone.
+        deadGrant.coordinator.reconcile(prefEnabled = true, treeUri = null)
+        assertEquals(VoiceNoteGateState.GrantMissing, deadGrant.coordinator.gateState.value)
+
+        val noPermission = Harness(permissionGranted = { false })
+        noPermission.coordinator.reconcile(prefEnabled = true, treeUri = TREE_URI)
+        assertEquals(VoiceNoteGateState.PermissionMissing, noPermission.coordinator.gateState.value)
+
+        h.scope.cancel(); deadGrant.scope.cancel(); noPermission.scope.cancel()
     }
 
     @Test
@@ -229,6 +298,26 @@ class VoiceNoteDetectionCoordinatorTest {
         h.preferences._voiceNoteDetectionEnabled.value = false
         // Blocking verify: the collector runs on a real dispatcher.
         verify(timeout = 5_000) { h.detector.dispose() }
+        h.scope.cancel()
+    }
+
+    @Test
+    fun `while armed the detector is blindly re-subscribed on a cadence`() = runBlocking {
+        // TASK-830: the watches can die silently (the state lies), so the
+        // cure is periodic refresh, not checks. Driven through reconcile
+        // directly (the lifecycle idiom of this file): dispose completes
+        // inside reconcile(false), so the post-disarm count is exact.
+        var refreshes = 0
+        val h = Harness({ true })
+        every { h.detector.refresh() } answers { refreshes++ }
+        h.coordinator.rearmIntervalMs = 100L
+        h.coordinator.reconcile(true, TREE_URI)
+        delay(400)
+        assertTrue("cadence loop ran (refreshes=$refreshes)", refreshes >= 2)
+        h.coordinator.reconcile(false, TREE_URI)
+        val atDisarm = refreshes
+        delay(250)
+        assertEquals("disarm stopped the cadence", atDisarm.toLong(), refreshes.toLong())
         h.scope.cancel()
     }
 }

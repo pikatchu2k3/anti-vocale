@@ -146,11 +146,27 @@ object ModelInfoProvider {
                 performanceNotes = R.string.model_info_notes_gigaam
             ))
 
-            // Shared base for every Gemma variant: all are LLMs with the same hard
-            // 30s audio cap (GH #49); per-variant entries override threads/quant.
+            // TASK-853: the Cactus Whistle engine (single .cact file).
+            put("whistle-v1", ModelInfo(
+                architectureType = ArchitectureType.ENCODER_DECODER,
+                recommendedThreads = 1..4,
+                quantizationLevel = "INT8",
+                isArm64Only = true,
+                supportsProgressiveTranscription = false,
+                vadRecommended = false,
+                benchmarkWer = null,
+                relativeSpeed = null,
+                bestFor = R.string.model_info_best_for_whistle,
+                performanceNotes = R.string.model_info_notes_whistle
+            ))
+
+            // Shared base for every Gemma variant. TASK-365: the audio cap
+            // moved to the catalog flag (chunkDurationSeconds 30: the LLM
+            // chunks and concatenates, the label says any-length-split);
+            // per-variant entries override threads/quant.
             val gemmaInfoBase = ModelInfo(
                 architectureType = ArchitectureType.LLM,
-                maxAudioDuration = 30,
+                maxAudioDuration = null,
                 recommendedThreads = 4..6,
                 quantizationLevel = null,
                 isArm64Only = false,

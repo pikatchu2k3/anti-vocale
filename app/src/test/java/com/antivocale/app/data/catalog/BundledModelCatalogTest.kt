@@ -26,9 +26,12 @@ class BundledModelCatalogTest {
         ModelCatalogJson.parseCatalog(asset().readText())
 
     @Test
-    fun `catalog covers exactly the five built-in sherpa backends with unique ids`() {
+    fun `catalog covers exactly the seven built-in backends with unique ids`() {
         val models = catalog()
-        assertEquals(5, models.size)
+        // TASK-853: five sherpa entries + the whistle engine entry (the
+        // ALL list carries all six; the whistle one is downloaded through
+        // the same catalog channel).
+        assertEquals(7, models.size)
         assertEquals(BuiltInBackendIds.ALL.toSet(), models.map { it.id }.toSet())
     }
 
@@ -179,8 +182,17 @@ class BundledModelCatalogTest {
     @Test
     fun `every variant is well-formed and resolvable`() {
         for (m in catalog()) {
-            assertTrue("${m.id}: runtime", m.runtime == "offline" || m.runtime == "online")
-            assertTrue("${m.id}: modelType required", m.modelType.isNotBlank() || m.isStreaming)
+            // The SAME set the parser accepts (a mirror here drifted once:
+            // the parser widened for litertlm and this pin kept two values).
+            assertTrue("${m.id}: runtime", m.runtime in ModelCatalogJson.KNOWN_RUNTIMES)
+            // TASK-853: whistle runs its OWN engine (not sherpa), so it
+            // carries no sherpa modelType; the pin allows exactly that id.
+            // whistle (own engine) and llm (the litertlm lane) carry no
+            // sherpa modelType; the pin allows exactly those ids.
+            assertTrue("${m.id}: modelType required",
+                m.modelType.isNotBlank() || m.isStreaming ||
+                    m.id == BuiltInBackendIds.WHISTLE ||
+                    m.id == com.antivocale.app.transcription.LlmTranscriptionBackend.BACKEND_ID)
             assertTrue("${m.id}: variants", m.variants.isNotEmpty())
             for (v in m.variants) {
                 assertTrue("${m.id}/${v.name}: dirName", v.dirName.isNotBlank())
