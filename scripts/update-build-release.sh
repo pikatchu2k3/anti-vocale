@@ -127,6 +127,7 @@ mkdir -p "$(dirname "$BUILD_LOG")"
 if ! systemd-run --user --scope --quiet --collect \
         -p "MemoryMax=$BUILD_MEMORY_MAX" -p MemorySwapMax=2G \
         -- ./gradlew "$GRADLE_TASK" --no-daemon --max-workers=2 \
+           -PwhistleEngineDisabled \
            -Dkotlin.daemon.jvmargs=-Xmx1024m > "$BUILD_LOG" 2>&1; then
   tail -25 "$BUILD_LOG" >&2
   fail "BUILD FEHLGESCHLAGEN (Repair: $BUILD_LOG pruefen)"
