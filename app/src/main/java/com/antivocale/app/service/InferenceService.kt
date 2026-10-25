@@ -779,6 +779,16 @@ class InferenceService : Service(), TranscriptionListener {
                 val annotatedText = SubtitleFormatter.annotatedOrStored(resultText, segments)
                 val copied = autoCopyIfEnabled(annotatedText, sourcePackage)
                 val saveResult = saveTranscriptToFileIfEnabled(resultText, sourcePackage, segments, failedChunkCount)
+                // TASK-820 (GH #128): the save outcome belongs in the log row even
+                // when the result notification already carries it — the fork's
+                // unconditional notification must not drop the bookkeeping.
+                if (saveResult !is TranscriptFileSaver.SaveResult.NotConfigured) {
+                    logDao.setSaveOutcome(
+                        taskId,
+                        saveResult.savedFolderOrNull(),
+                        saveResult.savedFileNameOrNull(),
+                        saveResult.failureOrNull())
+                }
                 val refinedFrom = refinementOutcome?.takeIf { it != DualRefinementPolicy.NOT_REFINED }
                 // Upstream TASK-757 hat das Posten in ResultNotificationFactory.postResult
                 // verschoben; die frueher hier aufgerufene private showResultNotification gibt
@@ -795,6 +805,8 @@ class InferenceService : Service(), TranscriptionListener {
                     notRefined = refinementOutcome == DualRefinementPolicy.NOT_REFINED,
                     repetitionSuspected = repetitionSuspected,
                     originTag = "InferenceService",
+                    fromVoiceNote = fromVoiceNote,
+                    senderName = request?.senderName.takeIf { fromVoiceNote },
                 )
             } finally {
                 pendingResultNotifications.remove(coroutineContext[Job])

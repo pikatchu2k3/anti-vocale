@@ -866,6 +866,15 @@ class AudioPreprocessor @Inject constructor() {
         return VadGrouping(merged, mergedRanges, mergedAnchors)
     }
 
+    /** One merged chunk's grouping outputs (TASK-851 adds the anchors). */
+    data class VadGrouping(
+        val merged: List<FloatArray>,
+        val rangesMs: List<Pair<Long, Long>>,
+        /** Per-chunk (bufferMs, originalMs) anchors; EMPTY per chunk that is
+         *  one unstripped span (flat shift exact there). */
+        val anchorsMs: List<List<Pair<Long, Long>>>,
+    )
+
     /**
      * Opens [extractor]'s data source, accepting both plain absolute paths
      * (e.g. /storage/emulated/0/... from Tasker-style broadcast file_path
