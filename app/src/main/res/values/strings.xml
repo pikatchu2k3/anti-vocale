@@ -1268,8 +1268,8 @@
     <string name="model_shortcut_switch_label">Switch to %1$s</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
-    <string name="folder_watch_title">Scheduled folder watch</string>
-    <string name="folder_watch_description">Watches folders you choose and transcribes new audio files automatically. Scans run on a schedule the system allows; aggressive battery savers may delay them, and the manual scan always works.</string>
+    <string name="folder_watch_title">Folder watch</string>
+    <string name="folder_watch_description">Watches folders you choose and transcribes audio files saved there right away: the system wakes the app only when a new audio file is saved, nothing runs in the background meanwhile. Files already in a folder when you add it are skipped. The scheduled scan is a safety net, and the manual scan always works.</string>
     <string name="folder_watch_add">Watch a folder</string>
     <string name="folder_watch_empty">No folders watched yet.</string>
     <string name="folder_watch_scan_now">Scan now</string>

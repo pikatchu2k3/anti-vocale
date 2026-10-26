@@ -1127,12 +1127,30 @@ class SettingsViewModel @Inject constructor(
 
     fun addWatchedFolder(uri: Uri) = launchFolderWatch { app ->
         val name = com.antivocale.app.util.TreeUris.displayName(app, uri)
+        val key = uri.toString()
+        val isNew = scheduledFolderStore.byUri(key) == null
+        val added = scheduledFolderStore.add(
+            com.antivocale.app.data.WatchedFolder(treeUri = key, displayName = name),
+        ).first { it.treeUri == key }
+        // Baseline BEFORE the schedule exists: only files saved after the
+        // add are transcribed, the folder's backlog is not. A failed listing
+        // leaves the snapshot empty (the pre-baseline behavior), never a
+        // half-built one.
+        if (isNew) {
+            runCatching { com.antivocale.app.work.FolderListing.list(app, uri) }
+                .onFailure { Log.w(TAG, "Folder-watch baseline listing failed", it) }
+                .getOrNull()
+                ?.let { children ->
+                    scheduledFolderStore.saveSnapshot(
+                        key,
+                        com.antivocale.app.data.FolderScanPlanner.baseline(
+                            children.map { it.first }, System.currentTimeMillis(),
+                        ),
+                    )
+                }
+        }
         // The targeted reconcile: enqueue the changed folder, not the full sync.
-        com.antivocale.app.work.ScheduledFolderScheduler.enqueueFolder(
-            app, scheduledFolderStore.add(
-                com.antivocale.app.data.WatchedFolder(treeUri = uri.toString(), displayName = name),
-            ).first { it.treeUri == uri.toString() },
-        )
+        com.antivocale.app.work.ScheduledFolderScheduler.enqueueFolder(app, added)
     }
 
     fun removeWatchedFolder(treeUri: String) = launchFolderWatch { app ->

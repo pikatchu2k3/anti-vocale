@@ -1249,8 +1249,8 @@
     <string name="external_section_subtitle">Zusätzliche Sprach-Transkriptionsmodelle, die du selbst hinzufügst. Sie laufen neben den integrierten und erscheinen nach dem Import in der Liste unten.</string>
 
     <!-- TASK-741 (GH #125): the scheduled folder watch -->
-    <string name="folder_watch_title">Geplante Ordnerüberwachung</string>
-    <string name="folder_watch_description">Überwacht ausgewählte Ordner und transkribiert neue Audiodateien automatisch. Scans laufen, wenn das System es zulässt; aggressive Akkusparer können sie verzögern, der manuelle Scan funktioniert immer.</string>
+    <string name="folder_watch_title">Ordnerüberwachung</string>
+    <string name="folder_watch_description">Überwacht ausgewählte Ordner und transkribiert dort gespeicherte Audiodateien sofort: Das System weckt die App nur, wenn eine neue Audiodatei gespeichert wird, dazwischen läuft nichts im Hintergrund. Dateien, die beim Hinzufügen schon im Ordner liegen, werden übersprungen. Der geplante Scan dient als Absicherung, der manuelle Scan funktioniert immer.</string>
     <string name="folder_watch_add">Ordner überwachen</string>
     <string name="folder_watch_empty">Noch keine Ordner überwacht.</string>
     <string name="folder_watch_scan_now">Jetzt scannen</string>
