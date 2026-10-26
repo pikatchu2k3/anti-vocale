@@ -263,6 +263,9 @@
     <string name="error_model_load">Файл моделі може бути пошкоджений або мати хибний формат. Спробуйте завантажити його знову на вкладці «Модель».</string>
     <string name="error_model_external_corrupt">Файли імпортованої моделі пошкоджено. Видаліть її на вкладці Моделі та імпортуйте знову.</string>
     <string name="error_model_corrupt_healed">Деякі файли моделі були пошкоджені, і їх видалено. Відкрийте вкладку Моделі та завантажте модель знову.</string>
+    <string name="error_model_corrupt_sibling">Деякі файли моделі були пошкоджені, тому застосунок видалив цей варіант і переключився на копію, яка вже є на пристрої. Повторне завантаження не потрібне.</string>
+    <string name="error_model_missing_healed">Деякі файли моделі були відсутні, і їх видалено. Відкрийте вкладку Моделі та завантажте модель знову.</string>
+    <string name="error_model_missing_sibling">Деякі файли моделі були відсутні, тому застосунок видалив цей варіант і переключився на копію, яка вже є на пристрої. Повторне завантаження не потрібне.</string>
     <string name="error_native">Під час розшифровки сталася внутрішня помилка. Якщо це повторюється, спробуйте іншу модель.</string>
     <string name="error_not_initialized">Модель не завантажено. Відкрийте вкладку «Модель», щоб завантажити або вибрати модель.</string>
     <string name="error_model_unavailable">Вибрана модель більше недоступна. Відкрийте вкладку «Модель» і виберіть іншу.</string>
@@ -1073,6 +1076,10 @@
     <string name="voice_note_folder_sheet_step2">Пройдіть шляхом до папки голосових повідомлень:</string>
     <string name="voice_note_folder_sheet_step3">Вибравши папку WhatsApp Voice Notes (не відкриваючи), торкніться ВИКОРИСТАТИ ЦЮ ПАПКУ, а потім ДОЗВОЛИТИ.</string>
     <string name="voice_note_folder_sheet_open">Відкрити вибір</string>
+    <string name="voice_note_business_detection_description">Розшифровує нові голосові повідомлення WhatsApp Business у міру надходження, поки застосунок працює. Якщо Android блокує фоновий запуск, один дотик до сповіщення продовжить роботу. Повідомлення читається лише для розшифровки, на цьому пристрої; вимкнено, нічого не читається. Потрібен доступ до аудіо.</string>
+    <string name="voice_note_business_folder_grant_rejected">Це не папка голосових повідомлень WhatsApp Business. Виберіть папку з назвою WhatsApp Business Voice Notes і спробуйте ще раз.</string>
+    <string name="voice_note_business_folder_card_desc">Щоб читати повідомлення, один раз надайте доступ до папки, куди WhatsApp Business їх зберігає:</string>
+    <string name="voice_note_business_folder_sheet_step3">Вибравши папку WhatsApp Business Voice Notes (не відкриваючи), торкніться ВИКОРИСТАТИ ЦЮ ПАПКУ, а потім ДОЗВОЛИТИ.</string>
     <string name="share_targets_description">Показувати кожну завантажену модель окремим варіантом у меню надсилання Android. Коли ви надсилаєте аудіо через конкретну модель, вона використовується тимчасово лише для цієї розшифровки.</string>
     <string name="advanced_sharing_toggle">Показувати моделі в меню надсилання</string>
     <string name="share_targets_models_info">Кожна завантажена модель з\'явиться як окрема ціль надсилання. Видалення моделі прибирає її ціль надсилання.</string>
@@ -1325,4 +1332,13 @@
     <string name="keyword_biasing_placeholder">Один термін на рядок</string>
     <string name="freeze_protection_title">Захист фонового розшифрування</string>
     <string name="freeze_protection_description">Тримає беззвучний аудіопотік активним під час розшифрування, щоб агресивні заощаджувачі батареї не призупиняли застосунок. Увімкніть, якщо розшифрування зупиняється при вимкненому екрані (деякі Oppo, Realme, OnePlus та Vivo).</string>
+    <string name="history_db_recovered">Базу даних історії було пошкоджено та скинуто. Ваші попередні розшифрування збережено у файлі резервної копії.</string>
+    <string name="catchup_digest_title">Голосові повідомлення за час вашої відсутності</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">Триває розшифровка %1$d голосового повідомлення, що надійло, поки застосунок був закритий. Результати з\'являться в історії.</item>
+        <item quantity="few">Триває розшифровка %1$d голосових повідомлень, що надійшли, поки застосунок був закритий. Результати з\'являться в історії.</item>
+        <item quantity="many">Триває розшифровка %1$d голосових повідомлень, що надійшли, поки застосунок був закритий. Результати з\'являться в історії.</item>
+        <item quantity="other">Триває розшифровка %1$d голосових повідомлень, що надійшли, поки застосунок був закритий. Результати з\'являться в історії.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">Базу даних історії було пошкоджено та скинуто. Пошкоджені файли не вдалося зберегти.</string>
 </resources>

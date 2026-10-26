@@ -205,6 +205,9 @@
     <string name="error_model_load">O arquivo do modelo pode estar corrompido ou no formato errado. Baixe-o novamente na aba Modelo.</string>
     <string name="error_model_external_corrupt">Os arquivos do modelo importado estão corrompidos. Exclua-o na aba Modelos e importe-o novamente.</string>
     <string name="error_model_corrupt_healed">Alguns arquivos do modelo estavam corrompidos e foram removidos. Abra a aba Modelos e baixe o modelo de novo.</string>
+    <string name="error_model_corrupt_sibling">Alguns arquivos do modelo estavam corrompidos: o app removeu essa variante e mudou para a cópia já presente no dispositivo. Não é preciso baixar de novo.</string>
+    <string name="error_model_missing_healed">Alguns arquivos do modelo estavam ausentes e foram removidos. Abra a aba Modelos e baixe o modelo de novo.</string>
+    <string name="error_model_missing_sibling">Alguns arquivos do modelo estavam ausentes: o app removeu essa variante e mudou para a cópia já presente no dispositivo. Não é preciso baixar de novo.</string>
     <string name="error_native">Ocorreu um erro interno durante a transcrição. Se persistir, tente outro modelo.</string>
     <string name="error_not_initialized">Nenhum modelo carregado. Abra a aba Modelo para baixar ou selecionar um.</string>
     <string name="error_model_unavailable">O modelo selecionado não está mais disponível. Abra a aba Modelo e escolha outro.</string>
@@ -908,6 +911,10 @@
     <string name="voice_note_folder_sheet_step2">Desça pelo caminho até a pasta de notas de voz:</string>
     <string name="voice_note_folder_sheet_step3">Com a pasta WhatsApp Voice Notes selecionada (sem abri-la), toque em USAR ESTA PASTA e depois em PERMITIR.</string>
     <string name="voice_note_folder_sheet_open">Abrir o seletor</string>
+    <string name="voice_note_business_detection_description">Transcreve as mensagens de voz do WhatsApp Business assim que chegam, com o app em execução. Se o Android bloquear o início em segundo plano, uma notificação inicia com um toque. Uma mensagem só é lida para transcrever, neste dispositivo; desligado nada é lido. Requer acesso ao áudio.</string>
+    <string name="voice_note_business_folder_grant_rejected">Esta não é a pasta de notas de voz do WhatsApp Business. Escolha a pasta chamada WhatsApp Business Voice Notes e tente novamente.</string>
+    <string name="voice_note_business_folder_card_desc">Para ler as notas, conceda uma vez o acesso à pasta onde o WhatsApp Business as salva:</string>
+    <string name="voice_note_business_folder_sheet_step3">Com a pasta WhatsApp Business Voice Notes selecionada (sem abri-la), toque em USAR ESTA PASTA e depois em PERMITIR.</string>
     <string name="share_targets_description">Cada modelo baixado aparece como item separado no menu do sistema. O áudio é processado pelo modelo selecionado.</string>
     <string name="advanced_sharing_toggle">Mostrar modelos baixados</string>
     <string name="share_targets_models_info">Cada modelo baixado aparecerá como item no menu Compartilhar. Excluir um modelo remove-o do menu.</string>
@@ -1165,4 +1172,11 @@
     <string name="keyword_biasing_placeholder">Um termo por linha</string>
     <string name="freeze_protection_title">Proteção da transcrição em segundo plano</string>
     <string name="freeze_protection_description">Mantém um fluxo de áudio silencioso ativo durante a transcrição para que economizadores agressivos de bateria não suspendam o app. Ative se a transcrição parar com a tela apagada (alguns Oppo, Realme, OnePlus e Vivo).</string>
+    <string name="history_db_recovered">O banco de dados do histórico estava danificado e foi redefinido. Suas transcrições anteriores foram mantidas em um arquivo de backup.</string>
+    <string name="catchup_digest_title">Notas de voz de enquanto você estava fora</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">Transcrevendo %1$d nota de voz que chegou enquanto o app estava fechado. Os resultados aparecerão no histórico.</item>
+        <item quantity="other">Transcrevendo %1$d notas de voz que chegaram enquanto o app estava fechado. Os resultados aparecerão no histórico.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">O banco de dados do histórico estava danificado e foi redefinido. Não foi possível preservar os arquivos danificados.</string>
 </resources>

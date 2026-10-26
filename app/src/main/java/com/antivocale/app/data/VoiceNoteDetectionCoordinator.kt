@@ -2,8 +2,7 @@ package com.antivocale.app.data
 
 import android.util.Log
 import com.antivocale.app.di.ApplicationScope
-import javax.inject.Inject
-import javax.inject.Singleton
+import com.antivocale.app.service.ResultNotificationFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -82,15 +81,24 @@ sealed interface VoiceNoteGateState {
  * Idempotent across rapid toggling: transitions serialize on one mutex and
  * short-circuit when the desired state already holds; dispose is the
  * detector's reversible teardown, so off/on cycles re-arm detection.
+ *
+ * One coordinator per [VoiceNoteSource] (WhatsApp Business support), each
+ * with its own detector, preference pair, gate state and rearm cadence:
+ * the two clients arm and disarm independently, and turning one off
+ * stops only its own observers. The shared parts (tree-grant resolve,
+ * auto-transcriber, permission probe, enqueue) are the same singletons.
+ * [VoiceNoteDetectionCoordinators] owns the instances.
  */
-@Singleton
-class VoiceNoteDetectionCoordinator @Inject constructor(
+class VoiceNoteDetectionCoordinator(
     private val detector: VoiceNoteDetector,
+    /** TASK-889: the application context, for the burst digest post. */
+    private val appContext: android.content.Context,
     private val preferencesManager: PreferencesManager,
     private val voiceNoteTreeGrant: VoiceNoteTreeGrant,
     private val autoTranscriber: VoiceNoteAutoTranscriber,
     private val permissionChecker: VoiceNotePermissionChecker,
     @ApplicationScope private val scope: CoroutineScope,
+    val source: VoiceNoteSource = VoiceNoteSource.WHATSAPP,
 ) {
     private val lifecycleMutex = Mutex()
     private var started = false
@@ -140,6 +148,13 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
     private var collectJob: Job? = null
     private var rearmJob: Job? = null
 
+    /** TASK-889: the digest post target, built once per coordinator on
+     *  first burst (the factory's init creates its channel; per-emission
+     *  construction would pay that IPC on every post). Lazy because
+     *  construction needs a working Context and a disarmed coordinator
+     *  never posts. */
+    private val notificationFactory by lazy { ResultNotificationFactory(appContext) }
+
     /**
      * TASK-830: the blind re-subscribe cadence. A var (not a constructor
      * param: a defaulted Long param breaks Dagger's provider resolution,
@@ -176,15 +191,15 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
             // preference value is unchanged; reconcile short-circuits when
             // the desired state already holds.
             combine(
-                preferencesManager.voiceNoteDetectionEnabled,
+                preferencesManager.voiceNoteDetectionEnabled(source),
                 permissionPokes.onStart { emit(Unit) },
-                preferencesManager.voiceNoteTreeUri,
+                preferencesManager.voiceNoteTreeUri(source),
             ) { enabled, _, uri -> enabled to uri }.collect { (enabled, uri) ->
                 // Contained per emission: a failed (un)subscribe must
                 // not kill the collector, or a later toggle would
                 // silently stop reaching the detector.
                 runCatching { reconcile(enabled, uri) }
-                    .onFailure { Log.e(TAG, "detection reconcile failed for enabled=$enabled", it) }
+                    .onFailure { Log.e(TAG, "detection reconcile failed for ${source.name} enabled=$enabled", it) }
             }
         }
     }
@@ -224,9 +239,29 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
         lifecycleMutex.withLock {
             if (shouldRun == active) return
             if (shouldRun) {
+                // Subscribe FIRST: a throwing subscribe must leave active
+                // false (the gate-state KDoc's divergent-pair contract; the
+                // next reconcile retries). The 889 bursts Channel buffers,
+                // so the sweep's emissions inside subscribe survive until
+                // the collector below attaches - no ordering constraint.
                 withContext(Dispatchers.IO) { detector.subscribe() }
                 active = true
-                collectJob = scope.launch(Dispatchers.IO) { collectSignals() }
+                collectJob = scope.launch(Dispatchers.IO) {
+                    launch { collectSignals() }
+                    // TASK-889: the burst digest rides the same job as the
+                    // signal collector: one arm = one session, and the
+                    // cumulative total resets with it. The detector reports
+                    // each sweep round's actually-emitted count (the
+                    // immediate sweep plus the settle round's late
+                    // recoveries); ONE cumulative notification replaces the
+                    // burst's N per-note posts (suppressed at the service
+                    // via the request's catchup flag).
+                    var total = 0
+                    detector.catchUpBursts.collect { count ->
+                        total += count
+                        postCatchUpDigest(total)
+                    }
+                }
                 // TASK-830: the watches can die silently under storage churn
                 // while every internal read still says armed (the 2026-10-14
                 // overnight evidence), so while armed a blind re-subscribe
@@ -251,11 +286,11 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e(TAG, "detection rearm failed", e)
+                            Log.e(TAG, "detection rearm failed for ${source.name}", e)
                         }
                     }
                 }
-                Log.i(TAG, "detection active")
+                Log.i(TAG, "detection active: ${source.name}")
             } else {
                 active = false
                 val job = collectJob
@@ -268,7 +303,7 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
                 // merely unregisters the observer (no more FilesChanged
                 // emissions follow it).
                 job?.cancel()
-                Log.i(TAG, "detection inactive")
+                Log.i(TAG, "detection inactive: ${source.name}")
             }
         }
     }
@@ -282,7 +317,7 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
                 // log as a failure or keep draining the queue (review F3).
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "voice-note auto transcription failed", e)
+                Log.w(TAG, "voice-note auto transcription failed for ${source.name}", e)
             }
         }
     }
@@ -297,7 +332,23 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
      */
     private suspend fun transcribe(entry: VoiceNoteEntry) {
         val path = entry.path ?: return
-        autoTranscriber.enqueue(path, entry.detectedAtMs, liveTreeUri)
+        autoTranscriber.enqueue(path, entry.detectedAtMs, liveTreeUri, source, entry.catchup)
+    }
+
+    /**
+     * TASK-889: the one-per-burst digest, posted through the factory's
+     * guarded path ([ResultNotificationFactory.postIfPermitted] carries
+     * the POST_NOTIFICATIONS check every factory post honors); a failure
+     * logs, never throws into the collector.
+     */
+    private fun postCatchUpDigest(count: Int) {
+        runCatching {
+            notificationFactory.postIfPermitted(
+                ResultNotificationFactory.RESULT_CATCHUP_DIGEST_ID_BASE + source.ordinal,
+                notificationFactory.catchUpDigestNotification(count))
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to post the catch-up digest for ${source.name}", e)
+        }
     }
 
     private companion object {
@@ -312,4 +363,29 @@ class VoiceNoteDetectionCoordinator @Inject constructor(
          */
         const val DEFAULT_REARM_INTERVAL_MS = 20 * 60 * 1000L
     }
+}
+
+/**
+ * WhatsApp Business support: the one owner of the per-source coordinators
+ * (built in AppModule, one per [VoiceNoteSource]). Consumers that act on
+ * every source (the BridgeApplication start, the permission pokes) go
+ * through [all]; per-source surfaces (the Settings sections, the SPI)
+ * through [forSource].
+ */
+class VoiceNoteDetectionCoordinators(
+    private val bySource: Map<VoiceNoteSource, VoiceNoteDetectionCoordinator>,
+) {
+    init {
+        require(bySource.keys == VoiceNoteSource.entries.toSet()) {
+            "one coordinator per source, got ${bySource.keys}"
+        }
+    }
+
+    val all: Collection<VoiceNoteDetectionCoordinator> get() = bySource.values
+
+    fun forSource(source: VoiceNoteSource): VoiceNoteDetectionCoordinator = bySource.getValue(source)
+
+    fun start() = all.forEach { it.start() }
+
+    fun pokePermissionState() = all.forEach { it.pokePermissionState() }
 }
