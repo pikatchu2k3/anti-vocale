@@ -91,6 +91,9 @@ import com.antivocale.app.ui.onboarding.TourStep
 import com.antivocale.app.ui.MAX_RENDERED_TRANSCRIPT_CHARS
 import com.antivocale.app.ui.components.CappedTranscriptText
 import com.antivocale.app.ui.components.highlightText
+import com.antivocale.app.data.local.HistoryRecoveryLedger
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.antivocale.app.ui.viewmodel.LogsViewModel
 import androidx.compose.runtime.produceState
 import com.antivocale.app.ui.dialogs.LongAudioWarningDialog
@@ -181,6 +184,9 @@ internal sealed interface HistoryRow {
         // The expansion-set key, stored so consumers read the model instead
         // of re-deriving the formula (750 simplify: one derivation site).
         val senderKey: String = senderGroupKey(groupKey, sender.senderName),
+        // TASK-898: precomputed so the header composable does not rescan
+        // the group's rows per composition.
+        val newestTimestamp: Long = sender.logs.maxOf { it.timestamp },
     ) : HistoryRow {
         override val key = "sender_$senderKey"
     }
@@ -467,16 +473,27 @@ private fun RowScope.PlaybackControls(
     compact: Boolean,
     cuesJson: String? = null,
 ) {
-    val now by playback.state.collectAsState()
-    val mine = now?.taskId == taskId
+    // TASK-898: the row's own slice: the 5Hz progress tick recomposes
+    // only the playing row (the shared flow recomposed every rendered row).
+    val now by playback.stateFor(taskId).collectAsState(initial = null)
+    val mine = now != null
     val filePresent = remember(filePath) {
         playbackFileExists(filePath)
     }
     // TASK-841: the row's cues, parsed once per payload; the skip toggle is
     // OFFERED only when a skippable gap exists (rows without one never see
     // the button - hiding a useless control beats explaining it).
-    val cues = remember(cuesJson) {
-        com.antivocale.app.data.local.TimedSegmentsConverter.fromJson(cuesJson)
+    // TASK-898: the parse is OFF-MAIN (a streamed transcript's cue list is
+    // thousands of entries; the share path was moved off-main for the same
+    // reason, review F1): produceState keeps the row composable cheap and
+    // swaps in the parsed list when it lands.
+    val cues by produceState(
+        initialValue = emptyList(),
+        cuesJson,
+    ) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.antivocale.app.data.local.TimedSegmentsConverter.fromJson(cuesJson)
+        }
     }
     val skippable = remember(cues) { PlaybackCueGaps.hasSkippableGap(cues) }
     val skipSilences by playback.skipSilences.collectAsState()
@@ -543,12 +560,11 @@ private fun PlaybackProgressBar(
     playback: ResultPlaybackController,
     taskId: String,
 ) {
-    val now by playback.state.collectAsState()
-    val playing = now
-    val mine = playing?.taskId == taskId
-    if (mine && playing != null) {
-        val fraction = if (playing.durationMs > 0) {
-            (playing.positionMs.toFloat() / playing.durationMs).coerceIn(0f, 1f)
+    val playing by playback.stateFor(taskId).collectAsState(initial = null)
+    val current = playing
+    if (current != null) {
+        val fraction = if (current.durationMs > 0) {
+            (current.positionMs.toFloat() / current.durationMs).coerceIn(0f, 1f)
         } else 0f
         LinearProgressIndicator(
             progress = { fraction },
@@ -716,8 +732,12 @@ fun HistoryTab(
     highlightTaskId: String? = null,
     tourRevealState: com.svenjacobs.reveal.RevealState,
 ) {
-    val logs by viewModel.logs.collectAsState()
-    val filteredLogs by viewModel.filteredLogs.collectAsState()
+    // TASK-898: DAO-backed streams use the lifecycle-aware collection so
+    // Room observation + entity mapping stop while the app is STOPPED
+    // (the preference/dataStore streams stay on plain collectAsState: they
+    // are in-memory StateFlows, no background work to pause).
+    val logs by viewModel.logs.collectAsStateWithLifecycle()
+    val filteredLogs by viewModel.filteredLogs.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val context = LocalContext.current
     val swipeActionMode by viewModel.swipeActionMode
@@ -740,6 +760,22 @@ fun HistoryTab(
     val showRetranscribeButton by viewModel.showRetranscribeButton.collectAsState()
     val compactActions by viewModel.compactResultActions.collectAsState()
     val advancedShare by viewModel.advancedShareFormats.collectAsState()
+    // TASK-898: the three row-wide preference flags hoisted OUT of
+    // LogEntryWithSwipe (they were collected per row: a fling registered
+    // and tore down three collectors per recycled row, and one emission
+    // recomposed every visible row at once). Passed down as parameters.
+    val showLanguageChip by viewModel.languageChipEnabled.collectAsState()
+    val reRunLanguages by viewModel.offeredLanguageCodes.collectAsState()
+    val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
+    // TASK-898: one-minute tick driving the rows' relative-time labels:
+    // the per-row remember(timestamp, minuteTick) refreshes the string at
+    // most once a minute instead of re-running the formatter per emission.
+    val minuteTick by produceState(initialValue = 0L) {
+        while (true) {
+            value = System.currentTimeMillis() / 60000
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
     // TASK-840 (GH #157 pt 1): the ONE tab-owned audio player for result
     // rows (hoisted above the LazyColumn: a row-local player would die
     // mid-playback when its row recycles out; released with the tab).
@@ -781,14 +817,18 @@ fun HistoryTab(
     // Undo deletion via Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
     // The undo prompt fires from a non-composable coroutine, so both
-    // strings resolve here in composition.
+    // strings resolve here in composition; rememberUpdatedState keeps the
+    // coroutine reading the latest strings across recompositions
+    // (TASK-898: a locale change mid-snackbar must not show stale text).
     val entryDeletedMessage = stringResource(R.string.logs_entry_deleted)
     val undoLabel = stringResource(R.string.logs_undo)
+    val currentEntryDeletedMessage by rememberUpdatedState(entryDeletedMessage)
+    val currentUndoLabel by rememberUpdatedState(undoLabel)
     LaunchedEffect(recentlyDeletedEntry) {
         val entry = recentlyDeletedEntry ?: return@LaunchedEffect
         val result = snackbarHostState.showSnackbar(
-            message = entryDeletedMessage,
-            actionLabel = undoLabel,
+            message = currentEntryDeletedMessage,
+            actionLabel = currentUndoLabel,
             duration = SnackbarDuration.Short
         )
         if (result == SnackbarResult.ActionPerformed) {
@@ -803,7 +843,7 @@ fun HistoryTab(
     // instance per recomposition would defeat the LazyColumn content
     // lambda's memoization and recompose every visible row (750 efficiency).
     // Expansion toggles legitimately rebuild: collapsed sections drop rows.
-    val historyRows = remember(filteredLogs, groupByConversation, expandedConversationGroups, expandedSenderGroups) {
+    val historyRows = remember(filteredLogs, groupByConversation, expandedConversationGroups, expandedSenderGroups, context) {
         buildHistoryRows(
             historyGroupsFor(filteredLogs, groupByConversation, context),
             isSectionExpanded = { it in expandedConversationGroups },
@@ -1064,9 +1104,9 @@ fun HistoryTab(
                     LogEntryWithSwipe(
                         log = log,
                         searchQuery = searchQuery,
-                        isExpanded = log.taskId in expandedTaskIds,
+                        isExpandedProvider = { log.taskId in expandedTaskIds },
                         swipeActionMode = swipeActionMode,
-                        revealedLogId = revealedLogId,
+                        revealedLogIdProvider = { revealedLogId },
                         onRevealedLogIdChange = { revealedLogId = it },
                         onExpandChange = { expanded ->
                             expandedTaskIds = if (expanded) {
@@ -1083,6 +1123,10 @@ fun HistoryTab(
                         onRetranscribe = if (showRetranscribeButton && log.type == LogEntry.Type.AUDIO && log.filePath != null) {{ retranscribeTarget = log }} else null,
                         compactActions = compactActions,
                         advancedShareFormats = advancedShare,
+                        showLanguageChip = showLanguageChip,
+                        reRunLanguages = reRunLanguages,
+                        showTechnicalDetails = showTechnicalDetails,
+                        minuteTick = minuteTick,
                         onNavigateToSettings = onNavigateToSettings,
                         onOpenLanguageSetting = onOpenLanguageSetting,
                     )
@@ -1154,6 +1198,42 @@ fun HistoryTab(
                     viewModel.clearHighlight()
                 }
 
+                // TASK-886: notice after a History DB corruption recovery.
+                // The ledger is a StateFlow set by the open-helper wrapper
+                // (a recovery can fire mid-session, on a lazily opened
+                // secondary connection, so a first-composition snapshot
+                // would miss it); dismissal keys on the STAMP, so a second
+                // recovery re-surfaces the notice.
+                var dbRecoveryDismissedStamp by rememberSaveable {
+                    mutableStateOf<Long?>(null)
+                }
+                val dbRecovery by HistoryRecoveryLedger.lastRecovery.collectAsState()
+                dbRecovery?.let { recovery ->
+                    if (recovery.stamp != dbRecoveryDismissedStamp) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (recovery.preservedAside) R.string.history_db_recovered
+                                    else R.string.history_db_recovered_unpreserved),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { dbRecoveryDismissedStamp = recovery.stamp }) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = null,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f),
@@ -1173,7 +1253,19 @@ fun HistoryTab(
                     items(
                         historyRows,
                         key = { it.key },
-                        contentType = { row -> if (row is HistoryRow.LogRow) "log" else "header" },
+                        // TASK-898: four visual kinds, not two: the advisory
+                        // card and the date header share nothing with the
+                        // collapsible group skeletons, so recycling across
+                        // them re-filled mismatched slots on fast scroll.
+                        contentType = { row ->
+                            when (row) {
+                                is HistoryRow.LogRow -> "log"
+                                is HistoryRow.AdvisoryRow -> "advisory"
+                                is HistoryRow.SenderHeaderRow,
+                                is HistoryRow.ConversationHeaderRow -> "group_header"
+                                else -> "date_header"
+                            }
+                        },
                     ) { row ->
                         when (row) {
                             is HistoryRow.AdvisoryRow -> VadAdvisoryCard(
@@ -1202,7 +1294,7 @@ fun HistoryTab(
                                 SenderGroupHeader(
                                     senderName = row.sender.senderName,
                                     count = row.sender.logs.size,
-                                    lastTimestamp = row.sender.logs.maxOf { it.timestamp },
+                                    lastTimestamp = row.newestTimestamp,
                                     expanded = isSenderExpanded,
                                     onToggle = {
                                         expandedSenderGroups = if (isSenderExpanded) {
@@ -1413,6 +1505,10 @@ fun LogEntryItem(
      *  a call site that forgets the pass-through must be a compile error,
      *  not a silently dropped diagnostics line. */
     showTechnicalDetails: Boolean,
+    /** TASK-898: the tab's one-minute tick, keying the relative-time
+     *  remember so the label refreshes at most once a minute. No default,
+     *  like its siblings. */
+    minuteTick: Long,
 ) {
     val context = LocalContext.current
     val rowScope = rememberCoroutineScope()
@@ -1513,12 +1609,18 @@ fun LogEntryItem(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (log.type == LogEntry.Type.AUDIO) {
+                        // TASK-898: remembered per package: the uncensured
+                        // fallback in AppInfoUtils is a PackageManager binder
+                        // call, and this row recomposes on every interim write.
+                        val senderApp = remember(log.sourcePackageName) {
+                            log.sourcePackageName?.let { AppInfoUtils.getAppName(context, it) }
+                        }
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             // TASK-736: the matched sender leads, the source app follows.
                             text = listOfNotNull(
                                 log.senderName,
-                                log.sourcePackageName?.let { AppInfoUtils.getAppName(context, it) },
+                                senderApp,
                             ).joinToString(", ").ifEmpty { stringResource(R.string.voice_message_duration) },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1573,8 +1675,17 @@ fun LogEntryItem(
                         }
                     )
                     Spacer(modifier = Modifier.width(4.dp))
+                    // TASK-898: remembered per (timestamp, minuteTick, locale):
+                    // the Room list re-emits on every interim write, and
+                    // unremembered this rebuilt two Calendars plus a
+                    // SimpleDateFormat per visible row per emission; the tick
+                    // keeps the label fresh (one refresh per minute, not per
+                    // emission).
+                    val relativeTime = remember(log.timestamp, minuteTick) {
+                        formatRelativeTime(log.timestamp, context)
+                    }
                     Text(
-                        text = formatRelativeTime(log.timestamp, context),
+                        text = relativeTime,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2205,9 +2316,9 @@ private fun getPreviewText(text: String, maxLength: Int = 50): String {
 private fun LogEntryWithSwipe(
     log: LogEntry,
     searchQuery: String,
-    isExpanded: Boolean,
+    isExpandedProvider: () -> Boolean,
     swipeActionMode: String,
-    revealedLogId: String?,
+    revealedLogIdProvider: () -> String?,
     onRevealedLogIdChange: (String?) -> Unit,
     onExpandChange: (Boolean) -> Unit,
     onSwipeCollapse: () -> Unit = {},
@@ -2218,18 +2329,18 @@ private fun LogEntryWithSwipe(
     onRetranscribe: (() -> Unit)? = null,
     compactActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
     advancedShareFormats: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
+    showLanguageChip: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
+    reRunLanguages: Set<String> = emptySet(),
+    showTechnicalDetails: Boolean = PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
+    minuteTick: Long = 0L,
     onNavigateToSettings: (() -> Unit)? = null,
     onOpenLanguageSetting: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    // TASK-546: the chip flag, collected once here (the item stays stateless).
-    val showLanguageChip by viewModel.languageChipEnabled.collectAsState()
-    // TASK-546 AC3: the re-run picker's offered codes, same collection point
-    // (the derivation lives in the ViewModel through the Settings picker's
-    // owner, so the two cannot drift).
-    val reRunLanguages by viewModel.offeredLanguageCodes.collectAsState()
-    // TASK-616: same pattern for the technical processing-context line.
-    val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
+    // TASK-546/546-AC3/616 + TASK-898: the three tab-wide flags arrive as
+    // parameters, hoisted to the tab (per-row collection churned three
+    // collectors per recycled row and recomposed all visible rows on any
+    // emission).
     // TASK-599: the row's annotated transcript is collected HERE (the item
     // stays stateless) from the ViewModel's cached per-row flow: no
     // cold-flow-per-recomposition, no flash of unlabeled text, no JSON
@@ -2241,14 +2352,14 @@ private fun LogEntryWithSwipe(
     val speakerAnnotated = viewModel.speakerAnnotatedFlow(log.id).collectAsState().value
     // TASK-595 F5: the first-pass transcript rides the same lean per-row
     // flow (it left the list projections); collected here, handed down.
-    val firstPassTranscript = if (isExpanded) {
+    val firstPassTranscript = if (isExpandedProvider()) {
         viewModel.firstPassFlow(log.id).collectAsState().value
     } else {
         null
     }
     // TASK-800: the row's raw cues for the Share-as formats (the list
     // projection keeps the column null; same lean read as firstPass).
-    val rowSegmentsJson = if (isExpanded) {
+    val rowSegmentsJson = if (isExpandedProvider()) {
         viewModel.segmentsFlow(log.id).collectAsState().value
     } else {
         null
@@ -2273,12 +2384,13 @@ private fun LogEntryWithSwipe(
         val revealState = rememberSwipeToRevealState()
 
         LaunchedEffect(log.id, revealState.isRevealed) {
-            if (revealState.isRevealed && revealedLogId != log.id) {
+            if (revealState.isRevealed && revealedLogIdProvider() != log.id) {
                 onRevealedLogIdChange(log.id)
             }
         }
-        LaunchedEffect(log.id, revealedLogId) {
-            if (revealedLogId != null && revealedLogId != log.id && revealState.isRevealed) {
+        LaunchedEffect(log.id) {
+            val revealed = revealedLogIdProvider()
+            if (revealed != null && revealed != log.id && revealState.isRevealed) {
                 revealState.reset()
             }
         }
@@ -2305,7 +2417,7 @@ private fun LogEntryWithSwipe(
             state = revealState,
             actions = actions,
             onSwipeStart = {
-                if (isExpanded) onSwipeCollapse()
+                if (isExpandedProvider()) onSwipeCollapse()
             }
         ) {
             LogEntryItem(
@@ -2315,7 +2427,7 @@ private fun LogEntryWithSwipe(
                 firstPassTranscript = firstPassTranscript,
                 rowSegmentsJson = rowSegmentsJson,
                 searchQuery = searchQuery,
-                expanded = isExpanded,
+                expanded = isExpandedProvider(),
                 onExpandChange = { expanded ->
                     if (revealState.isRevealed) {
                         revealState.reset()
@@ -2335,6 +2447,7 @@ private fun LogEntryWithSwipe(
                 reRunLanguages = reRunLanguages,
                 onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
                 showTechnicalDetails = showTechnicalDetails,
+                        minuteTick = minuteTick,
             )
         }
     } else {
@@ -2380,7 +2493,7 @@ private fun LogEntryWithSwipe(
                 firstPassTranscript = firstPassTranscript,
                 rowSegmentsJson = rowSegmentsJson,
                 searchQuery = searchQuery,
-                expanded = isExpanded,
+                expanded = isExpandedProvider(),
                 onExpandChange = onExpandChange,
                 playback = playback,
                 onRetranscribe = onRetranscribe,
@@ -2394,6 +2507,7 @@ private fun LogEntryWithSwipe(
                 reRunLanguages = reRunLanguages,
                 onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
                 showTechnicalDetails = showTechnicalDetails,
+                        minuteTick = minuteTick,
             )
         }
     }

@@ -261,6 +261,9 @@
     <string name="error_model_load">Plik modelu może być uszkodzony lub w złym formacie. Spróbuj pobrać go ponownie z karty Model.</string>
     <string name="error_model_external_corrupt">Pliki zaimportowanego modelu są uszkodzone. Usuń go w zakładce Modele i zaimportuj ponownie.</string>
     <string name="error_model_corrupt_healed">Niektóre pliki modelu były uszkodzone i zostały usunięte. Otwórz zakładkę Modele i pobierz model ponownie.</string>
+    <string name="error_model_corrupt_sibling">Niektóre pliki modelu były uszkodzone, więc aplikacja usunęła ten wariant i przełączyła się na kopię już obecną na urządzeniu. Ponowne pobieranie nie jest potrzebne.</string>
+    <string name="error_model_missing_healed">Niektóre pliki modelu były brakujące i zostały usunięte. Otwórz zakładkę Modele i pobierz model ponownie.</string>
+    <string name="error_model_missing_sibling">Niektóre pliki modelu były brakujące, więc aplikacja usunęła ten wariant i przełączyła się na kopię już obecną na urządzeniu. Ponowne pobieranie nie jest potrzebne.</string>
     <string name="error_native">Wystąpił błąd wewnętrzny podczas transkrypcji. Jeśli się powtarza, spróbuj innego modelu.</string>
     <string name="error_not_initialized">Nie wczytano żadnego modelu. Otwórz kartę Model, aby pobrać lub wybrać model.</string>
     <string name="error_model_unavailable">Wybrany model nie jest już dostępny. Otwórz kartę Model i wybierz inny.</string>
@@ -1071,6 +1074,10 @@
     <string name="voice_note_folder_sheet_step2">Przejdź ścieżką w dół do folderu notatek głosowych:</string>
     <string name="voice_note_folder_sheet_step3">Z zaznaczonym folderem WhatsApp Voice Notes (bez otwierania) dotknij UŻYJ TEGO FOLDERU, a potem ZEZWÓL.</string>
     <string name="voice_note_folder_sheet_open">Otwórz selektor</string>
+    <string name="voice_note_business_detection_description">Transkrybuje nowe notatki głosowe WhatsApp Business po nadejściu, gdy aplikacja działa. Jeśli Android zablokuje uruchomienie w tle, jedno dotknięcie powiadomienia je wznowi. Notatka jest czytana tylko do transkrypcji, na tym urządzeniu; wyłączone, nic nie jest czytane. Wymaga dostępu do audio.</string>
+    <string name="voice_note_business_folder_grant_rejected">To nie jest folder notatek głosowych WhatsApp Business. Wybierz folder o nazwie WhatsApp Business Voice Notes i spróbuj ponownie.</string>
+    <string name="voice_note_business_folder_card_desc">Aby czytać notatki, przyznaj raz dostęp do folderu, w którym WhatsApp Business je zapisuje:</string>
+    <string name="voice_note_business_folder_sheet_step3">Z zaznaczonym folderem WhatsApp Business Voice Notes (bez otwierania) dotknij UŻYJ TEGO FOLDERU, a potem ZEZWÓL.</string>
     <string name="share_targets_description">Każdy pobrany model pojawia się jako osobna pozycja w menu systemowym. Audio przetwarza wybrany model.</string>
     <string name="advanced_sharing_toggle">Pokazuj pobrane modele</string>
     <string name="share_targets_models_info">Każdy pobrany model pojawi się jako pozycja w menu udostępniania. Usunięcie modelu usuwa go z menu.</string>
@@ -1323,4 +1330,13 @@
     <string name="keyword_biasing_placeholder">Jeden termin na wiersz</string>
     <string name="freeze_protection_title">Ochrona transkrypcji w tle</string>
     <string name="freeze_protection_description">Utrzymuje cichy strumień audio podczas transkrypcji, aby agresywne oszczędzacze baterii nie wstrzymywały aplikacji. Włącz, jeśli transkrypcja zatrzymuje się po wyłączeniu ekranu (niektóre telefony Oppo, Realme, OnePlus i Vivo).</string>
+    <string name="history_db_recovered">Baza danych historii została uszkodzona i zresetowana. Twoje wcześniejsze transkrypcje zostały zachowane w pliku kopii zapasowej.</string>
+    <string name="catchup_digest_title">Notatki głosowe z czasu twojej nieobecności</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">Trwa transkrypcja %1$d notatki głosowej, która dotarła podczas nieobecności aplikacji. Wyniki pojawią się w historii.</item>
+        <item quantity="few">Trwa transkrypcja %1$d notatek głosowych, które dotarły podczas nieobecności aplikacji. Wyniki pojawią się w historii.</item>
+        <item quantity="many">Trwa transkrypcja %1$d notatek głosowych, które dotarły podczas nieobecności aplikacji. Wyniki pojawią się w historii.</item>
+        <item quantity="other">Trwa transkrypcja %1$d notatek głosowych, które dotarły podczas nieobecności aplikacji. Wyniki pojawią się w historii.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">Baza danych historii została uszkodzona i zresetowana. Nie udało się zachować uszkodzonych plików.</string>
 </resources>

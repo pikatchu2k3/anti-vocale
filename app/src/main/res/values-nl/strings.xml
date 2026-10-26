@@ -260,6 +260,9 @@
     <string name="error_model_load">Het modelbestand is mogelijk beschadigd of heeft het verkeerde formaat. Download het opnieuw via het tabblad Modellen.</string>
     <string name="error_model_external_corrupt">De bestanden van het geïmporteerde model zijn beschadigd. Verwijder het via het tabblad Modellen en importeer het opnieuw.</string>
     <string name="error_model_corrupt_healed">Sommige modelbestanden waren beschadigd en zijn door de app verwijderd. Open het tabblad Modellen en download het model opnieuw.</string>
+    <string name="error_model_corrupt_sibling">Sommige modelbestanden waren beschadigd, dus de app heeft die variant verwijderd en is overgeschakeld naar de kopie die al op het apparaat staat. Opnieuw downloaden is niet nodig.</string>
+    <string name="error_model_missing_healed">Sommige modelbestanden ontbraken en zijn door de app verwijderd. Open het tabblad Modellen en download het model opnieuw.</string>
+    <string name="error_model_missing_sibling">Sommige modelbestanden ontbraken, dus de app heeft die variant verwijderd en is overgeschakeld naar de kopie die al op het apparaat staat. Opnieuw downloaden is niet nodig.</string>
     <string name="error_native">Er trad een interne fout op tijdens de transcriptie. Blijft dit gebeuren, probeer dan een ander model.</string>
     <string name="error_not_initialized">Er is geen model geladen. Open het tabblad Modellen om er een te downloaden of te selecteren.</string>
     <string name="error_model_unavailable">Het geselecteerde model is niet meer beschikbaar. Open het tabblad Modellen en kies een ander.</string>
@@ -1277,6 +1280,10 @@
     <string name="voice_note_folder_sheet_step2">Scroll omlaag langs het pad naar de map met spraakberichten:</string>
     <string name="voice_note_folder_sheet_step3">Tik met de map WhatsApp Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
     <string name="voice_note_folder_sheet_open">Kiezer openen</string>
+    <string name="voice_note_business_detection_description">Transcribeert nieuwe WhatsApp Business-spraakberichten zodra ze binnenkomen, terwijl de app draait. Als Android een achtergrondstart blokkeert, start een melding met één tik het alsnog. Een bericht wordt uitsluitend gelezen om het te transcriberen, op dit apparaat; uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
+    <string name="voice_note_business_folder_grant_rejected">Dit is niet de map met WhatsApp Business-spraakberichten. Kies de map met de naam WhatsApp Business Voice Notes en probeer het opnieuw.</string>
+    <string name="voice_note_business_folder_card_desc">Om de berichten te lezen, verleen één keer toegang tot de map waar WhatsApp Business ze opslaat:</string>
+    <string name="voice_note_business_folder_sheet_step3">Tik met de map WhatsApp Business Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
 
     <!-- Back-up en overdracht (TASK-843/844, GH #158) -->
 
@@ -1313,4 +1320,11 @@
     <string name="keyword_biasing_placeholder">Eén term per regel</string>
     <string name="freeze_protection_title">Bescherming van achtergrondtranscriptie</string>
     <string name="freeze_protection_description">Houdt tijdens de transcriptie een stille audiostream actief zodat agressieve batterijbesparers de app niet pauzeren. Zet dit aan als de transcriptie stopt wanneer het scherm uit is (sommige Oppo-, Realme-, OnePlus- en Vivo-toestellen).</string>
+    <string name="history_db_recovered">De geschiedenisdatabase was beschadigd en is opnieuw ingesteld. Je eerdere transcripties zijn bewaard in een back-upbestand.</string>
+    <string name="catchup_digest_title">Spraakberichten van terwijl je weg was</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">%1$d spraakbericht dat binnenkwam terwijl de app afwezig was, wordt nu getranscribeerd. De resultaten verschijnen in de geschiedenis.</item>
+        <item quantity="other">%1$d spraakberichten die binnenkwamen terwijl de app afwezig was, worden nu getranscribeerd. De resultaten verschijnen in de geschiedenis.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">De geschiedenisdatabase was beschadigd en is opnieuw ingesteld. De beschadigde bestanden konden niet worden bewaard.</string>
 </resources>

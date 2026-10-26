@@ -205,6 +205,9 @@
     <string name="error_model_load">Le fichier du modèle est peut-être corrompu ou dans un mauvais format. Re-téléchargez-le depuis l\'onglet Modèle.</string>
     <string name="error_model_external_corrupt">Les fichiers du modèle importé sont corrompus. Supprimez-le de l\'onglet Modèles et importez-le à nouveau.</string>
     <string name="error_model_corrupt_healed">Certains fichiers du modèle étaient corrompus et ont été supprimés. Onglet Modèles, télécharge à nouveau le modèle.</string>
+    <string name="error_model_corrupt_sibling">Certains fichiers du modèle étaient corrompus : l\'application a supprimé cette variante et est passée à la copie déjà présente sur l\'appareil. Aucun nouveau téléchargement n\'est nécessaire.</string>
+    <string name="error_model_missing_healed">Certains fichiers du modèle étaient manquants et ont été supprimés. Onglet Modèles, télécharge à nouveau le modèle.</string>
+    <string name="error_model_missing_sibling">Certains fichiers du modèle étaient manquants : l\'application a supprimé cette variante et est passée à la copie déjà présente sur l\'appareil. Aucun nouveau téléchargement n\'est nécessaire.</string>
     <string name="error_native">Une erreur interne s\'est produite pendant la transcription. Si cela persiste, essayez un autre modèle.</string>
     <string name="error_not_initialized">Aucun modèle chargé. Ouvrez l\'onglet Modèle pour en télécharger ou sélectionner un.</string>
     <string name="error_model_unavailable">Le modèle sélectionné n\'est plus disponible. Ouvrez l\'onglet Modèle et choisissez-en un autre.</string>
@@ -908,6 +911,10 @@
     <string name="voice_note_folder_sheet_step2">Descendez le chemin jusqu\'au dossier des notes vocales:</string>
     <string name="voice_note_folder_sheet_step3">Le dossier WhatsApp Voice Notes sélectionné (sans l\'ouvrir), touchez UTILISER CE DOSSIER puis AUTORISER.</string>
     <string name="voice_note_folder_sheet_open">Ouvrir le sélecteur</string>
+    <string name="voice_note_business_detection_description">Transcrit les notes vocales WhatsApp Business dès leur arrivée, pendant que l\'app s\'exécute. Si Android bloque un démarrage en arrière-plan, une notification le lance en un geste. Une note n\'est lue que pour être transcrite, sur cet appareil ; désactivé, rien n\'est lu. Nécessite l\'accès à l\'audio.</string>
+    <string name="voice_note_business_folder_grant_rejected">Ce n\'est pas le dossier des notes vocales WhatsApp Business. Choisissez le dossier nommé WhatsApp Business Voice Notes et réessayez.</string>
+    <string name="voice_note_business_folder_card_desc">Pour lire les notes, accordez une fois l\'accès au dossier où WhatsApp Business les enregistre:</string>
+    <string name="voice_note_business_folder_sheet_step3">Le dossier WhatsApp Business Voice Notes sélectionné (sans l\'ouvrir), touchez UTILISER CE DOSSIER puis AUTORISER.</string>
     <string name="share_targets_description">Chaque modèle téléchargé apparaît comme entrée distincte dans le menu système. L\'audio est traité par le modèle sélectionné.</string>
     <string name="advanced_sharing_toggle">Afficher les modèles téléchargés</string>
     <string name="share_targets_models_info">Chaque modèle téléchargé apparaîtra comme entrée dans le menu Partager. Supprimer un modèle le retire du menu.</string>
@@ -1165,4 +1172,11 @@
     <string name="keyword_biasing_placeholder">Un terme par ligne</string>
     <string name="freeze_protection_title">Protection de la transcription en arrière-plan</string>
     <string name="freeze_protection_description">Garde un flux audio silencieux actif pendant la transcription pour que les économiseurs de batterie agressifs ne suspendent pas l\'app. Activez-la si la transcription s\'arrête écran éteint (certains Oppo, Realme, OnePlus et Vivo).</string>
+    <string name="history_db_recovered">La base de données de l\'historique était endommagée et a été réinitialisée. Vos transcriptions précédentes ont été conservées dans un fichier de sauvegarde.</string>
+    <string name="catchup_digest_title">Messages vocaux de votre absence</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">Transcription de %1$d message vocal arrivé pendant l\'absence de l\'application. Les résultats apparaîtront dans l\'historique.</item>
+        <item quantity="other">Transcription de %1$d messages vocaux arrivés pendant l\'absence de l\'application. Les résultats apparaîtront dans l\'historique.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">La base de données de l\'historique était endommagée et a été réinitialisée. Les fichiers endommagés n\'ont pas pu être conservés.</string>
 </resources>

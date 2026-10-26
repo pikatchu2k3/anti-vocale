@@ -236,6 +236,9 @@
     <string name="error_model_load">Die Modelldatei ist möglicherweise beschädigt oder hat das falsche Format. Lade sie im Tab \"Modell\" erneut herunter.</string>
     <string name="error_model_external_corrupt">Die Dateien des importierten Modells sind beschädigt. Lösche es im Tab Modelle und importiere es erneut.</string>
     <string name="error_model_corrupt_healed">Einige Modelldateien waren beschädigt und wurden entfernt. Öffne den Tab Modelle und lade das Modell erneut herunter.</string>
+    <string name="error_model_corrupt_sibling">Einige Modelldateien waren beschädigt, deshalb hat die App diese Variante entfernt und zur bereits auf dem Gerät vorhandenen Kopie gewechselt. Ein erneuter Download ist nicht nötig.</string>
+    <string name="error_model_missing_healed">Einige Modelldateien fehlten und wurden entfernt. Öffne den Tab Modelle und lade das Modell erneut herunter.</string>
+    <string name="error_model_missing_sibling">Einige Modelldateien fehlten, deshalb hat die App diese Variante entfernt und zur bereits auf dem Gerät vorhandenen Kopie gewechselt. Ein erneuter Download ist nicht nötig.</string>
     <string name="error_native">Beim Transkribieren ist ein interner Fehler aufgetreten. Falls das öfter passiert, versuche ein anderes Modell.</string>
     <string name="error_not_initialized">Kein Modell geladen. Öffne den Tab \"Modell\", um eines herunterzuladen oder auszuwählen.</string>
     <string name="error_model_unavailable">Das ausgewählte Modell ist nicht mehr verfügbar. Öffne den Tab \"Modell\" und wähle ein anderes.</string>
@@ -1010,6 +1013,10 @@
     <string name="voice_note_folder_sheet_step2">Scrolle im Pfad nach unten bis zum Ordner der Sprachnachrichten:</string>
     <string name="voice_note_folder_sheet_step3">Wähle den Ordner WhatsApp Voice Notes aus (nicht öffnen) und tippe auf DIESEN ORDNER VERWENDEN und dann auf ZULASSEN.</string>
     <string name="voice_note_folder_sheet_open">Auswahl öffnen</string>
+    <string name="voice_note_business_detection_description">Transkribiert neue WhatsApp Business-Sprachnachrichten, sobald sie ankommen, während die App läuft. Blockiert Android den Start im Hintergrund, startet eine Benachrichtigung mit einem Tipp. Eine Nachricht wird nur zum Transkribieren gelesen, auf diesem Gerät; ausgeschaltet wird nichts gelesen. Benötigt Audiozugriff.</string>
+    <string name="voice_note_business_folder_grant_rejected">Das ist nicht der Ordner für WhatsApp Business-Sprachnachrichten. Wähle den Ordner mit dem Namen WhatsApp Business Voice Notes und versuche es erneut.</string>
+    <string name="voice_note_business_folder_card_desc">Um die Nachrichten zu lesen, erteile einmalig Zugriff auf den Ordner, in dem WhatsApp Business sie speichert:</string>
+    <string name="voice_note_business_folder_sheet_step3">Wähle den Ordner WhatsApp Business Voice Notes aus (nicht öffnen) und tippe auf DIESEN ORDNER VERWENDEN und dann auf ZULASSEN.</string>
     <string name="share_targets_description">Jedes heruntergeladene Modell erscheint als eigener Eintrag im Systemmenü. Das Audio verarbeitet das ausgewählte Modell.</string>
     <string name="advanced_sharing_toggle">Heruntergeladene Modelle anzeigen</string>
     <string name="share_targets_models_info">Jedes heruntergeladene Modell erscheint als Eintrag im Teilen-Menü. Beim Löschen wird das Modell aus dem Menü entfernt.</string>
@@ -1297,4 +1304,11 @@
     <string name="keyword_biasing_placeholder">Ein Begriff pro Zeile</string>
     <string name="freeze_protection_title">Schutz für Hintergrund-Transkription</string>
     <string name="freeze_protection_description">Hält während der Transkription einen stummen Audiostream aktiv, damit aggressive Akkusparer die App nicht anhalten. Aktiviere dies, wenn die Transkription bei ausgeschaltetem Bildschirm stehen bleibt (einige Oppo-, Realme-, OnePlus- und Vivo-Telefone).</string>
+    <string name="history_db_recovered">Die Verlaufsdatenbank war beschädigt und wurde zurückgesetzt. Deine früheren Transkriptionen wurden in einer Backupdatei gesichert.</string>
+    <string name="catchup_digest_title">Sprachnachrichten aus deiner Abwesenheit</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">%1$d Sprachnachricht, die während deiner Abwesenheit eingegangen ist, wird jetzt transkribiert. Die Ergebnisse erscheinen im Verlauf.</item>
+        <item quantity="other">%1$d Sprachnachrichten, die während deiner Abwesenheit eingegangen sind, werden jetzt transkribiert. Die Ergebnisse erscheinen im Verlauf.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">Die Verlaufsdatenbank war beschädigt und wurde zurückgesetzt. Die beschädigten Dateien konnten nicht gesichert werden.</string>
 </resources>

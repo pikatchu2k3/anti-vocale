@@ -110,6 +110,16 @@ class PreferencesManagerImpl(
         // TASK-271: the voice-note detection gate (offer notifications).
         private val VOICE_NOTE_DETECTION_ENABLED = booleanPreferencesKey("voice_note_detection_enabled")
         private val VOICE_NOTE_TREE_URI = stringPreferencesKey("voice_note_tree_uri")
+        // WhatsApp Business support: the same pair for the Business client.
+        private val VOICE_NOTE_BUSINESS_DETECTION_ENABLED = booleanPreferencesKey("voice_note_business_detection_enabled")
+        private val VOICE_NOTE_BUSINESS_TREE_URI = stringPreferencesKey("voice_note_business_tree_uri")
+        // TASK-778: the persisted voice-note watermark (the durable dedup
+        // boundary the cold-start catch-up sweep compares against).
+        private val VOICE_NOTE_WATERMARK = stringPreferencesKey("voice_note_watermark")
+        // TASK-891: the Business client's own watermark (independent counter
+        // tree); the WhatsApp entry keeps the legacy key above, so released
+        // installs (which never ran a Business detector) migrate as-is.
+        private val VOICE_NOTE_BUSINESS_WATERMARK = stringPreferencesKey("voice_note_business_watermark")
         // TASK-681: the LAN-offload (OmniVoice) consent gate and its config triple.
         private val REMOTE_OMNIVOICE_ENABLED = booleanPreferencesKey("remote_omnivoice_enabled")
         private val REMOTE_OMNIVOICE_ENDPOINT = stringPreferencesKey("remote_omnivoice_endpoint")
@@ -182,6 +192,10 @@ class PreferencesManagerImpl(
         val voiceNoteIdentityEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         val voiceNoteDetectionEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
         val voiceNoteTreeUri: String? = null,
+        val voiceNoteBusinessDetectionEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        val voiceNoteBusinessTreeUri: String? = null,
+        val voiceNoteWatermark: String? = null,
+        val voiceNoteBusinessWatermark: String? = null,
         val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         val remoteOmnivoiceEndpoint: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         val remoteOmnivoiceApiKey: String = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -252,6 +266,10 @@ class PreferencesManagerImpl(
         voiceNoteIdentityEnabled = this[VOICE_NOTE_IDENTITY_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_IDENTITY_ENABLED,
         voiceNoteDetectionEnabled = this[VOICE_NOTE_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
         voiceNoteTreeUri = this[VOICE_NOTE_TREE_URI],
+        voiceNoteBusinessDetectionEnabled = this[VOICE_NOTE_BUSINESS_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        voiceNoteBusinessTreeUri = this[VOICE_NOTE_BUSINESS_TREE_URI],
+        voiceNoteWatermark = this[VOICE_NOTE_WATERMARK],
+        voiceNoteBusinessWatermark = this[VOICE_NOTE_BUSINESS_WATERMARK],
         remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
         remoteOmnivoiceEndpoint = this[REMOTE_OMNIVOICE_ENDPOINT] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT,
         remoteOmnivoiceApiKey = this[REMOTE_OMNIVOICE_API_KEY] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_API_KEY,
@@ -264,6 +282,16 @@ class PreferencesManagerImpl(
     )
 
     fun initialize() {
+        // TASK-899 (ANR audit MEDIUM-3, accept-and-document): this
+        // runBlocking runs at DI-graph build on the main thread and pays
+        // the process's first DataStore file read there. Deliberate: the
+        // cache it primes is what every later blocking first() depends on
+        // staying warm (the TaskerRequestReceiver comment documents that
+        // coupling). The cost is one small file today; the growth axes are
+        // externalModelsJson and scheduledFoldersJson. If either grows
+        // large, revisit by priming on the application scope with a
+        // runBlocking fallback only for the cold-start synchronous
+        // consumers; until then the ms-scale read is not worth the churn.
         runBlocking {
             cache.set(dataStore.data.first().toCached())
         }
@@ -893,6 +921,8 @@ class PreferencesManagerImpl(
         .onStart { emit(cache.get().voiceNoteDetectionEnabled) }
     override val voiceNoteTreeUri: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_TREE_URI] }
         .onStart { emit(cache.get().voiceNoteTreeUri) }
+    override val voiceNoteWatermark: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_WATERMARK] }
+        .onStart { emit(cache.get().voiceNoteWatermark) }
 
     override suspend fun saveVoiceNoteTreeUri(uri: String?) {
         dataStore.edit { preferences ->
@@ -902,6 +932,72 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(voiceNoteTreeUri = uri) }
     }
 
+    override val voiceNoteBusinessDetectionEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_BUSINESS_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED }
+        .onStart { emit(cache.get().voiceNoteBusinessDetectionEnabled) }
+    override val voiceNoteBusinessTreeUri: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_BUSINESS_TREE_URI] }
+        .onStart { emit(cache.get().voiceNoteBusinessTreeUri) }
+
+    override suspend fun saveVoiceNoteBusinessDetectionEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VOICE_NOTE_BUSINESS_DETECTION_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(voiceNoteBusinessDetectionEnabled = enabled) }
+    }
+
+    override suspend fun saveVoiceNoteBusinessTreeUri(uri: String?) {
+        dataStore.edit { preferences ->
+            if (uri == null) preferences.remove(VOICE_NOTE_BUSINESS_TREE_URI)
+            else preferences[VOICE_NOTE_BUSINESS_TREE_URI] = uri
+        }
+        cache.updateAndGet { it.copy(voiceNoteBusinessTreeUri = uri) }
+    }
+
+    override suspend fun bumpVoiceNoteWatermark(candidate: String) {
+        dataStore.edit { preferences ->
+            val current = preferences[VOICE_NOTE_WATERMARK]
+            if (current == null || candidate > current) {
+                preferences[VOICE_NOTE_WATERMARK] = candidate
+            }
+        }
+        cache.updateAndGet { cached ->
+            if (cached.voiceNoteWatermark == null || candidate > cached.voiceNoteWatermark) {
+                cached.copy(voiceNoteWatermark = candidate)
+            } else {
+                cached
+            }
+        }
+    }
+
+    override suspend fun resetVoiceNoteWatermark() {
+        dataStore.edit { it.remove(VOICE_NOTE_WATERMARK) }
+        cache.updateAndGet { it.copy(voiceNoteWatermark = null) }
+    }
+
+    // TASK-891: the Business watermark trio, the twin of the WhatsApp
+    // block above over its own key (independent counter tree).
+    override val voiceNoteBusinessWatermark: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_BUSINESS_WATERMARK] }
+        .onStart { emit(cache.get().voiceNoteBusinessWatermark) }
+
+    override suspend fun bumpVoiceNoteBusinessWatermark(candidate: String) {
+        dataStore.edit { preferences ->
+            val current = preferences[VOICE_NOTE_BUSINESS_WATERMARK]
+            if (current == null || candidate > current) {
+                preferences[VOICE_NOTE_BUSINESS_WATERMARK] = candidate
+            }
+        }
+        cache.updateAndGet { cached ->
+            if (cached.voiceNoteBusinessWatermark == null || candidate > cached.voiceNoteBusinessWatermark) {
+                cached.copy(voiceNoteBusinessWatermark = candidate)
+            } else {
+                cached
+            }
+        }
+    }
+
+    override suspend fun resetVoiceNoteBusinessWatermark() {
+        dataStore.edit { it.remove(VOICE_NOTE_BUSINESS_WATERMARK) }
+        cache.updateAndGet { it.copy(voiceNoteBusinessWatermark = null) }
+    }
 
     // TASK-681: the LAN-offload gate and its config triple. Re-emits on
     // unrelated writes are fine here, like the siblings above: the

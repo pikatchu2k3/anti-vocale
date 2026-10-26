@@ -10,6 +10,7 @@ import com.antivocale.app.util.SubtitleParser
 import com.antivocale.app.audio.AudioDurationPolicy
 import com.antivocale.app.audio.AudioPreprocessor
 import com.antivocale.app.service.ResultNotificationFactory
+import com.antivocale.app.service.StartupSweepGate
 import com.antivocale.app.audio.AudioPreprocessor.PreprocessingError
 import com.antivocale.app.audio.AudioPreprocessor.StreamEvent
 import com.antivocale.app.transcription.diarization.DiarizationModels
@@ -130,8 +131,20 @@ class TranscriptionOrchestrator @Inject constructor(
                     // actionable "removed, re-download" instruction; it
                     // replaces a message-prefix match that could never fire
                     // (ModelLoadError prepends "Model load failed: " to every
-                    // detail).
-                    context.getString(R.string.error_model_corrupt_healed)
+                    // detail). TASK-887: a heal that landed on a sibling
+                    // variant switched the entry to it; the honest copy is
+                    // the switch, not a re-download that is not needed.
+                    context.getString(
+                        if (error.switchedToSibling) R.string.error_model_corrupt_sibling
+                        else R.string.error_model_corrupt_healed)
+                is TranscriptionException.MissingModelFiles ->
+                    // TASK-885: the vanished-files twin of the corruption
+                    // verdict; same heal outcome, distinct History-row copy
+                    // so the row tells the user what actually happened.
+                    // TASK-887: sibling twin of the corrupt arm above.
+                    context.getString(
+                        if (error.switchedToSibling) R.string.error_model_missing_sibling
+                        else R.string.error_model_missing_healed)
                 is TranscriptionException.ExternalModelCorruptFiles ->
                     // TASK-482: an import's corruption has no re-download to
                     // offer; the generic model-load advice would point at a
@@ -1803,22 +1816,60 @@ class TranscriptionOrchestrator @Inject constructor(
         )
         // TASK-660 layer 2: the self-heal. Only the typed corruption verdict
         // deletes anything; a generic load failure (OOM, NNAPI, wedge, missing
-        // metadata) must leave the model dir on disk. When the heal itself
-        // fails (the dir could not be deleted) the row must NOT claim the
-        // files were removed, so the failure is downgraded to the generic
-        // message (review F3).
+        // metadata) must leave the model dir on disk. TASK-885: a typed
+        // MISSING verdict heals identically: a vanished catalog file never
+        // returns on its own, so the dir goes and the Models tab re-offers
+        // the download. When the heal itself fails (the dir could not be
+        // deleted) the row must NOT claim the files were removed, so the
+        // failure is downgraded to the generic message (review F3).
         val loadFailure = load.exceptionOrNull()
-        if (loadFailure is TranscriptionException.CorruptModelFiles) {
-            if (!healCorruptModelDir(context, descriptor, resolvedPath)) {
-                return Result.failure(TranscriptionException.ModelLoadError(
-                    "corrupt model dir could not be removed: $resolvedPath"))
+        if (loadFailure is TranscriptionException.CorruptModelFiles ||
+            loadFailure is TranscriptionException.MissingModelFiles
+        ) {
+            when (healModelDir(context, descriptor, resolvedPath)) {
+                HealOutcome.DELETION_FAILED -> return Result.failure(
+                    TranscriptionException.ModelLoadError(
+                        "model dir could not be removed: $resolvedPath"))
+                // TASK-887: re-raise the typed verdict WITH the sibling
+                // flag so the row's copy names the switch (the exception is
+                // the mapping's only carrier of the heal outcome; the copy
+                // claims nothing about the sibling's health, which the
+                // existence-based resolve never verified). The
+                // reconstruction carries the stored detail, NOT the
+                // prefixed message (ModelLoadError re-prefixes on every
+                // construction). The gate above admits exactly these two
+                // types, so the else arm is unreachable by construction.
+                HealOutcome.SIBLING -> return Result.failure(
+                    when (loadFailure) {
+                        is TranscriptionException.CorruptModelFiles ->
+                            TranscriptionException.CorruptModelFiles(
+                                loadFailure.detail, switchedToSibling = true)
+                        is TranscriptionException.MissingModelFiles ->
+                            TranscriptionException.MissingModelFiles(
+                                loadFailure.detail, switchedToSibling = true)
+                        else -> loadFailure
+                    })
+                HealOutcome.NO_SIBLING -> return load
             }
         }
         return load
     }
 
+    /** TASK-887: the heal's tri-state outcome (the Boolean could not say
+     *  WHICH success landed, and the History row's copy needs exactly
+     *  that). */
+    private enum class HealOutcome {
+        /** The directory could not be deleted; nothing was claimed. */
+        DELETION_FAILED,
+        /** Deleted, and a sibling variant took over the saved path. */
+        SIBLING,
+        /** Deleted, no sibling: the entry is not-installed and re-downloadable. */
+        NO_SIBLING,
+    }
+
     /**
-     * TASK-660 layer 2: deletes the corrupt model DIRECTORY and re-resolves
+     * TASK-660 layer 2 (widened by TASK-885 to the missing-files verdict):
+     * deletes the bad model DIRECTORY and re-resolves
      * the saved path the same WAY as the Models-tab delete (delete dir; a
      * remaining healthy sibling variant stays active, none leaves the entry
      * not-installed for a clean re-download), INCLUDING the tab's
@@ -1832,40 +1883,42 @@ class TranscriptionOrchestrator @Inject constructor(
      * caller (a direct initialize like the benchmark cannot heal and must not
      * wedge the entry behind a stripped dir); THIS heal then removes the whole
      * directory and rewrites the saved-path preference, which only the
-     * orchestrator owns. Returns false when the deletion fails, so the caller
-     * downgrades to the generic error instead of claiming removal.
+     * orchestrator owns. Returns [HealOutcome.DELETION_FAILED] when the
+     * deletion fails, so the caller downgrades to the generic error instead
+     * of claiming removal; [HealOutcome.SIBLING] vs [HealOutcome.NO_SIBLING]
+     * is the TASK-887 fact the History row's copy keys on.
      */
-    private suspend fun healCorruptModelDir(
+    private suspend fun healModelDir(
         context: Context,
         descriptor: BackendDescriptor,
         resolvedPath: String,
-    ): Boolean {
+    ): HealOutcome {
         val manager = SherpaModelManager.of(descriptor.backendId)
         val deleted = manager.deleteModel(resolvedPath)
         if (!deleted) {
-            // Review F3: with the dir still on disk (and the corrupt files
+            // Review F3: with the dir still on disk (and the bad files
             // still in it; the backend no longer strips them), every later
             // load re-runs this heal; claiming removal now would be a lie on
             // every History row until one deletion succeeds.
-            Log.e(TAG, "Corrupt model dir deletion FAILED at $resolvedPath; " +
+            Log.e(TAG, "Model dir heal deletion FAILED at $resolvedPath; " +
                 "delivering the generic error and retrying the heal on the next load")
-            return false
+            return HealOutcome.DELETION_FAILED
         }
-        Log.w(TAG, "Corrupt model dir deleted at $resolvedPath; " +
+        Log.w(TAG, "Model dir heal deleted $resolvedPath; " +
             "the Models tab offers the re-download")
         val next = manager.resolveActiveModelPath(context)
         if (next != null) {
             descriptor.saveModelPath(preferencesManager, next)
-        } else {
-            descriptor.clearModelPath(preferencesManager)
-            // Review F2: mirror the Models-tab delete's share-surface
-            // retirement (the alias must not stay selectable for a
-            // not-installed model). TASK-738: the suspend form stays so the
-            // retirement lands BEFORE the shortcut refresh below.
-            shareTargetManager.onModelDeletedNow(descriptor.backendId)
-            shareShortcutManager.refresh()
+            return HealOutcome.SIBLING
         }
-        return true
+        descriptor.clearModelPath(preferencesManager)
+        // Review F2: mirror the Models-tab delete's share-surface
+        // retirement (the alias must not stay selectable for a
+        // not-installed model). TASK-738: the suspend form stays so the
+        // retirement lands BEFORE the shortcut refresh below.
+        shareTargetManager.onModelDeletedNow(descriptor.backendId)
+        shareShortcutManager.refresh()
+        return HealOutcome.NO_SIBLING
     }
 
     /**
@@ -4285,6 +4338,11 @@ class TranscriptionOrchestrator @Inject constructor(
          *  lookup key); null on every legacy/non-interactive producer. */
         contentHash: String? = null,
     ) {
+        // TASK-899: the startup-sweep gate lives HERE, at the single insert
+        // point this KDoc names, so no future caller can forget it: a row
+        // inserted while the (async) sweep still runs would be closed as
+        // interrupted underneath its own transcription.
+        StartupSweepGate.await()
         logDao.insert(
             LogEntry(
                 taskId = taskId,
@@ -4574,6 +4632,15 @@ class TranscriptionOrchestrator @Inject constructor(
                         errorClass = (error as? PipelineFailure)?.cause
                             ?.let { "PipelineFailure(${it::class.simpleName})" }
                             ?: "${error::class.simpleName}",
+                        // TASK-904: a sibling-switch heal is a different
+                        // outcome than a re-download heal; the report line
+                        // (and its frequency stat) must tell them apart.
+                        // Unwraps PipelineFailure.cause so the two fields
+                        // above and this one can never disagree about the
+                        // same failure.
+                        siblingHealed = ((error as? PipelineFailure)?.cause ?: error)
+                            .let { it as? TranscriptionException.ModelLoadError }
+                            ?.switchedToSibling == true,
                         backendId = resolvedBackend,
                         provider = provider,
                         appVersion = version,

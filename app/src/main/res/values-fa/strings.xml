@@ -254,6 +254,9 @@
     <string name="error_model_load">ممکن است فایل مدل خراب باشد یا قالب آن نادرست باشد. دانلود دوباره آن را از زبانه مدل امتحان کنید.</string>
     <string name="error_model_external_corrupt">فایل‌های مدل واردشده خراب است. آن را از تب مدل‌ها حذف و دوباره وارد کنید.</string>
     <string name="error_model_corrupt_healed">برخی فایل‌های مدل خراب بودند و برنامه آن‌ها را حذف کرد. زبانه مدل‌ها را باز کنید و مدل را دوباره دانلود کنید.</string>
+    <string name="error_model_corrupt_sibling">برخی فایل‌های مدل خراب بودند، بنابراین برنامه آن نسخه را حذف کرد و به نسخه از قبل موجود روی دستگاه رفت. نیازی به دانلود مجدد نیست.</string>
+    <string name="error_model_missing_healed">برخی فایل‌های مدل مفقود بودند و برنامه آن‌ها را حذف کرد. زبانه مدل‌ها را باز کنید و مدل را دوباره دانلود کنید.</string>
+    <string name="error_model_missing_sibling">برخی فایل‌های مدل مفقود بودند، بنابراین برنامه آن نسخه را حذف کرد و به نسخه از قبل موجود روی دستگاه رفت. نیازی به دانلود مجدد نیست.</string>
     <string name="error_native">هنگام رونویسی خطای داخلی رخ داد. اگر ادامه داشت، مدل دیگری را امتحان کنید.</string>
     <string name="error_not_initialized">هیچ مدلی بارگذاری نشده است. برای دانلود یا انتخاب مدل، زبانه مدل را باز کنید.</string>
     <string name="error_model_unavailable">مدل انتخاب‌شده دیگر در دسترس نیست. زبانه مدل را باز کنید و مدل دیگری انتخاب کنید.</string>
@@ -1016,6 +1019,10 @@
     <string name="voice_note_folder_sheet_step2">در مسیر تا پوشه پیام‌های صوتی پایین بروید:</string>
     <string name="voice_note_folder_sheet_step3">با انتخاب پوشه WhatsApp Voice Notes (بدون باز کردن آن)، روی استفاده از این پوشه و سپس اجازه بزنید.</string>
     <string name="voice_note_folder_sheet_open">باز کردن انتخابگر</string>
+    <string name="voice_note_business_detection_description">تا زمانی که برنامه در حال اجراست، پیام‌های صوتی جدید WhatsApp Business را به‌محض رسیدن به متن تبدیل می‌کند. اگر اندروید شروع در پس‌زمینه را مسدود کند، یک نوتیفیکیشن تک‌لمسی آن را آغاز می‌کند. پیام فقط برای تبدیل خوانده می‌شود، روی همین دستگاه؛ خاموش باشد هیچ‌چیز خوانده نمی‌شود. نیاز به دسترسی صدا دارد.</string>
+    <string name="voice_note_business_folder_grant_rejected">این پوشه پیام‌های صوتی WhatsApp Business نیست. پوشه‌ای به نام WhatsApp Business Voice Notes را انتخاب کنید و دوباره امتحان کنید.</string>
+    <string name="voice_note_business_folder_card_desc">برای خواندن پیام‌ها، یک بار به پوشه‌ای که WhatsApp Business آن‌ها را ذخیره می‌کند دسترسی دهید:</string>
+    <string name="voice_note_business_folder_sheet_step3">با انتخاب پوشه WhatsApp Business Voice Notes (بدون باز کردن آن)، روی استفاده از این پوشه و سپس اجازه بزنید.</string>
     <string name="share_targets_description">هر مدل دانلودشده به شکل گزینه‌ای جدا در منوی سیستم ظاهر می‌شود. صدا توسط مدل انتخاب‌شده پردازش می‌شود.</string>
     <string name="advanced_sharing_toggle">نمایش مدل‌های دانلودشده</string>
     <string name="share_targets_models_info">هر مدل دانلودشده به شکل موردی در منوی هم‌رسانی ظاهر می‌شود. با حذف یک مدل، آن از منو برداشته می‌شود.</string>
@@ -1302,4 +1309,11 @@
     <string name="keyword_biasing_placeholder">در هر خط یک عبارت</string>
     <string name="freeze_protection_title">محافظت از رونویسی پس‌زمینه</string>
     <string name="freeze_protection_description">در طول رونویسی یک جریان صوتی بی‌صدا فعال نگه می‌دارد تا صرفه‌جویان تهاجمی باتری برنامه را متوقف نکنند. اگر رونویسی با خاموش شدن صفحه متوقف می‌شود، این را روشن کنید (برخی گوشی‌های Oppo، Realme، OnePlus و Vivo).</string>
+    <string name="history_db_recovered">پایگاه دادهٔ تاریخچه آسیب دید و بازنشانی شد. رونوشت‌های قبلی شما در یک فایل پشتیبان نگه داشته شدند.</string>
+    <string name="catchup_digest_title">پیام‌های صوتی از زمان غیبت شما</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">در حال رونویسی %1$d پیام صوتی که در غیاب برنامه رسیده‌اند. نتایج در تاریخچه نمایش داده می‌شوند.</item>
+        <item quantity="other">در حال رونویسی %1$d پیام صوتی که در غیاب برنامه رسیده‌اند. نتایج در تاریخچه نمایش داده می‌شوند.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">پایگاه دادهٔ تاریخچه آسیب دید و بازنشانی شد. نگه‌داری فایل‌های آسیب‌دیده ممکن نشد.</string>
 </resources>

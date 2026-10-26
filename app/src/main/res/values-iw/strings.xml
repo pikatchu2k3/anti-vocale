@@ -256,6 +256,9 @@
     <string name="error_model_load">ייתכן שקובץ המודל פגום או בפורמט שגוי. נסה להוריד אותו מחדש מהלשונית מודלים.</string>
     <string name="error_model_external_corrupt">הקבצים של המודל המיובא פגומים. מחק אותו מלשונית המודלים וייבא אותו מחדש.</string>
     <string name="error_model_corrupt_healed">חלק מקבצי המודל היו פגומים, ולכן האפליקציה הסירה אותם. פתח את הלשונית מודלים והורד את המודל מחדש.</string>
+    <string name="error_model_corrupt_sibling">חלק מקבצי המודל היו פגומים, ולכן האפליקציה הסירה את הגרסה הזו ועברה לעותק שכבר נמצא במכשיר. אין צורך להוריד שוב.</string>
+    <string name="error_model_missing_healed">חלק מקבצי המודל היו חסרים, ולכן האפליקציה הסירה אותם. פתח את הלשונית מודלים והורד את המודל מחדש.</string>
+    <string name="error_model_missing_sibling">חלק מקבצי המודל היו חסרים, ולכן האפליקציה הסירה את הגרסה הזו ועברה לעותק שכבר נמצא במכשיר. אין צורך להוריד שוב.</string>
     <string name="error_native">אירעה שגיאה פנימית במהלך התמלול. אם זה חוזר, נסה מודל אחר.</string>
     <string name="error_not_initialized">לא נטען מודל. פתח את הלשונית מודלים כדי להוריד או לבחור אחד.</string>
     <string name="error_model_unavailable">המודל שנבחר אינו זמין יותר. פתח את הלשונית מודלים ובחר מודל אחר.</string>
@@ -1059,6 +1062,10 @@
     <string name="voice_note_folder_sheet_step2">רדו בנתיב עד לתיקיית ההודעות הקוליות:</string>
     <string name="voice_note_folder_sheet_step3">כשתיקיית WhatsApp Voice Notes מסומנת (בלי לפתוח אותה), הקישו על השתמש בתיקייה זו ולאחר מכן על אפשר.</string>
     <string name="voice_note_folder_sheet_open">פתיחת הבורר</string>
+    <string name="voice_note_business_detection_description">מתמלל הודעות קול חדשות של WhatsApp Business בהגעתן, בזמן שהאפליקציה פועלת. אם Android חוסם התחלה ברקע, התראה בנגיעה אחת מתחילה אותה. הודעה נקראת רק לצורך התמלול, במכשיר זה; כשזה כבוי לא נקרא דבר. דורש הרשאת גישה לשמע.</string>
+    <string name="voice_note_business_folder_grant_rejected">זו אינה תיקיית ההודעות הקוליות של WhatsApp Business. בחרו את התיקייה בשם WhatsApp Business Voice Notes ונסו שוב.</string>
+    <string name="voice_note_business_folder_card_desc">כדי לקרוא את ההודעות, העניקו פעם אחת גישה לתיקייה שבה WhatsApp Business שומר אותן:</string>
+    <string name="voice_note_business_folder_sheet_step3">כשתיקיית WhatsApp Business Voice Notes מסומנת (בלי לפתוח אותה), הקישו על השתמש בתיקייה זו ולאחר מכן על אפשר.</string>
     <string name="share_targets_description">כל מודל שהורד מופיע כאפשרות נפרדת בתפריט המערכת. האודיו מעובד על ידי המודל שנבחר.</string>
     <string name="advanced_sharing_toggle">הצגת מודלים שהורדו</string>
     <string name="share_targets_models_info">כל מודל שהורד יופיע כפריט בתפריט השיתוף. מחיקת מודל מסירה אותו מהתפריט.</string>
@@ -1308,4 +1315,12 @@
     <string name="keyword_biasing_placeholder">מונח אחד בכל שורה</string>
     <string name="freeze_protection_title">הגנת תמלול ברקע</string>
     <string name="freeze_protection_description">מחזיק זרימת שמע שקטה פעילה במהלך התמלול כדי שחוסכי סוללה אגרסיביים לא ישהו את האפליקציה. הפעל אם התמלול נעצר כשהמסך כבוי (חלק מטלפוני Oppo‏, Realme‏, OnePlus ו־Vivo).</string>
+    <string name="history_db_recovered">מסד הנתונים של ההיסטוריה נפגם ואופס. התמלילים הקודמים שלך נשמרו בקובץ גיבוי.</string>
+    <string name="catchup_digest_title">הודעות קוליות מהזמן שהיית רחוק</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="one">מתבצעת תמלול של %1$d הודעה קולית שהגיעה בזמן שהאפליקציה הייתה סגורה. התוצאות יופיעו בהיסטוריה.</item>
+        <item quantity="two">מתבצעת תמלול של %1$d הודעות קוליות שהגיעו בזמן שהאפליקציה הייתה סגורה. התוצאות יופיעו בהיסטוריה.</item>
+        <item quantity="other">מתבצעת תמלול של %1$d הודעות קוליות שהגיעו בזמן שהאפליקציה הייתה סגורה. התוצאות יופיעו בהיסטוריה.</item>
+    </plurals>
+    <string name="history_db_recovered_unpreserved">מסד הנתונים של ההיסטוריה נפגם ואופס. לא ניתן היה לשמר את הקבצים הפגומים.</string>
 </resources>

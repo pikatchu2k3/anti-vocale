@@ -1136,4 +1136,17 @@
     <string name="result_skip_silences">無音をスキップ</string>
     <string name="whistle_description">約17MB • 非常に高速 • 7言語を自動判定</string>
     <string name="whistle_name">Whistle（17 MB）</string>
+    <string name="catchup_digest_title">留守中に届いたボイスメモ</string>
+    <string name="error_model_corrupt_sibling">一部のモデルファイルが破損していたため、そのバリアントを削除し、端末にある既存のコピーに切り替えました。ダウンロードは不要です。</string>
+    <string name="error_model_missing_healed">一部のモデルファイルが見つからなかったため、削除しました。「モデル」タブを開いて、モデルをもう一度ダウンロードしてください。</string>
+    <string name="error_model_missing_sibling">一部のモデルファイルが見つからなかったため、そのバリアントを削除し、端末にある既存のコピーに切り替えました。ダウンロードは不要です。</string>
+    <string name="history_db_recovered">履歴データベースが破損したためリセットされました。以前の文字起こしはバックアップファイルに保存されています。</string>
+    <string name="history_db_recovered_unpreserved">履歴データベースが破損したためリセットされました。破損したファイルは保存できませんでした。</string>
+    <string name="voice_note_business_detection_description">新しいWhatsApp Businessのボイスメモが届くと、アプリの実行中に自動で文字起こしします。Androidがバックグラウンド起動をブロックした場合は、通知を1回タップすると開始します。メモは文字起こしのためだけにこの端末上で読み取られ、オフの間は何も読み取りません。音声へのアクセス権が必要です。</string>
+    <string name="voice_note_business_folder_card_desc">メモを読み取るには、WhatsApp Businessがメモを保存しているフォルダへのアクセスを一度許可してください。</string>
+    <string name="voice_note_business_folder_grant_rejected">これはWhatsApp Businessのボイスメモフォルダではありません。「WhatsApp Business Voice Notes」という名前のフォルダを選んで、もう一度お試しください。</string>
+    <string name="voice_note_business_folder_sheet_step3">「WhatsApp Business Voice Notes」フォルダを選択した状態で（開かずに）、［USE THIS FOLDER］をタップし、次に［ALLOW］をタップします。</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="other">アプリが起動していない間に届いた %1$d 件のボイスメモを文字起こししています。結果は履歴に表示されます。</item>
+    </plurals>
 </resources>

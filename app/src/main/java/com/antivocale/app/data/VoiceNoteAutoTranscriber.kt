@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.antivocale.app.audio.AudioPreprocessor
-import com.antivocale.app.data.PerAppPreferencesManager.Companion.WHATSAPP
 import com.antivocale.app.receiver.VoiceNoteIdentityCache
 import com.antivocale.app.receiver.VoiceNoteSenderResolution
 import com.antivocale.app.service.AudioRequestIntent
@@ -44,25 +43,36 @@ class VoiceNoteAutoTranscriber @Inject constructor(
      * zero preference-flow collections per note, and the same source the
      * arming gate drew from (latest-wins; see VoiceNoteTreeGrant.resolve).
      */
-    suspend fun enqueue(whatsappPath: String, detectedAtMs: Long, treeUri: String?) {
+    suspend fun enqueue(
+        whatsappPath: String,
+        detectedAtMs: Long,
+        treeUri: String?,
+        source: VoiceNoteSource = VoiceNoteSource.WHATSAPP,
+        /** TASK-889: the cold-start sweep's flag, suppressing the per-note
+         *  result notification (the digest replaces the burst's N posts). */
+        catchup: Boolean = false,
+    ) {
         // TASK-842: the completed-row silent dedup. The taskId derives from
         // the note's unique PTT name (see serviceIntent), so "same taskId"
         // IS "same note"; WhatsApp re-delivering an already-transcribed
         // note (a redownload, a folder scan) transcribes once, not twice.
-        val taskId = taskIdFor(whatsappPath)
+        val taskId = taskIdFor(whatsappPath, source)
         if (duplicateGuard.alreadyTranscribed(taskId)) {
             Log.i(TAG, "note already transcribed, deduped: $whatsappPath")
             return
         }
         // Runs on the coordinator's IO dispatcher; resolve is suspend all
         // the way down (SAF queries + copy), never a blocking bridge.
-        val localPath = treeGrant.resolve(treeUri, whatsappPath)
+        val localPath = treeGrant.resolve(treeUri, whatsappPath, source)
         if (localPath == null) {
             Log.i(TAG, "note unresolvable through the grant, skipped: $whatsappPath")
             return
         }
+        // The source's OWN package: the cache is filtered by exact package,
+        // so a notification from the other WhatsApp client can never label
+        // this note.
         val senderName = VoiceNoteSenderResolution.matchForDetection(
-            identityCache, audioPreprocessor, WHATSAPP, localPath, detectedAtMs)
+            identityCache, audioPreprocessor, source.packageName, localPath, detectedAtMs)
         // TASK-842 (review F4): the content hash rides the auto row too,
         // so a later manual share of the SAME note matches it in the
         // interactive dialog (the row is otherwise invisible to the guard:
@@ -70,7 +80,7 @@ class VoiceNoteAutoTranscriber @Inject constructor(
         // small; hashing here on the coordinator's IO dispatcher is safe.
         val contentHash = VoiceNoteDuplicateGuard.hashOf(localPath)
         when (val outcome = InferenceEnqueue.start(
-            context, serviceIntent(localPath, whatsappPath, senderName, contentHash))) {
+            context, serviceIntent(localPath, whatsappPath, senderName, contentHash, source, catchup))) {
             InferenceEnqueue.Outcome.Started,
             InferenceEnqueue.Outcome.FallbackNotificationPosted -> {
                 Log.i(TAG, "voice note auto-enqueued: $localPath")
@@ -93,6 +103,8 @@ class VoiceNoteAutoTranscriber @Inject constructor(
         whatsappPath: String,
         senderName: String? = null,
         contentHash: String? = null,
+        source: VoiceNoteSource = VoiceNoteSource.WHATSAPP,
+        catchup: Boolean = false,
     ): Intent =
         // TASK-776: the shared audio-request factory; the taskId stays
         // local because the PTT-name derivation is this transcriber's
@@ -104,19 +116,30 @@ class VoiceNoteAutoTranscriber @Inject constructor(
             // across a burst the way a millisecond timestamp can
             // (review F2: the service drops duplicate taskIds) and a
             // re-resolved note keeps its id.
-            taskIdFor(whatsappPath),
+            taskIdFor(whatsappPath, source),
             localPath,
-            sourcePackage = WHATSAPP,
+            sourcePackage = source.packageName,
             senderName = senderName,
-            contentHash = contentHash)
+            contentHash = contentHash,
+            catchup = catchup)
 
     /**
      * TASK-776 review F2: ONE derivation (the enqueue-side dedup check and
      * the service intent must key the same id, or a WhatsApp redelivery
-     * double-runs with no error anywhere).
+     * double-runs with no error anywhere). The source namespace keeps the
+     * two clients' independent PTT counters apart (empty for WhatsApp, so
+     * existing ids are unchanged).
+     *
+     * TASK-897: the name is CANONICALIZED first (decorations like the
+     * redownload suffix collapse onto the original): a redelivered twin
+     * enqueues with the SAME id as its original, so the duplicate guard
+     * absorbs it instead of double-transcribing. Undecorated names
+     * rebuild to themselves byte-identically, so every existing row's id
+     * is unchanged.
      */
-    private fun taskIdFor(whatsappPath: String): String =
-        "voicenote_${whatsappPath.substringAfterLast('/')}"
+    private fun taskIdFor(whatsappPath: String, source: VoiceNoteSource): String =
+        "voicenote_${source.idNamespace}" +
+            VoiceNoteFilter.canonicalNoteName(whatsappPath.substringAfterLast('/'))
 
     private companion object {
         const val TAG = "VoiceNoteAuto"

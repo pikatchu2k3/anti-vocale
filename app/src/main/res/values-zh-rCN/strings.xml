@@ -1136,4 +1136,17 @@
     <string name="keyword_biasing_placeholder">每行一个词</string>
     <string name="freeze_protection_title">后台转写保护</string>
     <string name="freeze_protection_description">在转写期间保持一个静音音频流处于活动状态，使激进的省电管理无法挂起应用。如果锁屏后转写会停止，请开启此项（部分 Oppo、Realme、OnePlus 和 Vivo 手机）。</string>
+    <string name="catchup_digest_title">你不在时收到的语音消息</string>
+    <string name="error_model_corrupt_sibling">部分模型文件已损坏，因此应用已移除该变体并切换到设备上已有的副本。无需下载。</string>
+    <string name="error_model_missing_healed">部分模型文件缺失，因此应用已将其移除。请打开“模型”标签页并重新下载该模型。</string>
+    <string name="error_model_missing_sibling">部分模型文件缺失，因此应用已移除该变体并切换到设备上已有的副本。无需下载。</string>
+    <string name="history_db_recovered">历史记录数据库已损坏并被重置。之前的转写内容已保存在备份文件中。</string>
+    <string name="history_db_recovered_unpreserved">历史记录数据库已损坏并被重置。损坏的文件无法保留。</string>
+    <string name="voice_note_business_detection_description">当新的 WhatsApp Business 语音消息到达时，应用会在运行期间自动转写。如果 Android 阻止后台启动，点一下通知即可开始。语音消息仅在本设备上为转写而读取；关闭时不会读取任何内容。需要音频访问权限。</string>
+    <string name="voice_note_business_folder_card_desc">要读取语音消息，请先授予 WhatsApp Business 保存语音消息的文件夹的访问权限：</string>
+    <string name="voice_note_business_folder_grant_rejected">这不是 WhatsApp Business 语音消息文件夹。请选择名为 WhatsApp Business Voice Notes 的文件夹并重试。</string>
+    <string name="voice_note_business_folder_sheet_step3">选中 WhatsApp Business Voice Notes 文件夹后（不要打开它），点击 USE THIS FOLDER，然后点击 ALLOW。</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="other">正在转写 %1$d 条在你离开期间收到的语音消息。结果将显示在历史记录中。</item>
+    </plurals>
 </resources>

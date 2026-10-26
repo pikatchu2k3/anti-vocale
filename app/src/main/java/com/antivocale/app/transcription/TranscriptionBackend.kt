@@ -288,7 +288,17 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
 
     /** The model file is missing, corrupt, truncated, or the wrong format for this backend. */
     open class ModelLoadError(detail: String, cause: Throwable? = null) :
-        TranscriptionException("Model load failed: $detail", cause)
+        TranscriptionException("Model load failed: $detail", cause) {
+        /**
+         * TASK-887/904: set on the re-raise when the orchestrator's heal
+         * landed on a sibling variant (the saved path switched to it; no
+         * re-download exists to offer). On the base so the failure-context
+         * derivation reads ONE property for every verdict; a verdict the
+         * heal never fires for (ExternalModelCorruptFiles) keeps the false
+         * default.
+         */
+        open val switchedToSibling: Boolean = false
+    }
 
     /**
      * TASK-660: the pre-load integrity gate rejected the model files before any
@@ -306,7 +316,34 @@ sealed class TranscriptionException(message: String, cause: Throwable? = null) :
      * gate stays regardless (the typed verdict drives the catalog
      * dir-heal; a raw Ort::Exception does not).
      */
-    class CorruptModelFiles(detail: String) : ModelLoadError(detail)
+    class CorruptModelFiles(
+        val detail: String,
+        /** TASK-887: the History row's copy keys on it. */
+        override val switchedToSibling: Boolean = false,
+    ) : ModelLoadError(detail)
+
+    /**
+     * TASK-885: catalog-listed files are ABSENT at load time (vanished after
+     * a previously successful download/verification, or inside the load
+     * attempt itself between the completeness check and the native open; the
+     * 1.14.1 crash class, whose Lenovo instance was exactly a listed decoder
+     * gone at the native open). Healable exactly like [CorruptModelFiles]:
+     * a vanished file never returns on its own, so the orchestrator deletes
+     * the dir and re-resolves for re-download, and the History row gets the
+     * dedicated missing-healed copy. Before this verdict the failure was a
+     * generic [ModelLoadError] that wedged the entry until the user deleted
+     * the model by hand. Deliberately NOT fired for a file that exists but
+     * is incomplete (that is a download in flight; deleting the dir
+     * mid-download would evaporate the re-download) and distinct from
+     * [CorruptModelFiles] so the History row tells missing from corrupted.
+     * Still a [ModelLoadError] subtype so every existing generic-error
+     * consumer (mapping, benchmark) keeps working unchanged.
+     */
+    class MissingModelFiles(
+        val detail: String,
+        /** TASK-887: [CorruptModelFiles.switchedToSibling]'s twin. */
+        override val switchedToSibling: Boolean = false,
+    ) : ModelLoadError(detail)
 
     /**
      * TASK-482: the same pre-native content gate as [CorruptModelFiles], but
