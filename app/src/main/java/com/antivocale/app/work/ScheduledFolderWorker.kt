@@ -3,10 +3,13 @@ package com.antivocale.app.work
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -61,18 +64,23 @@ class ScheduledFolderWorker @AssistedInject constructor(
         val treeUri = inputData.getString(KEY_TREE_URI)
             ?: return Result.failure()
         val scanNow = inputData.getBoolean(KEY_SCAN_NOW, false)
-        return scanFolder(treeUri, scanNow)
+        val attempt = inputData.getInt(KEY_RECHECK_ATTEMPT, 0)
+        return scanFolder(treeUri, scanNow, attempt)
     }
 
     /** scanNow is slice 4's seam: the manual trigger distinguishes its runs
      *  (logging/UX); the serialization treats both identically. */
-    private suspend fun scanFolder(treeUriString: String, scanNow: Boolean): Result {
+    private suspend fun scanFolder(treeUriString: String, scanNow: Boolean, attempt: Int): Result {
         // Per-folder serialization: the planner's read-plan-write window is
         // not protected by the store's mutation mutex, so a periodic run and
         // a manual scan-now of the same folder must not interleave.
         val mutex = scanMutexes.computeIfAbsent(treeUriString) { Mutex() }
         if (!mutex.tryLock()) {
-            Log.i(TAG, "Scan of $treeUriString already in flight; skipping this run")
+            // The in-flight scan may have listed BEFORE the file that woke
+            // this run landed: a follow-up re-check keeps it from waiting
+            // for the next periodic run.
+            Log.i(TAG, "Scan of $treeUriString already in flight; re-checking shortly")
+            ScheduledFolderScheduler.recheck(applicationContext, treeUriString, attempt)
             return Result.success()
         }
         try {
@@ -95,7 +103,7 @@ class ScheduledFolderWorker @AssistedInject constructor(
             // verbatim, while an empty cursor with the grant held is a
             // genuinely-empty folder and plans normally (review F1).
             val childrenWithUris = try {
-                listChildren(treeUri) ?: run {
+                FolderListing.list(applicationContext, treeUri) ?: run {
                     Log.w(TAG, "Listing failed for $treeUriString; scan abandoned, snapshot kept")
                     return Result.success()
                 }
@@ -109,6 +117,12 @@ class ScheduledFolderWorker @AssistedInject constructor(
             val plan = FolderScanPlanner.plan(
                 childrenWithUris.map { it.first }, previous, now = System.currentTimeMillis(),
             )
+            // A first-sight file waits for a second same-size sighting; the
+            // follow-up brings that sighting seconds later instead of a
+            // period later (deferred batch-cap tails ride it too).
+            if (plan.awaitingStability.isNotEmpty() || plan.morePending) {
+                ScheduledFolderScheduler.recheck(applicationContext, treeUriString, attempt)
+            }
             if (plan.toEnqueue.isEmpty()) {
                 // Quiet scan: skip the no-op write when nothing moved.
                 if (plan.nextSnapshot != previous) {
@@ -173,16 +187,54 @@ class ScheduledFolderWorker @AssistedInject constructor(
         }
     }
 
+    private fun grantHeld(treeUri: Uri): Boolean =
+        com.antivocale.app.util.TreeUris.holdsPersistableReadGrant(applicationContext, treeUri)
+
+    /**
+     * The share-shaped request (local path + request type), with the folder
+     * watch as the source so History rows and the skip logic can tell the
+     * origin apart; no source package (no calling app).
+     */
+    private fun buildServiceIntent(localPath: String, fileName: String, treeUri: String): Intent =
+        // TASK-776: the shared audio-request factory; the taskId stays
+        // local because its derivation is this worker's contract.
+        AudioRequestIntent.make(
+            applicationContext,
+            InferenceService.SOURCE_FOLDER_WATCH,
+            // The tree uri rides the id: two folders holding a
+            // same-named file scanned in the same millisecond must not
+            // collide (the service drops duplicate task ids silently).
+            "fwatch_${treeUri.hashCode().toUInt()}_${System.currentTimeMillis()}_${fileName.hashCode().toUInt()}",
+            localPath)
+
+    companion object {
+        private const val TAG = "ScheduledFolderWorker"
+        const val KEY_TREE_URI = "tree_uri"
+        const val KEY_SCAN_NOW = "scan_now"
+        /** Stability re-checks already spent in this lineage (backoff index). */
+        const val KEY_RECHECK_ATTEMPT = "recheck_attempt"
+
+        /** The per-folder serialization (see the class KDoc). */
+        private val scanMutexes = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+    }
+}
+
+/**
+ * The folder listing the worker scans and the add-time baseline records
+ * (one owner, so both see the same children for the same tree).
+ */
+internal object FolderListing {
+
     /**
      * The single-query listing: (child, uri) pairs, or NULL when the
      * provider answered nothing (scan-abandoned). A directory MIME or a
      * missing name filters the row; the document id builds the child uri
      * for the copy.
      */
-    private fun listChildren(treeUri: Uri): List<Pair<FolderScanPlanner.Child, Uri>>? {
+    fun list(context: Context, treeUri: Uri): List<Pair<FolderScanPlanner.Child, Uri>>? {
         val root = DocumentsContract.getTreeDocumentId(treeUri)
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, root)
-        val cursor = applicationContext.contentResolver.query(
+        val cursor = context.contentResolver.query(
             childrenUri,
             arrayOf(
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -212,35 +264,6 @@ class ScheduledFolderWorker @AssistedInject constructor(
             return out
         }
     }
-
-    private fun grantHeld(treeUri: Uri): Boolean =
-        com.antivocale.app.util.TreeUris.holdsPersistableReadGrant(applicationContext, treeUri)
-
-    /**
-     * The share-shaped request (local path + request type), with the folder
-     * watch as the source so History rows and the skip logic can tell the
-     * origin apart; no source package (no calling app).
-     */
-    private fun buildServiceIntent(localPath: String, fileName: String, treeUri: String): Intent =
-        // TASK-776: the shared audio-request factory; the taskId stays
-        // local because its derivation is this worker's contract.
-        AudioRequestIntent.make(
-            applicationContext,
-            InferenceService.SOURCE_FOLDER_WATCH,
-            // The tree uri rides the id: two folders holding a
-            // same-named file scanned in the same millisecond must not
-            // collide (the service drops duplicate task ids silently).
-            "fwatch_${treeUri.hashCode().toUInt()}_${System.currentTimeMillis()}_${fileName.hashCode().toUInt()}",
-            localPath)
-
-    companion object {
-        private const val TAG = "ScheduledFolderWorker"
-        const val KEY_TREE_URI = "tree_uri"
-        const val KEY_SCAN_NOW = "scan_now"
-
-        /** The per-folder serialization (see the class KDoc). */
-        private val scanMutexes = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
-    }
 }
 
 /**
@@ -252,6 +275,7 @@ class ScheduledFolderWorker @AssistedInject constructor(
 object ScheduledFolderScheduler {
 
     private const val TAG = "scheduled_folder_watch"
+    private const val MEDIA_TRIGGER_NAME = "scheduled_folder_media_trigger"
     private const val URI_TAG_PREFIX = "fw:"
 
     private fun uniqueName(treeUri: String) = "scheduled_folder_scan:$treeUri"
@@ -269,6 +293,7 @@ object ScheduledFolderScheduler {
         for (folder in wanted.values) {
             enqueuePeriodic(wm, folder)
         }
+        if (wanted.isEmpty()) disarmMediaTrigger(context) else armMediaTrigger(context)
         val infos: List<androidx.work.WorkInfo> = kotlinx.coroutines.runBlocking {
             wm.getWorkInfosByTag(TAG).get()
         }
@@ -296,7 +321,88 @@ object ScheduledFolderScheduler {
      */
     fun enqueueFolder(context: Context, folder: com.antivocale.app.data.WatchedFolder) {
         enqueuePeriodic(WorkManager.getInstance(context), folder)
+        armMediaTrigger(context)
     }
+
+    /**
+     * The scan-on-save wake (the periodic run stays as the safety net). A
+     * content-URI-triggered one-shot: the system runs it when MediaStore
+     * reports a change under the audio or downloads collections (a saver
+     * like Signal publishes through MediaStore, and the media index picks
+     * up raw-path writes on API 30+), so nothing runs or polls in between
+     * and photos or videos never wake it. A trigger job fires ONCE: the
+     * trigger worker re-arms itself (append) while folders remain.
+     *
+     * [policy] is KEEP for the arm-if-missing callers (app start, folder
+     * add: a pending trigger must not be duplicated) and APPEND_OR_REPLACE
+     * from the running trigger worker (KEEP would drop the re-arm because
+     * the running work itself still holds the name).
+     */
+    fun armMediaTrigger(context: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP) {
+        WorkManager.getInstance(context).enqueueUniqueWork(MEDIA_TRIGGER_NAME, policy, mediaTriggerRequest())
+    }
+
+    fun disarmMediaTrigger(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(MEDIA_TRIGGER_NAME)
+    }
+
+    internal fun mediaTriggerRequest(): OneTimeWorkRequest =
+        OneTimeWorkRequestBuilder<FolderMediaTriggerWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .addContentUriTrigger(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true)
+                    .apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            addContentUriTrigger(MediaStore.Downloads.EXTERNAL_CONTENT_URI, true)
+                        }
+                    }
+                    // One save posts several changes (insert, publish,
+                    // metadata): coalesce them into one wake, yet never hold
+                    // a save longer than a few seconds.
+                    .setTriggerContentUpdateDelay(1, TimeUnit.SECONDS)
+                    .setTriggerContentMaxDelay(5, TimeUnit.SECONDS)
+                    .build(),
+            )
+            .addTag(TAG)
+            .build()
+
+    /**
+     * The scan a media change asks for: immediate, appended behind a running
+     * one (KEEP would drop it while a scan that may have listed too early
+     * still runs; the per-folder mutex serializes the rest).
+     */
+    fun triggeredScan(context: Context, treeUri: String) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "${uniqueName(treeUri)}_trigger",
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            followUpRequest(treeUri, attempt = 0, delaySeconds = 0),
+        )
+    }
+
+    /**
+     * The stability follow-up: re-scan [treeUri] after the backoff step for
+     * [attempt], or nothing once the backoff is spent. Its own name so a
+     * long backoff step never delays a fresh trigger scan.
+     */
+    fun recheck(context: Context, treeUri: String, attempt: Int) {
+        val delay = FolderScanPlanner.recheckDelaySeconds(attempt) ?: return
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "${uniqueName(treeUri)}_recheck",
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            followUpRequest(treeUri, attempt + 1, delay),
+        )
+    }
+
+    internal fun followUpRequest(treeUri: String, attempt: Int, delaySeconds: Long): OneTimeWorkRequest =
+        OneTimeWorkRequestBuilder<ScheduledFolderWorker>()
+            .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+            .setInputData(
+                Data.Builder()
+                    .putString(ScheduledFolderWorker.KEY_TREE_URI, treeUri)
+                    .putInt(ScheduledFolderWorker.KEY_RECHECK_ATTEMPT, attempt)
+                    .build(),
+            )
+            .build()
 
     /**
      * The one enqueue arm [sync] and [enqueueFolder] share (review F3): the
@@ -351,4 +457,28 @@ object ScheduledFolderScheduler {
                     .build(),
             )
             .build()
+}
+
+/**
+ * The scan-on-save wake (see [ScheduledFolderScheduler.armMediaTrigger]):
+ * runs when the system reports a new or changed audio/download item, posts
+ * one immediate scan per watched folder, and re-arms itself. With no folder
+ * left it simply does not re-arm, so removing the last folder ends the wakes.
+ */
+@HiltWorker
+class FolderMediaTriggerWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val store: ScheduledFolderStore,
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val folders = store.folders()
+        if (folders.isEmpty()) return Result.success()
+        for (folder in folders) {
+            ScheduledFolderScheduler.triggeredScan(applicationContext, folder.treeUri)
+        }
+        ScheduledFolderScheduler.armMediaTrigger(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
+        return Result.success()
+    }
 }

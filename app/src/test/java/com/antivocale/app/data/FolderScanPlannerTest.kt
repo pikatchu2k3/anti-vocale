@@ -138,4 +138,39 @@ class FolderScanPlannerTest {
         assertFalse(fourth.morePending)
     }
 
+
+    @Test
+    fun `hidden pending and trashed files are never planned`() {
+        val names = listOf(".pending-1700000000-note.aac", ".trashed-1700000000-old.aac", "note.aac")
+        val first = plan(names.map { child(it) })
+        assertEquals(listOf("note.aac"), first.awaitingStability.map { it.name })
+        val second = plan(names.map { child(it) }, first.nextSnapshot, now = 2000)
+        assertEquals(listOf("note.aac"), second.toEnqueue.map { it.name })
+    }
+
+    @Test
+    fun `the add-time baseline marks the backlog handled so only later saves enqueue`() {
+        val backlog = listOf(child("old.m4a"), child(".pending-1-x.aac"), child("cover.png"))
+        val base = FolderScanPlanner.baseline(backlog, now = 500)
+        assertEquals(listOf(FileSnapshot("old.m4a", 100, 500)), base)
+
+        val withNew = backlog + child("signal-voice.aac", size = 7)
+        val first = plan(withNew, base, now = 1000)
+        assertTrue(first.toEnqueue.isEmpty())
+        val second = plan(withNew, first.nextSnapshot, now = 1003)
+        assertEquals(listOf("signal-voice.aac"), second.toEnqueue.map { it.name })
+    }
+
+    @Test
+    fun `the stability recheck backoff starts within seconds and ends`() {
+        assertEquals(3L, FolderScanPlanner.recheckDelaySeconds(0))
+        var total = 0L
+        var attempt = 0
+        while (true) {
+            total += FolderScanPlanner.recheckDelaySeconds(attempt) ?: break
+            attempt++
+        }
+        assertTrue("backoff must be finite and bounded, was $attempt steps", attempt in 1..10)
+        assertTrue("backoff must stop within ~10 minutes, was ${total}s", total <= 600)
+    }
 }

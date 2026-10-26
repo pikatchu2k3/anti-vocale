@@ -90,6 +90,35 @@ object FolderScanPlanner {
         return ext in AUDIO_EXTENSIONS
     }
 
+    /**
+     * A file the scan may consider: an audio name that is not hidden. Hidden
+     * names are MediaStore's in-flight and trash shapes (".pending-<ts>-x.aac"
+     * while a saver still writes, ".trashed-<ts>-x.aac" after a delete on
+     * API 30+): the pending one renames to its real name when published, and
+     * the trashed one must never re-transcribe a file the user deleted.
+     */
+    fun isCandidate(name: String): Boolean = !name.startsWith('.') && isAudioName(name)
+
+    /**
+     * The add-time baseline: every candidate already in the folder is
+     * recorded as handled, so the watch transcribes only files saved AFTER
+     * the folder was added (a voice-note folder's backlog is not a request).
+     * The manual Scan now does not bypass this; it plans like any scan.
+     */
+    fun baseline(children: List<Child>, now: Long): List<FileSnapshot> =
+        children.filter { isCandidate(it.name) }.map { FileSnapshot(it.name, it.size, now) }
+
+    /**
+     * The stability re-check backoff (seconds): a scan that leaves files
+     * awaiting stability schedules a follow-up instead of waiting for the
+     * next periodic run, so a freshly saved file is transcribed seconds
+     * later. Null past the last step: a file still growing after ~9 minutes
+     * is a live recording, and the next trigger or periodic scan owns it.
+     */
+    fun recheckDelaySeconds(attempt: Int): Long? = RECHECK_DELAYS_SECONDS.getOrNull(attempt)
+
+    private val RECHECK_DELAYS_SECONDS = listOf(3L, 5L, 10L, 20L, 40L, 60L, 120L, 300L)
+
     fun plan(
         children: List<Child>,
         previous: List<FileSnapshot>,
@@ -104,7 +133,7 @@ object FolderScanPlanner {
         val awaiting = mutableListOf<Child>()
         val enqueuedKept = mutableListOf<FileSnapshot>()
 
-        for (child in children.filter { isAudioName(it.name) }) {
+        for (child in children.filter { isCandidate(it.name) }) {
             val prev = prevByName[child.name]
             when {
                 // Already handed over: keep the dedup fact, never re-enqueue.
