@@ -184,14 +184,26 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Same secret + same layout as the release AAB step in android-release.yml.
-      # FALLBACK ONLY for the nightly variant: the google-services plugin
-      # resolves the COMMITTED src/nightly/google-services.json (with the
-      # .nightly client) first; this root json lacks that client and would
-      # fail the build if the source-set file ever disappeared. Keep it as
-      # the safety net for any future release-variant build in this workflow.
+      # The playStore RELEASE smoke build below has no source-set override, so it
+      # resolves app/google-services.json. The secret is optional here: the
+      # committed app/src/nightly/google-services.json carries BOTH clients
+      # (com.antivocale.app and com.antivocale.app.nightly), so it is a complete
+      # fallback. An UNSET secret used to leave a 0-byte file behind and fail the
+      # release build with "Malformed root json" (2026-10-26) - so validate the
+      # decoded JSON and fall back instead of writing garbage.
       - name: Write google-services.json
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" | base64 -d > app/google-services.json
+        run: |
+          set -euo pipefail
+          RAW='${{ secrets.GOOGLE_SERVICES_JSON_B64 }}'
+          if [ -n "$RAW" ] && printf '%s' "$RAW" | base64 -d > app/google-services.json 2>/dev/null \
+             && python3 -c 'import json; json.load(open("app/google-services.json"))' 2>/dev/null; then
+            echo "google-services.json: written from the secret"
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON_B64 unset or not valid JSON - using the committed app/src/nightly/google-services.json (both clients)"
+            cp app/src/nightly/google-services.json app/google-services.json
+            python3 -c 'import json; json.load(open("app/google-services.json"))'
+            echo "google-services.json: committed fallback"
+          fi
 
       - name: Fetch sherpa-onnx AAR
         run: ./scripts/fetch-sherpa-aar.sh
@@ -206,9 +218,18 @@ jobs:
       # secrets introduced.
       - name: Write release keystore
         run: |
+          set -euo pipefail
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
           echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties
           sed -i 's|storeFile=.*|storeFile=release.keystore|' keystore.properties
+          # build.gradle.kts applies the release signingConfig ONLY when
+          # keystore.properties has a storeFile, so a missing secret silently
+          # produced UNSIGNED, uninstallable nightlies (2026-10-26). Fail loudly.
+          test -s app/release.keystore || { echo "::error::KEYSTORE_BASE64 is unset/empty - the nightly would be unsigned"; exit 1; }
+          grep -q '^storeFile=' keystore.properties || { echo "::error::KEYSTORE_PROPERTIES is unset/empty"; exit 1; }
+          keytool -list -keystore app/release.keystore \
+            -storepass "$(grep '^storePassword=' keystore.properties | cut -d= -f2-)" >/dev/null \
+            || { echo "::error::the keystore does not open with the storePassword from KEYSTORE_PROPERTIES"; exit 1; }
 
       # Review F3 (TASK-838): this workflow was the ONLY one assembling the
       # playStore RELEASE variant; leaving it nightly-only would turn a
@@ -260,6 +281,17 @@ jobs:
           done
           test "$(find nightly-apks -name 'antivocale-nightly-*.apk' | wc -l)" -eq 3 || { echo "::error::expected 3 per-ABI APKs"; exit 1; }
           ls -la nightly-apks/
+
+      # A signed channel is the whole point of the nightly: verify the
+      # signature here instead of trusting the signing config's conditional
+      # application (a missing keystore secret silently shipped unsigned APKs).
+      - name: Verify the staged APKs are signed
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "$ANDROID_HOME"/build-tools -name apksigner | sort -V | tail -1)
+          for APK in nightly-apks/*.apk; do
+            "$APKSIGNER" verify --print-certs "$APK" | head -2
+          done
 
       - name: Read versionName from the built APK
         run: |
