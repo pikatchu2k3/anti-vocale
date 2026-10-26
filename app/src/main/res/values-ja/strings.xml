@@ -1146,4 +1146,7 @@
     <string name="voice_note_business_folder_card_desc">メモを読み取るには、WhatsApp Businessがメモを保存しているフォルダへのアクセスを一度許可してください。</string>
     <string name="voice_note_business_folder_grant_rejected">これはWhatsApp Businessのボイスメモフォルダではありません。「WhatsApp Business Voice Notes」という名前のフォルダを選んで、もう一度お試しください。</string>
     <string name="voice_note_business_folder_sheet_step3">「WhatsApp Business Voice Notes」フォルダを選択した状態で（開かずに）、［USE THIS FOLDER］をタップし、次に［ALLOW］をタップします。</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="other">アプリが起動していない間に届いた %1$d 件のボイスメモを文字起こししています。結果は履歴に表示されます。</item>
+    </plurals>
 </resources>

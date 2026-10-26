@@ -1146,4 +1146,7 @@
     <string name="voice_note_business_folder_card_desc">要读取语音消息，请先授予 WhatsApp Business 保存语音消息的文件夹的访问权限：</string>
     <string name="voice_note_business_folder_grant_rejected">这不是 WhatsApp Business 语音消息文件夹。请选择名为 WhatsApp Business Voice Notes 的文件夹并重试。</string>
     <string name="voice_note_business_folder_sheet_step3">选中 WhatsApp Business Voice Notes 文件夹后（不要打开它），点击 USE THIS FOLDER，然后点击 ALLOW。</string>
+    <plurals name="catchup_digest_text">
+        <item quantity="other">正在转写 %1$d 条在你离开期间收到的语音消息。结果将显示在历史记录中。</item>
+    </plurals>
 </resources>
