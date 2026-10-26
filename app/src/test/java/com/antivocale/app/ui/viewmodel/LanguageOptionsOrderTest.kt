@@ -97,8 +97,8 @@ class LanguageOptionsOrderTest {
 
     @Test
     fun `all entries survive sorting`() {
-        // 17 shipped app languages + the system sentinel (nl joined at 16, ja and zh-CN at 18).
-        assertEquals(18, languageOptionsFor(Locale.ENGLISH).size)
+        // 19 shipped app languages + the system sentinel (nl joined at 16, ja and zh-CN at 18, ar and fi at 20).
+        assertEquals(20, languageOptionsFor(Locale.ENGLISH).size)
         // TASK-547 (review round 2): the phone sentinel is offered only when
         // its resolved code is IN the offered set (AC#2: hidden otherwise);
         // "auto" + every offered entry always survive the picker build.

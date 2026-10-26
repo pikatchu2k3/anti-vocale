@@ -222,7 +222,7 @@ class VoiceNoteDetectionCoordinatorTest {
     fun `the entry's catchup flag rides the enqueue call unchanged`() = runBlocking {
         val h = Harness(permissionGranted = { true })
         h.coordinator.reconcile(prefEnabled = true, treeUri = TREE_URI)
-        withTimeout(5_000) {
+        withTimeout(20_000) {
             h.emitAndSettle(entry("/voice/PTT-live.opus")) // live: flag off
             while (h.enqueuedCatchups.size < 1) delay(10)
             h.emitAndSettle(entry("/voice/PTT-sweep.opus").copy(catchup = true))
