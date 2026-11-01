@@ -35,6 +35,7 @@ import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.TranscriptionOrchestrator
+import com.antivocale.app.transcription.TranscriptFuzzySearch
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.transcription.variantAwareDisplayName
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -116,6 +119,9 @@ data class LogEntry(
     /** TASK-842: the intake content hash (the interactive duplicate
      *  guard's key); null on every producer that predates the guard. */
     val contentHash: String? = null,
+    /** TASK-909/904: the load retried on a sibling variant and succeeded;
+     *  the History row carries the localized note. */
+    val switchedToSibling: Boolean = false,
 ) {
     enum class Type { TEXT, AUDIO }
 
@@ -210,15 +216,50 @@ class LogsViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    // Search hits the DAO (SQL LIKE over FULL history, TASK-340 review note): the
-    // in-memory list is now a bounded window, so filtering it in place would have
-    // silently limited search to the newest 500 entries.
+    /**
+     * TASK-911: the History search has two modes. LITERAL is the SQL LIKE
+     * search (exact substring, TASK-613 escaping contract). SIMILAR scores
+     * the same recent window with [TranscriptFuzzySearch] so a keyword the
+     * recognizer mis-heard (gemination, vowel shift, voicing) still lands:
+     * both DAO queries are the same recent-first LIMIT 500 over `result`,
+     * so the fuzzy arm sees exactly the rows the literal one can.
+     */
+    enum class SearchMode { LITERAL, SIMILAR }
+
+    private val _searchMode = MutableStateFlow(SearchMode.LITERAL)
+    val searchMode: StateFlow<SearchMode> = _searchMode.asStateFlow()
+
+    fun toggleSearchMode() {
+        _searchMode.value =
+            if (_searchMode.value == SearchMode.LITERAL) SearchMode.SIMILAR else SearchMode.LITERAL
+    }
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val filteredLogs: StateFlow<List<LogEntry>> =
-        _searchQuery.flatMapLatest { query ->
-            if (query.isBlank()) logDao.getAll()
-            else logDao.searchAll(query)
-        }.map { entities -> entities.map { it.toLogEntry() } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        combine(_searchQuery, _searchMode) { query, mode -> query to mode }
+            // Before flatMapLatest, so a keystroke storm neither starts the
+            // DAO query nor the scoring pass (cancellation alone would only
+            // cut them mid-flight). The blank arm skips the delay: debounce
+            // defers first values too, and the default list must not flash
+            // the no-results state on every fresh subscription.
+            .debounce { if (it.first.isBlank()) 0L else 150L }
+            .flatMapLatest { (query, mode) ->
+                when {
+                    query.isBlank() -> logDao.getAll()
+                    mode == SearchMode.LITERAL -> logDao.searchAll(query)
+                    // One scoring pass per row feeds both the filter and the
+                    // best-first ranking (the shared scoreRanked helper, so
+                    // the SPI search op cannot diverge from this ordering);
+                    // Default because scoring 500 rows is real CPU and
+                    // stateIn collects on the main thread.
+                    else -> logDao.getAll()
+                        .map { rows ->
+                            TranscriptFuzzySearch.scoreRanked(rows, query) { it.result }.map { it.second }
+                        }
+                        .flowOn(Dispatchers.Default)
+                }
+            }.map { entities -> entities.map { it.toLogEntry() } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
      * The currently active transcription entry (PROCESSING, falling back to QUEUED).
@@ -542,8 +583,9 @@ class LogsViewModel @Inject constructor(
     fun clearLogs() {
         // TASK-662 review: the query must not survive the history it searched;
         // a forgotten active query on an empty list would hand the next
-        // arrival a no-results view with a stale query in the field.
-        _searchQuery.value = ""
+        // arrival a no-results view with a stale query in the field. The
+        // mode reset rides in applySearchQuery (TASK-911).
+        applySearchQuery("")
         annotatedByRow.clear()
         firstPassByRow.clear()
         segmentsByRow.clear()
@@ -616,12 +658,23 @@ class LogsViewModel @Inject constructor(
         logDao.failNonTerminal(taskId, errorMessage, durationMs)
     }
 
-    fun onSearchQueryChanged(query: String) {
+    /**
+     * TASK-911: the ONE writer of the search query. The chip is the mode's
+     * only affordance and it hides when the field empties, so blanking the
+     * query in ANY way (typed, backspaced, cleared) resets the mode here;
+     * paths writing _searchQuery directly re-open the stale-mode bug.
+     */
+    private fun applySearchQuery(query: String) {
         _searchQuery.value = query
+        if (query.isBlank()) _searchMode.value = SearchMode.LITERAL
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        applySearchQuery(query)
     }
 
     fun clearSearch() {
-        _searchQuery.value = ""
+        applySearchQuery("")
     }
 
     val swipeActionMode: StateFlow<String> = preferencesManager.swipeActionMode

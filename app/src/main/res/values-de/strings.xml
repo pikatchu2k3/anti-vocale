@@ -83,6 +83,7 @@
     <string name="logs_search_placeholder">Einträge suchen…</string>
     <string name="logs_search_no_results">Keine passenden Einträge</string>
     <string name="logs_search_no_results_hint">Versuche einen anderen Suchbegriff</string>
+    <string name="logs_search_mode_similar">Ähnliche Wörter einbeziehen</string>
     <string name="browse_audio_content_description">Audiodatei zum Transkribieren auswählen</string>
     <string name="settings_replay_tour">Willkommenstour wiederholen</string>
     <string name="tour_done">Verstanden</string>
@@ -237,6 +238,7 @@
     <string name="error_model_external_corrupt">Die Dateien des importierten Modells sind beschädigt. Lösche es im Tab Modelle und importiere es erneut.</string>
     <string name="error_model_corrupt_healed">Einige Modelldateien waren beschädigt und wurden entfernt. Öffne den Tab Modelle und lade das Modell erneut herunter.</string>
     <string name="error_model_corrupt_sibling">Einige Modelldateien waren beschädigt, deshalb hat die App diese Variante entfernt und zur bereits auf dem Gerät vorhandenen Kopie gewechselt. Ein erneuter Download ist nicht nötig.</string>
+    <string name="history_variant_switched">Zu einer anderen auf dem Gerät vorhandenen Kopie gewechselt (die gewählte war beschädigt)</string>
     <string name="error_model_missing_healed">Einige Modelldateien fehlten und wurden entfernt. Öffne den Tab Modelle und lade das Modell erneut herunter.</string>
     <string name="error_model_missing_sibling">Einige Modelldateien fehlten, deshalb hat die App diese Variante entfernt und zur bereits auf dem Gerät vorhandenen Kopie gewechselt. Ein erneuter Download ist nicht nötig.</string>
     <string name="error_native">Beim Transkribieren ist ein interner Fehler aufgetreten. Falls das öfter passiert, versuche ein anderes Modell.</string>
@@ -997,7 +999,7 @@
     <string name="voice_note_identity_grant_hint">Benachrichtigungszugriff ist aus. Tippe, um die Systemeinstellung zu öffnen und ihn für diese App zu aktivieren.</string>
     <!-- TASK-272: automatic voice-note transcription + folder grant -->
     <string name="voice_note_detection_title">Transkription von Sprachnachrichten</string>
-    <string name="voice_note_detection_description">Transkribiert neue WhatsApp-Sprachnachrichten, sobald sie ankommen, während die App läuft. Blockiert Android den Start im Hintergrund, startet eine Benachrichtigung mit einem Tipp. Eine Nachricht wird nur zum Transkribieren gelesen, auf diesem Gerät; ausgeschaltet wird nichts gelesen. Benötigt Audiozugriff.</string>
+    <string name="voice_note_detection_description">Automatischer Modus, eine Alternative zum Teilen jeder Nachricht von Hand: einmal einrichten (einschalten und den Ordner mit den WhatsApp-Sprachnachrichten wählen), danach werden neue Nachrichten direkt bei ihrem Eintreffen transkribiert, ohne weitere Tipps. Jede Nachricht wird nur zum Transkribieren gelesen, und nur auf diesem Gerät; bei ausgeschalteter Funktion wird nichts gelesen. Benötigt Audiozugriff.</string>
     <string name="voice_note_detection_grant_hint">Audiozugriff ist aus. Tippe, um die App-Einstellungen zu öffnen und ihn zu aktivieren; die Transkription startet, sobald er erteilt ist.</string>
     <string name="voice_note_folder_grant_rejected">Das ist nicht der Ordner für WhatsApp-Sprachnachrichten. Wähle den Ordner mit dem Namen WhatsApp Voice Notes und versuche es erneut.</string>
     <string name="voice_note_folder_card_title">Ordner für Sprachnachrichten</string>
@@ -1013,7 +1015,7 @@
     <string name="voice_note_folder_sheet_step2">Scrolle im Pfad nach unten bis zum Ordner der Sprachnachrichten:</string>
     <string name="voice_note_folder_sheet_step3">Wähle den Ordner WhatsApp Voice Notes aus (nicht öffnen) und tippe auf DIESEN ORDNER VERWENDEN und dann auf ZULASSEN.</string>
     <string name="voice_note_folder_sheet_open">Auswahl öffnen</string>
-    <string name="voice_note_business_detection_description">Transkribiert neue WhatsApp Business-Sprachnachrichten, sobald sie ankommen, während die App läuft. Blockiert Android den Start im Hintergrund, startet eine Benachrichtigung mit einem Tipp. Eine Nachricht wird nur zum Transkribieren gelesen, auf diesem Gerät; ausgeschaltet wird nichts gelesen. Benötigt Audiozugriff.</string>
+    <string name="voice_note_business_detection_description">Automatischer Modus, eine Alternative zum Teilen jeder Nachricht von Hand: einmal einrichten (einschalten und den Ordner mit den WhatsApp-Business-Sprachnachrichten wählen), danach werden neue Nachrichten direkt bei ihrem Eintreffen transkribiert, ohne weitere Tipps. Jede Nachricht wird nur zum Transkribieren gelesen, und nur auf diesem Gerät; bei ausgeschalteter Funktion wird nichts gelesen. Benötigt Audiozugriff.</string>
     <string name="voice_note_business_folder_grant_rejected">Das ist nicht der Ordner für WhatsApp Business-Sprachnachrichten. Wähle den Ordner mit dem Namen WhatsApp Business Voice Notes und versuche es erneut.</string>
     <string name="voice_note_business_folder_card_desc">Um die Nachrichten zu lesen, erteile einmalig Zugriff auf den Ordner, in dem WhatsApp Business sie speichert:</string>
     <string name="voice_note_business_folder_sheet_step3">Wähle den Ordner WhatsApp Business Voice Notes aus (nicht öffnen) und tippe auf DIESEN ORDNER VERWENDEN und dann auf ZULASSEN.</string>

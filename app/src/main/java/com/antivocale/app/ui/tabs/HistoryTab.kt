@@ -739,6 +739,7 @@ fun HistoryTab(
     val logs by viewModel.logs.collectAsStateWithLifecycle()
     val filteredLogs by viewModel.filteredLogs.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchMode by viewModel.searchMode.collectAsState()
     val context = LocalContext.current
     val swipeActionMode by viewModel.swipeActionMode
         .collectAsState(initial = PreferencesManager.DEFAULT_SWIPE_ACTION_MODE)
@@ -1028,8 +1029,11 @@ fun HistoryTab(
                     shape = MaterialTheme.shapes.medium,
                     trailingIcon = {
                         // Search-clear when a query is active; history-clear
-                        // otherwise, sharing the trailing slot.
-                        if (searchQuery.isNotEmpty()) {
+                        // otherwise, sharing the trailing slot. isBlank like
+                        // the chip below: a whitespace-only query is still a
+                        // query, and offering the destructive sweep under it
+                        // is the affordance mismatch TASK-911 review named.
+                        if (!searchQuery.isBlank()) {
                             IconButton(onClick = { viewModel.clearSearch() }) {
                                 Icon(
                                     Icons.Default.Clear,
@@ -1048,6 +1052,21 @@ fun HistoryTab(
                     },
                     singleLine = true
                 )
+                // TASK-911: the similar-words mode is offered only while a
+                // query is active. isBlank, not isNotEmpty: the ViewModel's
+                // blank arm serves the unfiltered list regardless of mode,
+                // so a whitespace-only query would show a chip that does
+                // nothing. With an empty field there is also nothing to
+                // widen yet, and the chip would sit next to the clear-all
+                // icon implying it wipes something.
+                if (!searchQuery.isBlank()) {
+                    FilterChip(
+                        selected = searchMode == LogsViewModel.SearchMode.SIMILAR,
+                        onClick = viewModel::toggleSearchMode,
+                        modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+                        label = { Text(stringResource(R.string.logs_search_mode_similar)) },
+                    )
+                }
                 if (filteredLogs.isEmpty()) {
                 // Search yielded no results
                 Box(
@@ -1928,6 +1947,17 @@ fun LogEntryItem(
                             // notification, so the ROW is the durable surface).
                             // The derivation is the factory's shared
                             // saveOutcomeLine: the two surfaces cannot drift.
+                            // TASK-909/904: the variant switch note (the
+                            // chosen variant was damaged; the load moved to
+                            // another installed copy). Rendered like the save
+                            // outcome: the row is the durable surface.
+                            if (log.switchedToSibling) {
+                                Text(
+                                    text = stringResource(R.string.history_variant_switched),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             val outcomeMessage = ResultNotificationFactory.saveOutcomeMessage(
                                 log.savedFolderName, log.savedFileName, log.saveFailureReason)
                             ResultNotificationFactory.saveOutcomeLineSpec(outcomeMessage)?.let { (res, args) ->

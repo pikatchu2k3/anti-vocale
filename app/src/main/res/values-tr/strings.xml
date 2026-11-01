@@ -104,6 +104,7 @@
     <string name="logs_search_placeholder">Kayıtlarda ara…</string>
     <string name="logs_search_no_results">Eşleşen kayıt yok</string>
     <string name="logs_search_no_results_hint">Farklı bir arama terimi deneyin</string>
+    <string name="logs_search_mode_similar">Benzer kelimeleri dahil et</string>
     <string name="browse_audio_content_description">Transkript için bir ses dosyası seç</string>
     <string name="settings_replay_tour">Hoş geldin turunu tekrar oynat</string>
     <string name="tour_done">Anladım</string>
@@ -258,6 +259,7 @@
     <string name="error_model_external_corrupt">İçe aktarılan modelin dosyaları bozuk. Modeller sekmesinden silin ve yeniden içe aktarın.</string>
     <string name="error_model_corrupt_healed">Modelin bazı dosyaları bozuktu ve kaldırıldı. Modeller sekmesini açıp modeli yeniden indirin.</string>
     <string name="error_model_corrupt_sibling">Modelin bazı dosyaları bozuktu, bu yüzden uygulama bu varyantı kaldırdı ve cihazda zaten bulunan kopyaya geçti. Yeniden indirmek gerekmiyor.</string>
+    <string name="history_variant_switched">Cihazda zaten bulunan sağlıklı kopyaya geçildi (seçilen kopya bozuktu)</string>
     <string name="error_model_missing_healed">Modelin bazı dosyaları eksikti ve kaldırıldı. Modeller sekmesini açıp modeli yeniden indirin.</string>
     <string name="error_model_missing_sibling">Modelin bazı dosyaları eksikti, bu yüzden uygulama bu varyantı kaldırdı ve cihazda zaten bulunan kopyaya geçti. Yeniden indirmek gerekmiyor.</string>
     <string name="error_native">Metin çıkarma sırasında bir iç hata oluştu. Sorun sürerse farklı bir model deneyin.</string>
@@ -1040,7 +1042,7 @@
     <string name="voice_note_identity_grant_hint">Bildirim erişimi kapalı. Sistem ayarını açıp bu uygulama için etkinleştirmek üzere dokunun.</string>
     <!-- TASK-272: automatic voice-note transcription + folder grant -->
     <string name="voice_note_detection_title">Sesli not transkripsiyonu</string>
-    <string name="voice_note_detection_description">Yeni WhatsApp sesli mesajlarını uygulama çalışırken geldikçe yazıya çevirir. Android arka plan başlatmayı engellerse tek dokunuşlu bir bildirimle başlar. Bir mesaj yalnızca yazıya çevirmek için okunur, bu cihazda; kapalıyken hiçbir şey okunmaz. Ses erişimi gerekir.</string>
+    <string name="voice_note_detection_description">Otomatik mod, her mesajı elle paylaşmaya alternatif: bir kez ayarlayın (açın ve WhatsApp sesli mesajlar klasörünü seçin); o andan itibaren yeni mesajlar geldikçe, başka dokunuş gerekmeden yazıya çevrilir. Her mesaj yalnızca yazıya çevirmek için ve yalnızca bu cihazda okunur; özellik kapalıyken hiçbir şey okunmaz. Ses erişimi gerekir.</string>
     <string name="voice_note_detection_grant_hint">Ses erişimi kapalı. Uygulama ayarlarını açıp etkinleştirmek için dokunun; transkripsiyon izin verilir verilmez başlar.</string>
     <string name="voice_note_folder_grant_rejected">Bu, WhatsApp sesli notları klasörü değil. WhatsApp Voice Notes adlı klasörü seçin ve tekrar deneyin.</string>
     <string name="voice_note_folder_card_title">Sesli notlar klasörü</string>
@@ -1056,7 +1058,7 @@
     <string name="voice_note_folder_sheet_step2">Sesli notlar klasörüne ulaşana kadar yolu izleyin:</string>
     <string name="voice_note_folder_sheet_step3">WhatsApp Voice Notes klasörü seçiliyken (açmadan) BU KLASÖRÜ KULLAN\'a, ardından İZİN VER\'e dokunun.</string>
     <string name="voice_note_folder_sheet_open">Seçiciyi aç</string>
-    <string name="voice_note_business_detection_description">Yeni WhatsApp Business sesli mesajlarını uygulama çalışırken geldikçe yazıya çevirir. Android arka plan başlatmayı engellerse tek dokunuşlu bir bildirimle başlar. Bir mesaj yalnızca yazıya çevirmek için okunur, bu cihazda; kapalıyken hiçbir şey okunmaz. Ses erişimi gerekir.</string>
+    <string name="voice_note_business_detection_description">Otomatik mod, her mesajı elle paylaşmaya alternatif: bir kez ayarlayın (açın ve WhatsApp Business sesli mesajlar klasörünü seçin); o andan itibaren yeni mesajlar geldikçe, başka dokunuş gerekmeden yazıya çevrilir. Her mesaj yalnızca yazıya çevirmek için ve yalnızca bu cihazda okunur; özellik kapalıyken hiçbir şey okunmaz. Ses erişimi gerekir.</string>
     <string name="voice_note_business_folder_grant_rejected">Bu, WhatsApp Business sesli notları klasörü değil. WhatsApp Business Voice Notes adlı klasörü seçin ve tekrar deneyin.</string>
     <string name="voice_note_business_folder_card_desc">Notları okumak için WhatsApp Business\'ın kaydettiği klasöre bir kez erişim verin:</string>
     <string name="voice_note_business_folder_sheet_step3">WhatsApp Business Voice Notes klasörü seçiliyken (açmadan) BU KLASÖRÜ KULLAN\'a, ardından İZİN VER\'e dokunun.</string>

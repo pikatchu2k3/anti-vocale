@@ -434,7 +434,11 @@ class TranscriptionOrchestrator @Inject constructor(
             // the loader re-reads the preference itself (passing the resolved
             // phase2BackendId would freeze this line's earlier read and change
             // mid-run semantics after a Settings flip during phase 1).
-            val loadResult = ensureBackendLoaded(context, refineBackendOverride ?: backendOverride, languageOverride)
+            // TASK-909/904: a successful sibling switch is stamped on the
+            // request's row (the History note renders from this flag).
+            val loadResult = ensureBackendLoaded(
+                context, refineBackendOverride ?: backendOverride, languageOverride,
+                onSiblingSwitch = { runCatching { logDao.setSwitchedToSibling(taskId) } })
             // GH #45 / TASK-734/TASK-463: the credit writes AFTER the load's
             // path resolution (which persists the corrected variant path) and
             // BEFORE the decode: the failure row and the F4 arm keep the
@@ -579,6 +583,16 @@ class TranscriptionOrchestrator @Inject constructor(
                     if (asrBackendId == null) result
                     else result
                         .map { applyRepetitionCollapse(it) }
+                        // TASK-910: BEFORE the punctuation pass (review:
+                        // the pass rewords the text without updating the
+                        // cues, so a post-pass alignment gate would fail on
+                        // the mainstream polished path and the feature would
+                        // silently no-op). Here text and cues still agree;
+                        // the punctuation pass then chunks at the breaks and
+                        // rejoins with its own \n\n (fenced), preserving
+                        // them, and its per-chunk word-acceptance guards the
+                        // words on either side.
+                        .map { applyParagraphBreaks(it) }
                         .map { applyPunctuationPass(context, asrBackendId, it, listener) }
                         .map { applySummaryPass(context, it, listener) }
                 } else result
@@ -1136,6 +1150,28 @@ class TranscriptionOrchestrator @Inject constructor(
             onFailure = { degradeTo(result, "RepetitionCollapse", it) },
         )
 
+    /**
+     * TASK-910: long pauses become paragraph breaks (a gap between sentence
+     * cues >= [ParagraphBreaks.PARAGRAPH_GAP_MS] renders as a double
+     * newline). A pure whitespace reshaping with the siblings' contract: any
+     * failure degrades to the unbroken result (degradeTo logs it), and the
+     * rawTranscript seam stays untouched (a whitespace-only diff is noise:
+     * the pass that next alters CONTENT records the raw, per the
+     * first-alterer rule).
+     */
+    private fun applyParagraphBreaks(result: TranscriptionResult): TranscriptionResult =
+        runCatching {
+            val broken = ParagraphBreaks.apply(result.segments, result.text)
+            if (broken == result.text) result
+            else {
+                Log.i(TAG, "Paragraph breaks applied (${result.segments.size} cues)")
+                result.copy(text = broken)
+            }
+        }.fold(
+            onSuccess = { it },
+            onFailure = { degradeTo(result, "ParagraphBreaks", it) },
+        )
+
     private fun collapseRepetition(result: TranscriptionResult): TranscriptionResult {
         val collapsed = RepetitionCollapse.collapse(result.text)
         // Review F7: the early return first; per-cue collapse is paid only
@@ -1511,7 +1547,11 @@ class TranscriptionOrchestrator @Inject constructor(
         context: Context,
         backendOverride: String? = null,
         /** TASK-546 AC3: replaces the persisted language preference for this request's config. */
-        languageOverride: String? = null
+        languageOverride: String? = null,
+        /** TASK-909/904: invoked when the load healed onto a sibling
+         *  variant and the retry SUCCEEDED (the switch is then stamped on
+         *  the request's row). */
+        onSiblingSwitch: (suspend () -> Unit)? = null,
     ): Result<Unit> {
         val hasBackend = backendManager.hasActiveBackend()
         val activeBackend = backendManager.getActiveBackend()
@@ -1571,7 +1611,7 @@ class TranscriptionOrchestrator @Inject constructor(
                 // through to the LLM loader below.
                 RemoteOmnivoiceBackend.BACKEND_ID -> loadRemoteBackend(context)
                 else -> backendRegistry.byBackendId(preferredBackendId)?.let { descriptor ->
-                    loadCatalogBackend(context, descriptor, languageOverride)
+                    loadCatalogBackend(context, descriptor, languageOverride, onSiblingSwitch)
                 } ?: loadLlmBackend(context)
             }
 
@@ -1771,7 +1811,9 @@ class TranscriptionOrchestrator @Inject constructor(
         context: Context,
         descriptor: BackendDescriptor,
         /** TASK-546 AC3: request-scoped language override; null reads the preference. */
-        languageOverride: String?
+        languageOverride: String?,
+        /** TASK-909/904: sibling-switch stamp (see ensureBackendLoaded). */
+        onSiblingSwitch: (suspend () -> Unit)? = null,
     ): Result<Unit> {
         val entry = BundledCatalog.byId(descriptor.backendId)
             ?: return Result.failure(TranscriptionException.NotInitialized())
@@ -1806,14 +1848,15 @@ class TranscriptionOrchestrator @Inject constructor(
                 CatalogStringKeys.resolve(d.key), entry.titleCountArg())
             is CatalogDisplay.Literal -> d.text
         }
-        val load = configureSherpaBackend(
+        suspend fun loadOn(path: String): Result<Unit> = configureSherpaBackend(
             backendId = descriptor.backendId,
-            modelPath = resolvedPath,
+            modelPath = path,
             label = label,
             language = language,
             context = context,
             modelType = entry.modelType,
         )
+        val load = loadOn(resolvedPath)
         // TASK-660 layer 2: the self-heal. Only the typed corruption verdict
         // deletes anything; a generic load failure (OOM, NNAPI, wedge, missing
         // metadata) must leave the model dir on disk. TASK-885: a typed
@@ -1826,45 +1869,63 @@ class TranscriptionOrchestrator @Inject constructor(
         if (loadFailure is TranscriptionException.CorruptModelFiles ||
             loadFailure is TranscriptionException.MissingModelFiles
         ) {
-            when (healModelDir(context, descriptor, resolvedPath)) {
-                HealOutcome.DELETION_FAILED -> return Result.failure(
+            when (val heal = healModelDir(context, descriptor, resolvedPath)) {
+                HealOutcome.DeletionFailed -> return Result.failure(
                     TranscriptionException.ModelLoadError(
                         "model dir could not be removed: $resolvedPath"))
-                // TASK-887: re-raise the typed verdict WITH the sibling
-                // flag so the row's copy names the switch (the exception is
-                // the mapping's only carrier of the heal outcome; the copy
-                // claims nothing about the sibling's health, which the
-                // existence-based resolve never verified). The
-                // reconstruction carries the stored detail, NOT the
-                // prefixed message (ModelLoadError re-prefixes on every
-                // construction). The gate above admits exactly these two
-                // types, so the else arm is unreachable by construction.
-                HealOutcome.SIBLING -> return Result.failure(
-                    when (loadFailure) {
-                        is TranscriptionException.CorruptModelFiles ->
-                            TranscriptionException.CorruptModelFiles(
-                                loadFailure.detail, switchedToSibling = true)
-                        is TranscriptionException.MissingModelFiles ->
-                            TranscriptionException.MissingModelFiles(
-                                loadFailure.detail, switchedToSibling = true)
-                        else -> loadFailure
-                    })
-                HealOutcome.NO_SIBLING -> return load
+                // TASK-904: a sibling JUST took over the saved path, so the
+                // triggering request retries the load ONCE on it instead of
+                // failing: the user asked for a transcription, and a usable
+                // model now exists. On retry success the request completes
+                // with no error row at all (the switch was transparent).
+                is HealOutcome.Sibling -> {
+                    val retry = loadOn(heal.path)
+                    val retryFailure = retry.exceptionOrNull()
+                    if (retryFailure != null) {
+                        // Bounded: NO nested heal here. The saved path (the
+                        // sibling) gets its own heal chain on the NEXT
+                        // request; self-limiting, one variant per request.
+                        // Review F2: the re-raise carries NO sibling flag.
+                        // The 887 sibling copy says "no download is needed",
+                        // a health claim that is FALSE in exactly this arm
+                        // (the sibling just failed validation); the plain
+                        // healed copy names the actual remedy (the chain
+                        // completes to a re-download offer next request).
+                        return Result.failure(
+                            when (retryFailure) {
+                                is TranscriptionException.CorruptModelFiles ->
+                                    TranscriptionException.CorruptModelFiles(retryFailure.detail)
+                                is TranscriptionException.MissingModelFiles ->
+                                    TranscriptionException.MissingModelFiles(retryFailure.detail)
+                                else -> retryFailure
+                            })
+                    }
+                    // TASK-909/904: stamp the switch on the row (the note
+                    // renders on the success History entry).
+                    onSiblingSwitch?.invoke()
+                    return retry
+                }
+                HealOutcome.NoSibling -> return load
             }
         }
         return load
     }
 
-    /** TASK-887: the heal's tri-state outcome (the Boolean could not say
-     *  WHICH success landed, and the History row's copy needs exactly
-     *  that). */
-    private enum class HealOutcome {
+    /**
+     * TASK-887/904: the heal's tri-state outcome (the Boolean could not
+     * say WHICH success landed, and the History row's copy needs exactly
+     * that). TASK-904: SIBLING carries the freshly saved path so the
+     * load can be retried ONCE on it instead of failing the request.
+     */
+    private sealed interface HealOutcome {
         /** The directory could not be deleted; nothing was claimed. */
-        DELETION_FAILED,
-        /** Deleted, and a sibling variant took over the saved path. */
-        SIBLING,
+        data object DeletionFailed : HealOutcome
+
+        /** Deleted, and this sibling variant took over the saved path. */
+        data class Sibling(val path: String) : HealOutcome
+
         /** Deleted, no sibling: the entry is not-installed and re-downloadable. */
-        NO_SIBLING,
+        data object NoSibling : HealOutcome
     }
 
     /**
@@ -1883,9 +1944,9 @@ class TranscriptionOrchestrator @Inject constructor(
      * caller (a direct initialize like the benchmark cannot heal and must not
      * wedge the entry behind a stripped dir); THIS heal then removes the whole
      * directory and rewrites the saved-path preference, which only the
-     * orchestrator owns. Returns [HealOutcome.DELETION_FAILED] when the
+     * orchestrator owns. Returns [HealOutcome.DeletionFailed] when the
      * deletion fails, so the caller downgrades to the generic error instead
-     * of claiming removal; [HealOutcome.SIBLING] vs [HealOutcome.NO_SIBLING]
+     * of claiming removal; [HealOutcome.Sibling] vs [HealOutcome.NoSibling]
      * is the TASK-887 fact the History row's copy keys on.
      */
     private suspend fun healModelDir(
@@ -1902,14 +1963,14 @@ class TranscriptionOrchestrator @Inject constructor(
             // every History row until one deletion succeeds.
             Log.e(TAG, "Model dir heal deletion FAILED at $resolvedPath; " +
                 "delivering the generic error and retrying the heal on the next load")
-            return HealOutcome.DELETION_FAILED
+            return HealOutcome.DeletionFailed
         }
         Log.w(TAG, "Model dir heal deleted $resolvedPath; " +
             "the Models tab offers the re-download")
         val next = manager.resolveActiveModelPath(context)
         if (next != null) {
             descriptor.saveModelPath(preferencesManager, next)
-            return HealOutcome.SIBLING
+            return HealOutcome.Sibling(next)
         }
         descriptor.clearModelPath(preferencesManager)
         // Review F2: mirror the Models-tab delete's share-surface
@@ -1918,7 +1979,7 @@ class TranscriptionOrchestrator @Inject constructor(
         // retirement lands BEFORE the shortcut refresh below.
         shareTargetManager.onModelDeletedNow(descriptor.backendId)
         shareShortcutManager.refresh()
-        return HealOutcome.NO_SIBLING
+        return HealOutcome.NoSibling
     }
 
     /**
@@ -2702,7 +2763,16 @@ class TranscriptionOrchestrator @Inject constructor(
             // avail first: the model-size walk is skipped when memory is unreadable,
             // preserving the TASK-314 rule that the filesystem is not touched when
             // the measurement is unavailable.
-            val availBytes = availableMemoryBytes(context)
+            // TASK-909 (GH #118): the free-RAM read and the device-tier
+            // derivation share ONE getMemoryInfo (availMem and totalMem
+            // come from the same struct); the tier is STANDARD whenever
+            // any input is unreadable (it scales a band, never refuses).
+            val memorySnapshot = MemoryReadings.availableAndTotalRamBytes(context)
+            val availBytes = memorySnapshot?.first ?: availableMemoryBytes(context)
+            val deviceTier = DeviceTier.of(
+                memorySnapshot?.second,
+                MemoryReadings.coreCount(),
+                MemoryReadings.mediaPerformanceClass())
             val modelSize = if (availBytes <= 0) 0L
                 else modelPathForBackend(backend.id).takeIf { it.isNotBlank() }
                     ?.let { modelSizeBytes(File(it)) } ?: 0L
@@ -2746,11 +2816,13 @@ class TranscriptionOrchestrator @Inject constructor(
             // required figure is the decode-side bar only; the displayed
             // number is exactly the compared number.
             if (preferencesManager.memoryProtection.first() &&
-                TranscriptionMemoryPolicy.canServeMinimumChunk(availBytes, modelSize, memoryFamily) == false
+                TranscriptionMemoryPolicy.canServeMinimumChunk(
+                    availBytes, modelSize, memoryFamily, deviceTier) == false
             ) {
                 // minimumDecodeBaselineBytes already carries the headroom:
                 // this IS the compared bar, byte for byte.
-                val requiredBytes = TranscriptionMemoryPolicy.minimumDecodeBaselineBytes(memoryFamily, modelSize)
+                val requiredBytes = TranscriptionMemoryPolicy.minimumDecodeBaselineBytes(
+                    memoryFamily, modelSize, deviceTier)
                 Log.w(
                     TAG,
                     "Refusing ${backend.id}: post-load avail=${availBytes / MB}MB cannot hold " +
@@ -2761,7 +2833,8 @@ class TranscriptionOrchestrator @Inject constructor(
                         R.string.transcribe_low_memory, formatMb(availBytes), formatMb(requiredBytes))
                 ))
             }
-            val effective = TranscriptionMemoryPolicy.effectiveChunkSeconds(availBytes, modelSize, cap, memoryFamily)
+            val effective = TranscriptionMemoryPolicy.effectiveChunkSeconds(
+                availBytes, modelSize, cap, memoryFamily, deviceTier)
             if (effective != cap) {
                 Log.i(TAG, "Chunk cap tightened ${cap}s -> ${effective}s for ${backend.id} (RAM-derived)")
             }

@@ -101,6 +101,7 @@
     <string name="logs_search_placeholder">Items zoeken…</string>
     <string name="logs_search_no_results">Geen overeenkomende items</string>
     <string name="logs_search_no_results_hint">Probeer een andere zoekterm</string>
+    <string name="logs_search_mode_similar">Vergelijkbare woorden opnemen</string>
     <string name="browse_audio_content_description">Kies een audiobestand om te transcriberen</string>
     <string name="settings_search_hint">Instellingen zoeken…</string>
     <plurals name="settings_search_matches">
@@ -261,6 +262,7 @@
     <string name="error_model_external_corrupt">De bestanden van het geïmporteerde model zijn beschadigd. Verwijder het via het tabblad Modellen en importeer het opnieuw.</string>
     <string name="error_model_corrupt_healed">Sommige modelbestanden waren beschadigd en zijn door de app verwijderd. Open het tabblad Modellen en download het model opnieuw.</string>
     <string name="error_model_corrupt_sibling">Sommige modelbestanden waren beschadigd, dus de app heeft die variant verwijderd en is overgeschakeld naar de kopie die al op het apparaat staat. Opnieuw downloaden is niet nodig.</string>
+    <string name="history_variant_switched">Overgeschakeld naar een andere geïnstalleerde exemplaar van het model (het gekozen exemplaar was beschadigd)</string>
     <string name="error_model_missing_healed">Sommige modelbestanden ontbraken en zijn door de app verwijderd. Open het tabblad Modellen en download het model opnieuw.</string>
     <string name="error_model_missing_sibling">Sommige modelbestanden ontbraken, dus de app heeft die variant verwijderd en is overgeschakeld naar de kopie die al op het apparaat staat. Opnieuw downloaden is niet nodig.</string>
     <string name="error_native">Er trad een interne fout op tijdens de transcriptie. Blijft dit gebeuren, probeer dan een ander model.</string>
@@ -1264,7 +1266,7 @@
     <string name="voice_note_identity_description">Labels transcribed voice notes with the sender\'s name, shared here or automatic. WhatsApp only for now. The name appears only when the note\'s notification arrived while this was on and its length matches (no guessed names); the waiting list lives in memory only. Requires notification access.</string>
     <string name="voice_note_identity_grant_hint">Notification access is off. Tap to open the system setting and enable it for this app.</string>
     <string name="voice_note_detection_title">Transcriptie van spraakberichten</string>
-    <string name="voice_note_detection_description">Transcribeert nieuwe WhatsApp-spraakberichten zodra ze binnenkomen, terwijl de app draait. Als Android een achtergrondstart blokkeert, start een melding met één tik het alsnog. Een bericht wordt uitsluitend gelezen om het te transcriberen, op dit apparaat; uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
+    <string name="voice_note_detection_description">Automatische modus, een alternatief voor het handmatig delen van elk bericht: één keer instellen (aanzetten en de map met WhatsApp-spraakberichten kiezen), daarna worden nieuwe berichten zodra ze binnenkomen getranscribeerd, zonder verdere tikken. Elk bericht wordt uitsluitend gelezen om het te transcriberen, en alleen op dit apparaat; met de functie uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
     <string name="voice_note_detection_grant_hint">Audio-toegang staat uit. Tik om de app-instellingen te openen en dit in te schakelen; transcriptie start zodra het is verleend.</string>
     <string name="voice_note_folder_grant_rejected">Dit is niet de map met WhatsApp-spraakberichten. Kies de map met de naam WhatsApp Voice Notes en probeer het opnieuw.</string>
     <string name="voice_note_folder_card_title">Map met spraakberichten</string>
@@ -1280,7 +1282,7 @@
     <string name="voice_note_folder_sheet_step2">Scroll omlaag langs het pad naar de map met spraakberichten:</string>
     <string name="voice_note_folder_sheet_step3">Tik met de map WhatsApp Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
     <string name="voice_note_folder_sheet_open">Kiezer openen</string>
-    <string name="voice_note_business_detection_description">Transcribeert nieuwe WhatsApp Business-spraakberichten zodra ze binnenkomen, terwijl de app draait. Als Android een achtergrondstart blokkeert, start een melding met één tik het alsnog. Een bericht wordt uitsluitend gelezen om het te transcriberen, op dit apparaat; uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
+    <string name="voice_note_business_detection_description">Automatische modus, een alternatief voor het handmatig delen van elk bericht: één keer instellen (aanzetten en de map met WhatsApp Business-spraakberichten kiezen), daarna worden nieuwe berichten zodra ze binnenkomen getranscribeerd, zonder verdere tikken. Elk bericht wordt uitsluitend gelezen om het te transcriberen, en alleen op dit apparaat; met de functie uitgeschakeld wordt er niets gelezen. Audiotoegang vereist.</string>
     <string name="voice_note_business_folder_grant_rejected">Dit is niet de map met WhatsApp Business-spraakberichten. Kies de map met de naam WhatsApp Business Voice Notes en probeer het opnieuw.</string>
     <string name="voice_note_business_folder_card_desc">Om de berichten te lezen, verleen één keer toegang tot de map waar WhatsApp Business ze opslaat:</string>
     <string name="voice_note_business_folder_sheet_step3">Tik met de map WhatsApp Business Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>

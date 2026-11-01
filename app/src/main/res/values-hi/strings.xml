@@ -82,6 +82,7 @@
     <string name="logs_search_placeholder">एंट्री खोजें…</string>
     <string name="logs_search_no_results">कोई मिलती-जुलती एंट्री नहीं</string>
     <string name="logs_search_no_results_hint">कोई दूसरा खोज शब्द आज़माएं</string>
+    <string name="logs_search_mode_similar">समान शब्द शामिल करें</string>
     <string name="browse_audio_content_description">ट्रांसक्रिप्शन के लिए ऑडियो फ़ाइल चुनें</string>
     <string name="settings_replay_tour">स्वागत टूर फिर से चलाएँ</string>
     <string name="tour_done">समझ गया</string>
@@ -236,6 +237,7 @@
     <string name="error_model_external_corrupt">आयातित मॉडल की फ़ाइलें दूषित हैं। इसे मॉडल टैब से हटाएँ और फिर से आयात करें।</string>
     <string name="error_model_corrupt_healed">मॉडल की कुछ फ़ाइलें दूषित थीं, इसलिए हटा दी गईं। मॉडल टैब खोलकर मॉडल फिर से डाउनलोड करें।</string>
     <string name="error_model_corrupt_sibling">मॉडल की कुछ फ़ाइलें दूषित थीं, इसलिए ऐप ने वह वैरिएंट हटाकर डिवाइस पर पहले से मौजूद प्रति पर स्विच कर दिया। दोबारा डाउनलोड करने की ज़रूरत नहीं है।</string>
+    <string name="history_variant_switched">डिवाइस पर पहले से मौजूद प्रति पर स्विच कर दिया गया (चुनी गई प्रति दूषित थी)</string>
     <string name="error_model_missing_healed">मॉडल की कुछ फ़ाइलें ग़ायब थीं, इसलिए हटा दी गईं। मॉडल टैब खोलकर मॉडल फिर से डाउनलोड करें।</string>
     <string name="error_model_missing_sibling">मॉडल की कुछ फ़ाइलें ग़ायब थीं, इसलिए ऐप ने वह वैरिएंट हटाकर डिवाइस पर पहले से मौजूद प्रति पर स्विच कर दिया। दोबारा डाउनलोड करने की ज़रूरत नहीं है।</string>
     <string name="error_native">ट्रांसक्रिप्शन के दौरान एक अंदरूनी गड़बड़ी हुई। अगर यह बार-बार हो तो कोई दूसरा मॉडल आज़माएं।</string>
@@ -996,7 +998,7 @@
     <string name="voice_note_identity_grant_hint">सूचना एक्सेस बंद है। सिस्टम सेटिंग खोलने और इस ऐप के लिए इसे चालू करने के लिए टैप करें।</string>
     <!-- TASK-272: automatic voice-note transcription + folder grant -->
     <string name="voice_note_detection_title">वॉइस नोट ट्रांसक्रिप्शन</string>
-    <string name="voice_note_detection_description">ऐप चलते समय नई WhatsApp वॉयेस नोट आते ही ट्रांसक्राइब करता है। Android बैकग्राउंड शुरुआत रोके तो एक टैप वाली नोटिफिकेशन से शुरू होता है। नोट केवल ट्रांसक्रिप्शन के लिए पढ़ा जाता है, इसी डिवाइस पर; बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
+    <string name="voice_note_detection_description">हर नोट को हाथ से साझा करने का विकल्प, स्वचालित मोड: एक बार सेट करें (चालू करें और WhatsApp वॉइस नोट फ़ोल्डर चुनें), उसके बाद नई नोट आते ही बिना किसी और टैप के ट्रांसक्राइब होती हैं। हर नोट केवल ट्रांसक्रिप्शन के लिए और केवल इसी डिवाइस पर पढ़ा जाता है; सुविधा बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
     <string name="voice_note_detection_grant_hint">ऑडियो एक्सेस बंद है। ऐप सेटिंग्स खोलकर सक्षम करने के लिए टैप करें; अनुमति मिलते ही ट्रांसक्रिप्शन शुरू हो जाता है।</string>
     <string name="voice_note_folder_grant_rejected">यह WhatsApp Voice Notes फ़ोल्डर नहीं है। WhatsApp Voice Notes नाम का फ़ोल्डर चुनकर फिर से प्रयास करें।</string>
     <string name="voice_note_folder_card_title">वॉइस नोट फ़ोल्डर</string>
@@ -1012,7 +1014,7 @@
     <string name="voice_note_folder_sheet_step2">वॉइस नोट फ़ोल्डर तक पथ पर नीचे जाएँ:</string>
     <string name="voice_note_folder_sheet_step3">WhatsApp Voice Notes फ़ोल्डर चुनकर (खोले बिना) इस फ़ोल्डर का उपयोग करें पर, फिर अनुमति दें पर टैप करें।</string>
     <string name="voice_note_folder_sheet_open">पिकर खोलें</string>
-    <string name="voice_note_business_detection_description">ऐप चलते समय नई WhatsApp Business वॉयेस नोट आते ही ट्रांसक्राइब करता है। Android बैकग्राउंड शुरुआत रोके तो एक टैप वाली नोटिफिकेशन से शुरू होता है। नोट केवल ट्रांसक्रिप्शन के लिए पढ़ा जाता है, इसी डिवाइस पर; बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
+    <string name="voice_note_business_detection_description">हर नोट को हाथ से साझा करने का विकल्प, स्वचालित मोड: एक बार सेट करें (चालू करें और WhatsApp Business वॉइस नोट फ़ोल्डर चुनें), उसके बाद नई नोट आते ही बिना किसी और टैप के ट्रांसक्राइब होती हैं। हर नोट केवल ट्रांसक्रिप्शन के लिए और केवल इसी डिवाइस पर पढ़ा जाता है; सुविधा बंद होने पर कुछ नहीं पढ़ा जाता। ऑडियो एक्सेस चाहिए।</string>
     <string name="voice_note_business_folder_grant_rejected">यह WhatsApp Business Voice Notes फ़ोल्डर नहीं है। WhatsApp Business Voice Notes नाम का फ़ोल्डर चुनकर फिर से प्रयास करें।</string>
     <string name="voice_note_business_folder_card_desc">नोट पढ़ने के लिए, जिस फ़ोल्डर में WhatsApp Business उन्हें सहेजता है उसे एक बार एक्सेस दें:</string>
     <string name="voice_note_business_folder_sheet_step3">WhatsApp Business Voice Notes फ़ोल्डर चुनकर (खोले बिना) इस फ़ोल्डर का उपयोग करें पर, फिर अनुमति दें पर टैप करें।</string>

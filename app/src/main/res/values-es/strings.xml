@@ -72,6 +72,7 @@
     <string name="logs_search_placeholder">Buscar entradas…</string>
     <string name="logs_search_no_results">Sin entradas coincidentes</string>
     <string name="logs_search_no_results_hint">Prueba con otro término de búsqueda</string>
+    <string name="logs_search_mode_similar">Incluir palabras similares</string>
     <string name="browse_audio_content_description">Elegir un archivo de audio para transcribir</string>
     <string name="settings_replay_tour">Repetir el tour de bienvenida</string>
     <string name="tour_done">Entendido</string>
@@ -206,6 +207,7 @@
     <string name="error_model_external_corrupt">Los archivos del modelo importado están dañados. Elimínalo de la pestaña Modelos e impórtalo de nuevo.</string>
     <string name="error_model_corrupt_healed">Algunos archivos del modelo estaban dañados y se han eliminado. Abre la pestaña Modelos y descarga el modelo de nuevo.</string>
     <string name="error_model_corrupt_sibling">Algunos archivos del modelo estaban dañados: la app eliminó esa variante y cambió a la copia ya presente en el dispositivo. No hace falta descargar de nuevo.</string>
+    <string name="history_variant_switched">Se cambió a otra copia instalada del modelo (la elegida estaba dañada)</string>
     <string name="error_model_missing_healed">Algunos archivos del modelo faltaban y se han eliminado. Abre la pestaña Modelos y descarga el modelo de nuevo.</string>
     <string name="error_model_missing_sibling">Algunos archivos del modelo faltaban: la app eliminó esa variante y cambió a la copia ya presente en el dispositivo. No hace falta descargar de nuevo.</string>
     <string name="error_native">Ocurrió un error interno durante la transcripción. Si persiste, prueba con otro modelo.</string>
@@ -895,7 +897,7 @@
     <string name="voice_note_identity_grant_hint">El acceso a notificaciones está desactivado. Toca para abrir el ajuste del sistema y activarlo para esta app.</string>
     <!-- TASK-272: automatic voice-note transcription + folder grant -->
     <string name="voice_note_detection_title">Transcripción de notas de voz</string>
-    <string name="voice_note_detection_description">Transcribe las notas de voz de WhatsApp en cuanto llegan, con la app en ejecución. Si Android bloquea el inicio en segundo plano, una notificación lo inicia con un toque. Una nota solo se lee para transcribirla, en este dispositivo; apagado no se lee nada. Requiere acceso al audio.</string>
+    <string name="voice_note_detection_description">Modo automático, una alternativa a compartir cada nota a mano: se configura una sola vez (actívalo y elige la carpeta de notas de voz de WhatsApp) y desde entonces las notas nuevas se transcriben en cuanto llegan, sin más toques. Cada nota solo se lee para transcribirla, y únicamente en este dispositivo; con la función desactivada no se lee nada. Requiere acceso al audio.</string>
     <string name="voice_note_detection_grant_hint">El acceso al audio está desactivado. Toca para abrir los ajustes de la app y activarlo; la transcripción comienza en cuanto se conceda.</string>
     <string name="voice_note_folder_grant_rejected">Esa no es la carpeta de notas de voz de WhatsApp. Elige la carpeta llamada WhatsApp Voice Notes e inténtalo de nuevo.</string>
     <string name="voice_note_folder_card_title">Carpeta de notas de voz</string>
@@ -911,7 +913,7 @@
     <string name="voice_note_folder_sheet_step2">Baja por la ruta hasta la carpeta de las notas de voz:</string>
     <string name="voice_note_folder_sheet_step3">Con la carpeta WhatsApp Voice Notes seleccionada (sin abrirla), toca USAR ESTA CARPETA y luego PERMITIR.</string>
     <string name="voice_note_folder_sheet_open">Abrir el selector</string>
-    <string name="voice_note_business_detection_description">Transcribe las notas de voz de WhatsApp Business en cuanto llegan, con la app en ejecución. Si Android bloquea el inicio en segundo plano, una notificación lo inicia con un toque. Una nota solo se lee para transcribirla, en este dispositivo; apagado no se lee nada. Requiere acceso al audio.</string>
+    <string name="voice_note_business_detection_description">Modo automático, una alternativa a compartir cada nota a mano: se configura una sola vez (actívalo y elige la carpeta de notas de voz de WhatsApp Business) y desde entonces las notas nuevas se transcriben en cuanto llegan, sin más toques. Cada nota solo se lee para transcribirla, y únicamente en este dispositivo; con la función desactivada no se lee nada. Requiere acceso al audio.</string>
     <string name="voice_note_business_folder_grant_rejected">Esa no es la carpeta de notas de voz de WhatsApp Business. Elige la carpeta llamada WhatsApp Business Voice Notes e inténtalo de nuevo.</string>
     <string name="voice_note_business_folder_card_desc">Para leer las notas, concede una vez el acceso a la carpeta donde WhatsApp Business las guarda:</string>
     <string name="voice_note_business_folder_sheet_step3">Con la carpeta WhatsApp Business Voice Notes seleccionada (sin abrirla), toca USAR ESTA CARPETA y luego PERMITIR.</string>

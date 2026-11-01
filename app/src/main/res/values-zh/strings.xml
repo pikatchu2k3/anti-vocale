@@ -84,6 +84,7 @@
     <string name="logs_search_placeholder">搜索条目…</string>
     <string name="logs_search_no_results">没有匹配的条目</string>
     <string name="logs_search_no_results_hint">请尝试其他搜索词</string>
+    <string name="logs_search_mode_similar">包含相似词语</string>
     <string name="browse_audio_content_description">选取要转写的音频文件</string>
     <string name="settings_search_hint">搜索设置…</string>
     <string name="settings_search_no_results">没有匹配的设置</string>
@@ -216,6 +217,7 @@
     <string name="error_model_external_corrupt">导入的模型文件已损坏。请在“模型”标签页删除并重新导入。</string>
     <string name="error_model_corrupt_healed">部分模型文件已损坏，应用已将其移除。请打开“模型”标签页重新下载该模型。</string>
     <string name="error_model_corrupt_sibling">部分模型文件已损坏，应用已移除该版本并切换到设备上已有的副本。无需重新下载。</string>
+    <string name="history_variant_switched">已切换到设备上已有的副本（所选副本已损坏）</string>
     <string name="error_model_missing_healed">部分模型文件缺失，应用已将其移除。请打开“模型”标签页重新下载该模型。</string>
     <string name="error_model_missing_sibling">部分模型文件缺失，应用已移除该版本并切换到设备上已有的副本。无需重新下载。</string>
     <string name="error_native">转写时发生内部错误。如果反复出现，请尝试其他模型。</string>
@@ -886,7 +888,7 @@
     <string name="voice_note_identity_description">为转写后的语音消息标注发送者姓名，姓名可在此处提供或自动获取。目前仅支持 WhatsApp。只有当消息通知在此功能开启期间到达且长度匹配时才会显示姓名（绝不猜测姓名）；等待列表仅保存在内存中。需要通知访问权限。</string>
     <string name="voice_note_identity_grant_hint">通知访问权限已关闭。点按可打开系统设置并为本应用启用。</string>
     <string name="voice_note_detection_title">语音消息转写</string>
-    <string name="voice_note_detection_description">应用运行期间，新到达的 WhatsApp 语音消息会被自动转写。如果 Android 阻止后台启动，可通过一键通知启动转写。语音消息仅在本设备上、仅为转写而读取；功能关闭时不读取任何内容。需要音频访问权限。</string>
+    <string name="voice_note_detection_description">自动模式，手动分享每条语音的替代方式：只需设置一次（开启并选择 WhatsApp 语音消息文件夹），此后新语音一到即自动转写，无需再点按。 每条语音仅在转写时、且仅在本设备上读取；功能关闭时不读取任何内容。需要音频访问权限。</string>
     <string name="voice_note_detection_grant_hint">音频访问权限已关闭。点按可打开应用设置并启用；授权后即开始转写。</string>
     <string name="voice_note_folder_grant_rejected">这不是 WhatsApp Voice Notes 文件夹。请选择名为 WhatsApp Voice Notes 的文件夹后重试。</string>
     <string name="voice_note_folder_card_title">语音消息文件夹</string>
@@ -902,7 +904,7 @@
     <string name="voice_note_folder_sheet_step2">沿路径向下滚动，找到语音消息文件夹：</string>
     <string name="voice_note_folder_sheet_step3">选中 WhatsApp Voice Notes 文件夹（不要打开它），点按“使用此文件夹”，然后点按“允许”。</string>
     <string name="voice_note_folder_sheet_open">打开选择器</string>
-    <string name="voice_note_business_detection_description">在应用运行时自动转录新到达的 WhatsApp Business 语音消息。若 Android 阻止后台启动，一键通知即可开始。仅在转录时读取消息，且在本机进行；关闭时不读取任何内容。需要音频访问权限。</string>
+    <string name="voice_note_business_detection_description">自动模式，手动分享每条语音的替代方式：只需设置一次（开启并选择 WhatsApp Business 语音消息文件夹），此后新语音一到即自动转写，无需再点按。 每条语音仅在转写时、且仅在本设备上读取；功能关闭时不读取任何内容。需要音频访问权限。</string>
     <string name="voice_note_business_folder_grant_rejected">这不是 WhatsApp Business Voice Notes 文件夹。请选择名为 WhatsApp Business Voice Notes 的文件夹，然后重试。</string>
     <string name="voice_note_business_folder_card_desc">如需读取语音消息，请一次性授权访问 WhatsApp Business 保存它们的文件夹：</string>
     <string name="voice_note_business_folder_sheet_step3">选中 WhatsApp Business Voice Notes 文件夹（不要进入）后，点按使用此文件夹，然后点按允许。</string>

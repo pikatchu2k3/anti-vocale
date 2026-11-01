@@ -18,7 +18,7 @@ interface LogDao {
     suspend fun update(log: LogEntity)
 
     @Query("DELETE FROM logs WHERE id = :id")
-    suspend fun deleteById(id: String)
+    suspend fun deleteById(id: String): Int
 
     @Query("DELETE FROM logs")
     suspend fun deleteAll()
@@ -69,10 +69,10 @@ interface LogDao {
      * Bounded recent-first query for the Logs UI (TASK-340 Fix 2a): the previous
      * unbounded getAll let the whole history pile into the 256MB heap, and the
      * ViewModel remaps the full list into new objects on every interim Room write.
-     * 500 = the bounded UI window; the search query below reaches FULL history
-     * (SQL LIKE) so the bound does not silently hide older transcripts from search.
-     */
-    /**
+     * 500 = the bounded UI window, and the search query below carries the SAME
+     * bound, so both arms see the same recent window (parity pinned by the
+     * TASK-911 search-mode note in LogsViewModel).
+     *
      * The two queries below list every [LogEntity] column EXCEPT the lean
      * per-row pair `segments` and `firstPassTranscript`: the cues JSON
      * re-copies the transcript per timed row (GH #92) and the first pass
@@ -85,7 +85,7 @@ interface LogDao {
      */
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash FROM logs ORDER BY timestamp DESC LIMIT 500")
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash, switchedToSibling FROM logs ORDER BY timestamp DESC LIMIT 500")
     fun getAll(): Flow<List<LogEntity>>
 
     // TASK-613: RAW query, ESCAPE-clause-aware. Room interfaces cannot give a
@@ -98,7 +98,7 @@ interface LogDao {
     // "%" matching the newest 500 rows regardless of the query).
     @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
         "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
-        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash, switchedToSibling FROM logs WHERE result LIKE '%' || :query || '%' ESCAPE '\\' " +
         "ORDER BY timestamp DESC LIMIT 500")
     fun searchAllRaw(query: String): Flow<List<LogEntity>>
 
@@ -133,9 +133,27 @@ interface LogDao {
     @Query("SELECT * FROM logs WHERE taskId = :taskId LIMIT 1")
     suspend fun getByTaskId(taskId: String): LogEntity?
 
+    /** TASK-912: the SPI log_read op reads one row without a run-as DB pull.
+     *  Same lean projection as the list queries: the heavy segments and
+     *  firstPassTranscript blobs stay out of the row (Room reads them as
+     *  their null defaults; the partial-entity column list is compile-checked). */
+    @Query("SELECT id, timestamp, taskId, type, status, prompt, result, errorMessage, durationMs, " +
+        "filePath, audioDurationSeconds, sourcePackageName, isPartial, failedChunkCount, " +
+        "senderName, modelName, rawTranscript, summary, summarySkipReason, failureContext, processingContext, detectedLanguage, languagePin, savedFolderName, savedFileName, saveFailureReason, contentHash, switchedToSibling FROM logs WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): LogEntity?
+
+    /** TASK-912: the SPI log_delete sweep (marker parameterized; the SPI owns the literal). */
+    @Query("DELETE FROM logs WHERE modelName = :modelName")
+    suspend fun deleteByModelName(modelName: String): Int
+
     /** Records which model handled a task (GH #45); written as soon as the backend is loaded. */
     @Query("UPDATE logs SET modelName = :modelName WHERE taskId = :taskId")
     suspend fun setModelName(taskId: String, modelName: String)
+
+    /** TASK-909/904: the load retried on a sibling variant and succeeded; the
+     *  row carries the note so the variant switch is visible in-app. */
+    @Query("UPDATE logs SET switchedToSibling = 1 WHERE taskId = :taskId")
+    suspend fun setSwitchedToSibling(taskId: String)
 
     // ---- GH #51 status transitions ----
     // The SQL IN-lists below are the single source for the non-terminal set,

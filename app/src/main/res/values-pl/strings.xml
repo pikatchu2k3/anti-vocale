@@ -106,6 +106,7 @@
     <string name="logs_search_placeholder">Szukaj wpisów…</string>
     <string name="logs_search_no_results">Brak pasujących wpisów</string>
     <string name="logs_search_no_results_hint">Spróbuj innego wyszukiwanego hasła</string>
+    <string name="logs_search_mode_similar">Uwzględnij podobne słowa</string>
     <string name="browse_audio_content_description">Wybierz plik audio do transkrypcji</string>
     <string name="settings_replay_tour">Odtwórz ponownie samouczek powitalny</string>
     <string name="tour_done">Rozumiem</string>
@@ -262,6 +263,7 @@
     <string name="error_model_external_corrupt">Pliki zaimportowanego modelu są uszkodzone. Usuń go w zakładce Modele i zaimportuj ponownie.</string>
     <string name="error_model_corrupt_healed">Niektóre pliki modelu były uszkodzone i zostały usunięte. Otwórz zakładkę Modele i pobierz model ponownie.</string>
     <string name="error_model_corrupt_sibling">Niektóre pliki modelu były uszkodzone, więc aplikacja usunęła ten wariant i przełączyła się na kopię już obecną na urządzeniu. Ponowne pobieranie nie jest potrzebne.</string>
+    <string name="history_variant_switched">Przełączono na zdrową kopię już obecną na urządzeniu (wybrana kopia była uszkodzona)</string>
     <string name="error_model_missing_healed">Niektóre pliki modelu były brakujące i zostały usunięte. Otwórz zakładkę Modele i pobierz model ponownie.</string>
     <string name="error_model_missing_sibling">Niektóre pliki modelu były brakujące, więc aplikacja usunęła ten wariant i przełączyła się na kopię już obecną na urządzeniu. Ponowne pobieranie nie jest potrzebne.</string>
     <string name="error_native">Wystąpił błąd wewnętrzny podczas transkrypcji. Jeśli się powtarza, spróbuj innego modelu.</string>
@@ -1058,7 +1060,7 @@
     <string name="voice_note_identity_grant_hint">Dostęp do powiadomień jest wyłączony. Dotknij, aby otworzyć ustawienie systemu i włączyć go dla tej aplikacji.</string>
     <!-- TASK-272: automatic voice-note transcription + folder grant -->
     <string name="voice_note_detection_title">Transkrypcja notatek głosowych</string>
-    <string name="voice_note_detection_description">Transkrybuje nowe notatki głosowe WhatsApp po nadejściu, gdy aplikacja działa. Jeśli Android zablokuje uruchomienie w tle, jedno dotknięcie powiadomienia je wznowi. Notatka jest czytana tylko do transkrypcji, na tym urządzeniu; wyłączone, nic nie jest czytane. Wymaga dostępu do audio.</string>
+    <string name="voice_note_detection_description">Tryb automatyczny, alternatywa dla ręcznego udostępniania każdej notatki: skonfiguruj raz (włącz i wybierz folder notatek głosowych WhatsApp), a od tej pory nowe notatki są transkrybowane po nadejściu, bez dalszych dotknięć. Każda notatka jest czytana wyłącznie do transkrypcji i tylko na tym urządzeniu; przy wyłączonej funkcji nic nie jest czytane. Wymaga dostępu do audio.</string>
     <string name="voice_note_detection_grant_hint">Dostęp do audio jest wyłączony. Dotknij, aby otworzyć ustawienia aplikacji i go włączyć; transkrypcja wystartuje po jego przyznaniu.</string>
     <string name="voice_note_folder_grant_rejected">To nie jest folder notatek głosowych WhatsApp. Wybierz folder o nazwie WhatsApp Voice Notes i spróbuj ponownie.</string>
     <string name="voice_note_folder_card_title">Folder notatek głosowych</string>
@@ -1074,7 +1076,7 @@
     <string name="voice_note_folder_sheet_step2">Przejdź ścieżką w dół do folderu notatek głosowych:</string>
     <string name="voice_note_folder_sheet_step3">Z zaznaczonym folderem WhatsApp Voice Notes (bez otwierania) dotknij UŻYJ TEGO FOLDERU, a potem ZEZWÓL.</string>
     <string name="voice_note_folder_sheet_open">Otwórz selektor</string>
-    <string name="voice_note_business_detection_description">Transkrybuje nowe notatki głosowe WhatsApp Business po nadejściu, gdy aplikacja działa. Jeśli Android zablokuje uruchomienie w tle, jedno dotknięcie powiadomienia je wznowi. Notatka jest czytana tylko do transkrypcji, na tym urządzeniu; wyłączone, nic nie jest czytane. Wymaga dostępu do audio.</string>
+    <string name="voice_note_business_detection_description">Tryb automatyczny, alternatywa dla ręcznego udostępniania każdej notatki: skonfiguruj raz (włącz i wybierz folder notatek głosowych WhatsApp Business), a od tej pory nowe notatki są transkrybowane po nadejściu, bez dalszych dotknięć. Każda notatka jest czytana wyłącznie do transkrypcji i tylko na tym urządzeniu; przy wyłączonej funkcji nic nie jest czytane. Wymaga dostępu do audio.</string>
     <string name="voice_note_business_folder_grant_rejected">To nie jest folder notatek głosowych WhatsApp Business. Wybierz folder o nazwie WhatsApp Business Voice Notes i spróbuj ponownie.</string>
     <string name="voice_note_business_folder_card_desc">Aby czytać notatki, przyznaj raz dostęp do folderu, w którym WhatsApp Business je zapisuje:</string>
     <string name="voice_note_business_folder_sheet_step3">Z zaznaczonym folderem WhatsApp Business Voice Notes (bez otwierania) dotknij UŻYJ TEGO FOLDERU, a potem ZEZWÓL.</string>

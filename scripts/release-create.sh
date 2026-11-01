@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Bash >= 5 required (mapfile; macOS /usr/bin/env bash can resolve to the
+# 3.2 system shell). Re-exec under a real bash 5 when caught there; the
+# v1.14.1 and v1.15.0 releases both died on `mapfile: command not found`
+# before this guard existed (documented in the play-store release memory).
+if ((BASH_VERSINFO[0] < 5)); then
+  for _B5 in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [ -x "$_B5" ]; then
+      echo "note: re-exec under bash 5 ($_B5); found ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" >&2
+      exec "$_B5" "$0" "$@"
+    fi
+  done
+  echo "ERROR: $0 needs bash >= 5 (found ${BASH_VERSION}) and none exists in /opt/homebrew/bin or /usr/local/bin" >&2
+  exit 1
+fi
 # Build-first publish act (TASK-446): creates tag + release + ALL release
 # assets in ONE command, from the artifacts of a `-f commit=<sha>` dispatch.
 #
@@ -150,9 +164,14 @@ RECIPE_GUARD_OK=$(echo "$RUN_JSON" | jq -r '
 # dispatch input; a stale run of a DIFFERENT build-first dispatch would
 # pass that alone. Bind materially: the run's own log must contain the
 # expected commit SHA at the guard step (the comparison prints both SHAs).
+# Two log shapes: the step's own lines when GitHub resolves the step name
+# in the log, and (seen live on run 40549418911) the same OK line under
+# "UNKNOWN STEP" when it does not, so the comparison line itself is the
+# stable anchor.
 if [ "$RECIPE_GUARD_OK" = "true" ]; then
   if ! gh run view "$RUN_ID" -R "$REPO" --log 2>/dev/null |
-      grep -A 3 "Verify recipe commit" | grep -q "$COMMIT"; then
+      grep -E -A 3 "Verify recipe commit|recipe commit $COMMIT matches" |
+      grep -q "$COMMIT"; then
     RECIPE_GUARD_OK=false
   fi
 fi

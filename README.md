@@ -14,7 +14,9 @@ Android app for transcribing voice messages locally on-device, with no internet 
 
 Anti-Vocale receives shared audio files (from WhatsApp, Telegram, etc.), transcribes them using on-device ASR models, and delivers the result via notification with one-tap copy and share-back actions.
 
-It works on recorded calls and meetings too, at any length: recordings beyond a model's limit are split and stitched automatically (up to two hours on the streaming path), a failed long run keeps the transcript it already produced, and results export as subtitles (SRT, VTT) or timestamped text. An optional speaker-labels setting marks who said what in a conversation, rendering SPEAKER turns in results and exports.
+It also plugs into the messengers themselves: new WhatsApp voice notes can transcribe themselves the moment they arrive, and clients like Forkgram can hand their voice messages to Anti-Vocale as their built-in offline transcriber.
+
+It works on recorded calls and meetings too, at any length: recordings beyond a model's limit are split and stitched automatically (up to two hours on the streaming path), a failed long run keeps the transcript it already produced, and results export as subtitles (SRT, VTT) or timestamped text. An optional speaker-labels setting marks who said what in a conversation, rendering SPEAKER turns in results and exports. And it keeps working on phones whose aggressive vendor customizations freeze or kill background work: a protection toggle holds transcription open under Oppo, Realme, OnePlus and Vivo battery managers.
 
 ## Why this app exists
 
@@ -64,6 +66,7 @@ Everything the app can transcribe with, on one page: bundled models with sizes, 
 - **Summaries** - With a Gemma model installed, long transcripts get an optional short recap (and a punctuation polish pass), opt-in from Settings
 - **Speaker labels** - Optional per-sentence speaker attribution in conversations, rendered as SPEAKER turns in the result and every export
 - **Calibration-based ETA** - Progress estimates improve as the model adapts to your device
+- **Hostile-ROM resilience** - On phones whose vendor customizations freeze or kill background work (common on some Oppo, Realme, OnePlus and Vivo models), an opt-in background-protection toggle keeps transcription running with the screen off, a native NNAPI crash resets the provider to CPU on the next launch, and a corrupted model directory heals itself with a fresh download instead of failing forever
 
 ### Results & history
 
@@ -71,6 +74,8 @@ Everything the app can transcribe with, on one page: bundled models with sizes, 
 - **In-row playback** - Play a result's original audio right from its history row: speed control, a position bar, and an optional skip-silences mode for gapped recordings ([#157](https://github.com/RisorseArtificiali/anti-vocale/issues/157))
 - **Duplicate guard** - Share a file that is already transcribed with the same model and the app offers to open the existing result instead of running it again ([#157](https://github.com/RisorseArtificiali/anti-vocale/issues/157))
 - **Language hint** - When a transcript's language clearly differs from your phone's, a one-line hint names how to lock the language for models that honor the setting ([#146](https://github.com/RisorseArtificiali/anti-vocale/issues/146))
+- **Similar-words search** - History search has a second mode that also finds words the recognizer mis-heard: toggle it on and a query for "castellazzo" matches a transcript that says "castelazzo"; plain substring search stays the default ([#161](https://github.com/RisorseArtificiali/anti-vocale/issues/161))
+- **Paragraph breaks** - Long pauses in a dictation become paragraph breaks in the transcript, so hours of audio read as paragraphs instead of one wall of text
 - **Backup & transfer** - Export your settings and full history to a zip archive you choose, and merge it back on any device; the archive is plaintext, so treat the file like the data it holds ([#158](https://github.com/RisorseArtificiali/anti-vocale/issues/158))
 - **Re-transcribe** - Retry any transcription with a different model straight from the history
 - **History actions** - Swipe or long-press any entry for copy, re-transcribe, and delete
@@ -86,7 +91,7 @@ Everything the app can transcribe with, on one page: bundled models with sizes, 
 - **Model-specific share targets** - Pick a specific model directly from the Android share sheet
 - **WhatsApp voice notes** - New WhatsApp and WhatsApp Business voice notes are transcribed automatically as they arrive, zero taps, and the history row can carry the sender's name; see [Advanced integrations](#whatsapp-voice-notes-automatic-transcription)
 - **Tasker/automation support** - Trigger transcription via broadcast intents
-- **Open Transcribe provider (experimental)** - Apps that speak the open [Open Transcribe](https://github.com/23rd/Scrib/blob/master/CONTRACT.md) contract, like [Forkgram](https://github.com/forkgram/TelegramAndroid), can turn Anti-Vocale into their inline voice-message transcriber; off by default (Settings, Automation, Open Transcribe API), and the audio never leaves the device
+- **Open Transcribe provider (experimental)** - Apps that speak the open [Open Transcribe](https://github.com/23rd/Scrib/blob/master/CONTRACT.md) contract, like [Forkgram](https://github.com/forkgram/TelegramAndroid), can turn Anti-Vocale into their inline voice-message transcriber; off by default (Settings, Automation, Open Transcribe API), and the audio never leaves the device (see [Advanced integrations](#open-transcribe-experimental))
 - **Scheduled folder watch** - Watch folders you choose and transcribe new audio files automatically; on Android 11+ the watched folder can be a messaging app's media folder, so incoming voice notes transcribe themselves (scans adapt to what the system allows; a manual scan is always available)
 - **Remote offload (experimental)** - Delegate long or heavy transcriptions to your own OpenAI-compatible server (OmniVoice, whisper.cpp server, ...); off by default, and the audio of delegated runs goes only to the server address you configure
 - **HuggingFace login** - Authenticate (token or OAuth) for gated model downloads
@@ -121,6 +126,7 @@ Everything the app can transcribe with, on one page: bundled models with sizes, 
   <img src="docs/screenshots/settings_tab_top.png" width="300" alt="Settings showing active model, HuggingFace auth, auto-unload timeout">
   <img src="docs/screenshots/settings_tab_mid.png" width="300" alt="Settings showing auto-copy, language, theme options">
   <img src="docs/screenshots/settings_tab_bottom.png" width="300" alt="Settings showing theme, default prompt, per-app settings">
+  <img src="docs/screenshots/freeze_protection.png" width="300" alt="Settings row for background transcription protection against aggressive battery managers">
 </p>
 
 ### Notification with Paged Transcription Result
@@ -288,6 +294,12 @@ Anti-Vocale can transcribe new WhatsApp and WhatsApp Business voice notes the mo
 
 Setup lives in **Settings > Voice notes**, with one section per app: turn transcription on, grant audio access, and pick the app's voice-notes folder once through the guided picker (`WhatsApp Voice Notes` for WhatsApp, `WhatsApp Business Voice Notes` for WhatsApp Business). The two apps are independent: enable either or both, each with its own folder; the History row and the notification name the app the note came from. Optionally enable **sender recognition** as well: the history row is then labeled with the sender's name. A label appears only when the note's own notification confirms it (its reported length must match the audio), so names are never guessed; the waiting list of recent notifications lives in memory only.
 
+<p align="center">
+  <img src="docs/screenshots/whatsapp_voice_notes_setup.png" width="280" alt="Voice notes settings: WhatsApp section with transcription on and folder access granted">
+  <img src="docs/screenshots/whatsapp_voice_notes_picker.png" width="280" alt="The guided folder picker listing the WhatsApp and WhatsApp Business voice-notes folders">
+  <img src="docs/screenshots/whatsapp_voice_notes_sender.png" width="280" alt="Voice notes settings: WhatsApp Business section and the sender-recognition toggle">
+</p>
+
 Privacy is the same contract as everywhere else in the app: while detection is on it reads only the listing of the voice-note folders you picked; a note's audio is read only to transcribe it, entirely on this device; while the feature is off, nothing is read at all.
 
 One honest caveat: on phones with aggressive battery managers (common on some OEMs), notes that arrive while the app has been suspended by the system can be missed until it wakes. If you rely on the automatic mode, excluding Anti-Vocale from battery optimization makes it reliable. WhatsApp and WhatsApp Business only for now.
@@ -295,6 +307,11 @@ One honest caveat: on phones with aggressive battery managers (common on some OE
 ### Open Transcribe (experimental)
 
 Apps that implement the open [Open Transcribe contract](https://github.com/23rd/Scrib/blob/master/CONTRACT.md) can use Anti-Vocale as their in-place voice-message transcriber, the way [Forkgram](https://github.com/forkgram/TelegramAndroid) and Forkgram Classic do. Enable **Settings > Automation > Open Transcribe API** (off by default) and pick Anti-Vocale in the client's offline-transcription settings; the audio is transcribed with the app's own models and never leaves the device. Disabling the toggle removes the app from the clients' pickers again.
+
+<p align="center">
+  <img src="docs/screenshots/forkgram_transcriber_row.png" width="280" alt="Forkgram settings showing Offline Voice-to-Text set to Anti-Vocale">
+  <img src="docs/screenshots/forkgram_transcriber_picker.png" width="280" alt="Forkgram's offline transcriber picker with Anti-Vocale selected">
+</p>
 
 ## License
 

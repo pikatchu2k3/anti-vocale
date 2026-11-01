@@ -105,6 +105,20 @@ jobs:
       - name: Run unit tests (fdroid debug)
         run: ./gradlew :app:testFdroidDebugUnitTest --console=plain
 
+      # TASK-920: scripts/tests rides with the JVM suite in this job because
+      # the job gates publish. Deps come from scripts/requirements-test.txt
+      # (pinned; shared with store-listing.yml so the suite and the shipped
+      # uploader validate the same import surface). Feedback-latency and
+      # attribution trade-offs of hosting here are recorded in TASK-920.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Scripts unit tests
+        run: |
+          python3 -m pip install --quiet -r scripts/requirements-test.txt
+          python3 -m pytest scripts/tests -q
+
       - name: Android Lint (errors fatal; warnings baseline-pinned, TASK-251)
         run: ./gradlew :app:lintFdroidDebug --console=plain
 
@@ -169,7 +183,7 @@ jobs:
           else
             mkdir -p app/libs
             curl -fL --retry 3 -o app/libs/sherpa-onnx.aar \
-              https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.0/sherpa-onnx-2.0.0.aar
+              https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar
           fi
 
       # TASK-853: the Whistle JNI bridge needs libneedle.a per arm ABI (the
@@ -618,7 +632,7 @@ jobs:
           NDK_PINS=$(grep -E '^[[:space:]]+ndk: ' "$RECIPE" | awk '{print $2}' | sort -u)
           [ -n "$NDK_PINS" ] || { echo "::error::no ndk: pins found in $RECIPE"; exit 1; }
 
-          NDK_MAP="r27c=27.2.12479018 r28c=28.2.13676358"
+          NDK_MAP="r27=27.0.12077973 r27c=27.2.12479018 r28c=28.2.13676358"
           UNMAPPED=""
           PACKAGES=""
           for PIN in $NDK_PINS; do

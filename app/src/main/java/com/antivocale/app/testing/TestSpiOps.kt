@@ -7,6 +7,8 @@ import com.antivocale.app.data.ExternalModelStore
 import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.transcription.ModelFamilySupport
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.data.prefsOrDefault
+import com.antivocale.app.data.resetVoiceNoteWatermark
 import com.antivocale.app.data.voiceNoteDetectionEnabled
 import com.antivocale.app.data.voiceNoteTreeUri
 import com.antivocale.app.transcription.BuiltInBackendIds
@@ -14,6 +16,7 @@ import com.antivocale.app.transcription.InferenceProvider
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
+import com.antivocale.app.transcription.TranscriptFuzzySearch
 import com.antivocale.app.ui.theme.ThemeMode
 import com.antivocale.app.ui.theme.TextScale
 import com.antivocale.app.ui.theme.ThemeType
@@ -62,6 +65,13 @@ internal class TestSpiOps(
      *  coordinator's KDoc names (gateState=Active with armed=false after a
      *  failed subscribe); same null-under-fakes story. */
     private val detectionGateState: ((com.antivocale.app.data.VoiceNoteSource) -> com.antivocale.app.data.VoiceNoteGateState)? = null,
+    /** TASK-911: the search and log ops run the History queries without UI.
+     *  Debug receiver passes the real dao; the shared unit fakes answer the
+     *  error envelope (same null-under-fakes story as the params above). */
+    private val logDao: com.antivocale.app.data.local.LogDao? = null,
+    /** TASK-912: the voice_note_simulate op drives the auto-transcriber.
+     *  Same null-under-fakes story. */
+    private val voiceNoteAutoTranscriber: com.antivocale.app.data.VoiceNoteAutoTranscriber? = null,
 ) {
 
     suspend fun handle(
@@ -72,6 +82,7 @@ internal class TestSpiOps(
         url: String? = null,
         family: String? = null,
         modelType: String? = null,
+        mode: String? = null,
     ): String = runCatching {
         when (op) {
             OP_GET -> get()
@@ -86,6 +97,13 @@ internal class TestSpiOps(
             OP_VOICE_NOTE_STATE -> voiceNoteState(value)
             OP_MODEL_DOWNLOAD -> modelDownload(entry, value)
             OP_CLEAR_ORPHANED -> clearOrphaned(entry, value)
+            OP_SEARCH -> search(value, mode)
+            OP_LOG -> insertLog(value)
+            OP_LOG_READ -> readLog(value)
+            OP_LOG_DELETE -> deleteLog(value)
+            OP_VOICE_NOTE_WATERMARK_RESET -> resetWatermark(value)
+            OP_VOICE_NOTE_SIMULATE -> simulateVoiceNote(value, entry)
+            OP_NOTIFY_TEXT -> notifyText(value, entry)
             OP_HELP -> help()
             else -> help(error = if (op == null) null else "unknown op '$op'")
         }
@@ -600,6 +618,222 @@ internal class TestSpiOps(
         return JSONObject().put("op", OP_UNLOAD).put("unloaded", true).toString()
     }
 
+    /** Both history ops share the same null-under-fakes guard. */
+    private val dao: com.antivocale.app.data.local.LogDao
+        get() = requireNotNull(logDao) {
+            "history ops require the log dao; this construction is debug-only"
+        }
+
+    /** One rendered search hit: the full result rides so the preview can cap. */
+    private data class SearchHit(val id: String, val score: Double?, val result: String)
+
+    /**
+     * TASK-911: run the History search the way the ViewModel does, no UI.
+     * mode=literal (default) is the DAO's SQL LIKE arm; mode=similar scores
+     * the same recent window with [TranscriptFuzzySearch], best-first.
+     * Rows carry an 80-char result preview so a device test can verify a
+     * hit without pulling the database; at most [SEARCH_ROW_CAP] rows are
+     * rendered, with the full match count beside them.
+     */
+    private suspend fun search(query: String?, mode: String?): String {
+        if (query.isNullOrBlank()) throw IllegalArgumentException("missing 'value' extra (the query)")
+        val arm = mode?.lowercase().orEmpty()
+        if (arm !in listOf("", "literal", "similar")) {
+            throw IllegalArgumentException("unknown mode '$mode' (use literal or similar)")
+        }
+        val rows = if (arm == "similar") {
+            // The SAME ranking pipeline the ViewModel uses, so the op is a
+            // faithful trial oracle, not a parallel implementation.
+            TranscriptFuzzySearch.scoreRanked(dao.getAll().first(), query) { it.result }
+                .map { (score, row) -> SearchHit(row.id, score, row.result) }
+        } else {
+            dao.searchAll(query).first().map { row -> SearchHit(row.id, null, row.result) }
+        }
+        val rendered = JSONArray()
+        for (hit in rows.take(SEARCH_ROW_CAP)) {
+            val entry = JSONObject().put("id", hit.id)
+            hit.score?.let { entry.put("score", Math.round(it * 1000.0) / 1000.0) }
+            entry.put("preview", hit.result.take(80))
+            rendered.put(entry)
+        }
+        return JSONObject()
+            .put("op", OP_SEARCH)
+            .put("mode", if (arm == "similar") "similar" else "literal")
+            .put("query", query)
+            .put("count", rows.size)
+            .put("rows", rendered)
+            .toString()
+    }
+
+    /**
+     * TASK-911: plant a SUCCESS history row without real audio, so a
+     * search or history trial can stage arbitrary transcript text (a
+     * deliberately mis-heard word, a repetition loop, a paragraph gap).
+     * value = the result text. The row carries modelName=spi-planted so a
+     * later cleanup can tell it apart from real transcripts.
+     */
+    private suspend fun insertLog(text: String?): String {
+        if (text.isNullOrBlank()) throw IllegalArgumentException("missing 'value' extra (the result text)")
+        val now = System.currentTimeMillis()
+        val row = com.antivocale.app.data.local.LogEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            timestamp = now,
+            taskId = "spi-log-$now",
+            type = "AUDIO",
+            status = "SUCCESS",
+            result = text,
+            modelName = PLANTED_MARKER,
+        )
+        dao.insert(row)
+        return JSONObject().put("op", OP_LOG).put("id", row.id).toString()
+    }
+
+    /**
+     * TASK-912: one history row by id, no run-as DB pull. Every column the
+     * lean projection carries is rendered, each string capped at
+     * [LOG_READ_FIELD_CAP] so the whole reply stays far under the binder
+     * limit even for repetition-loop rows (the TASK-506 class); only the
+     * heavy blobs (segments, firstPassTranscript) are absent by design,
+     * because getById's projection leaves them out.
+     */
+    private suspend fun readLog(id: String?): String {
+        if (id.isNullOrBlank()) throw IllegalArgumentException("missing 'value' extra (the row id)")
+        val row = dao.getById(id) ?: throw IllegalArgumentException("no row with id '$id'")
+        fun capped(value: String?): Any = value?.take(LOG_READ_FIELD_CAP) ?: JSONObject.NULL
+        return JSONObject()
+            .put("op", OP_LOG_READ)
+            .put("id", row.id)
+            .put("timestamp", row.timestamp)
+            .put("taskId", row.taskId)
+            .put("type", row.type)
+            .put("status", row.status)
+            .put("prompt", capped(row.prompt))
+            .put("result", capped(row.result))
+            .put("errorMessage", capped(row.errorMessage))
+            .put("durationMs", row.durationMs)
+            .put("filePath", capped(row.filePath))
+            .put("audioDurationSeconds", row.audioDurationSeconds)
+            .put("sourcePackageName", capped(row.sourcePackageName))
+            .put("senderName", capped(row.senderName))
+            .put("isPartial", row.isPartial)
+            .put("failedChunkCount", row.failedChunkCount)
+            .put("modelName", capped(row.modelName))
+            .put("rawTranscript", capped(row.rawTranscript))
+            .put("summary", capped(row.summary))
+            .put("summarySkipReason", capped(row.summarySkipReason))
+            .put("failureContext", capped(row.failureContext))
+            .put("processingContext", capped(row.processingContext))
+            .put("detectedLanguage", capped(row.detectedLanguage))
+            .put("languagePin", capped(row.languagePin))
+            .put("savedFolderName", capped(row.savedFolderName))
+            .put("savedFileName", capped(row.savedFileName))
+            .put("saveFailureReason", capped(row.saveFailureReason))
+            .put("contentHash", capped(row.contentHash))
+            .put("switchedToSibling", row.switchedToSibling)
+            .toString()
+    }
+
+    /**
+     * TASK-912: delete one row by id, or value="planted" to sweep every
+     * SPI-planted trial row (the marker the log op writes), so a scripted
+     * trial can restore clean state without touching real transcripts.
+     */
+    private suspend fun deleteLog(value: String?): String {
+        if (value.isNullOrBlank()) {
+            throw IllegalArgumentException("missing 'value' extra (a row id, or 'planted')")
+        }
+        val deleted = if (value.equals("planted", ignoreCase = true)) {
+            dao.deleteByModelName(PLANTED_MARKER)
+        } else {
+            dao.deleteById(value)
+        }
+        return JSONObject().put("op", OP_LOG_DELETE).put("deleted", deleted).toString()
+    }
+
+    /**
+     * The whatsapp|whatsapp_business selector the voice-note ops share:
+     * null or blank keeps the WhatsApp default, anything else must name a
+     * [com.antivocale.app.data.VoiceNoteSource] (case-insensitive; the
+     * error lists the valid tokens so a script self-corrects).
+     */
+    private fun parseVoiceNoteSource(token: String?): com.antivocale.app.data.VoiceNoteSource {
+        if (token.isNullOrBlank()) return com.antivocale.app.data.VoiceNoteSource.WHATSAPP
+        return com.antivocale.app.data.VoiceNoteSource.entries
+            .firstOrNull { it.name.equals(token, ignoreCase = true) }
+            ?: throw IllegalArgumentException(
+                "unknown source '$token' (valid: " +
+                    com.antivocale.app.data.VoiceNoteSource.entries.joinToString { it.name.lowercase() } + ")")
+    }
+
+    /**
+     * TASK-912: reset the voice-note watermark through the production
+     * reset path. A scripted catch-up trial starts from a CLEAN watermark
+     * instead of backdating one: an arbitrary setter is deliberately
+     * absent (the persisted format's counter-tree invariants are subtle;
+     * reset is the designed way back to a known state).
+     */
+    private suspend fun resetWatermark(source: String?): String {
+        val src = parseVoiceNoteSource(source)
+        preferences.resetVoiceNoteWatermark(src)
+        return JSONObject()
+            .put("op", OP_VOICE_NOTE_WATERMARK_RESET)
+            .put("source", src.name)
+            .toString()
+    }
+
+    /**
+     * TASK-912: run the voice-note pipeline on a staged note WITHOUT a
+     * real WhatsApp arrival. value = the note's path relative to the
+     * granted tree ("WhatsApp Voice Notes/msg-0001.opus"), entry = source.
+     * Calls the auto-transcriber's enqueue with the LIVE tree URI, exactly
+     * what the coordinator does on a real CLOSE_WRITE/MOVED_TO.
+     */
+    private suspend fun simulateVoiceNote(path: String?, source: String?): String {
+        if (path.isNullOrBlank()) throw IllegalArgumentException("missing 'value' extra (the note path inside the tree)")
+        val src = parseVoiceNoteSource(source)
+        val transcriber = requireNotNull(voiceNoteAutoTranscriber) {
+            "voice_note_simulate requires the auto transcriber; this construction is debug-only"
+        }
+        val treeUri = preferences.voiceNoteTreeUri(src).first()
+            ?: throw IllegalArgumentException(
+                "no tree grant for ${src.name}; run voice_note_grant_open once first")
+        val outcome = transcriber.enqueue(path, System.currentTimeMillis(), treeUri, src)
+        return JSONObject()
+            .put("op", OP_VOICE_NOTE_SIMULATE)
+            .put("path", path)
+            .put("source", src.name)
+            // The outcome tells a replayed note (DEDUPED) or an unresolvable
+            // path (UNRESOLVABLE) apart from a real dispatch: without it a
+            // scripted trial would wait for a history row that never comes.
+            .put("outcome", outcome.name)
+            .toString()
+    }
+
+    /**
+     * TASK-912: post a result notification for arbitrary text through the
+     * production factory (build + postIfPermitted + the reserved-band id
+     * allocator), so notification-layout trials run without a transcript.
+     * value = text; entry = sourcePackage (optional; selects per-app prefs).
+     */
+    private suspend fun notifyText(text: String?, sourcePackage: String?): String {
+        if (text.isNullOrBlank()) throw IllegalArgumentException("missing 'value' extra (the notification text)")
+        val context = requireContext(OP_NOTIFY_TEXT)
+        val prefs = com.antivocale.app.data.PerAppPreferencesManager(context)
+            .prefsOrDefault(sourcePackage)
+        val factory = com.antivocale.app.service.ResultNotificationFactory(context)
+        val id = com.antivocale.app.service.ResultNotificationFactory.nextNotificationId()
+        val spec = com.antivocale.app.service.ResultNotificationSpec(
+            transcriptionText = text,
+            taskId = "spi-notify",
+            sourcePackage = sourcePackage,
+            confidence = null,
+            detectedLanguage = null,
+            notificationId = id,
+        )
+        factory.postIfPermitted(id, factory.build(spec, prefs))
+        return JSONObject().put("op", OP_NOTIFY_TEXT).put("id", id).toString()
+    }
+
     /**
      * The catalog entry/variant validation trio model_download and
      * clear_orphaned share (TASK-668's gate round: the two copies had
@@ -798,15 +1032,7 @@ internal class TestSpiOps(
     private suspend fun voiceNoteState(sourceToken: String?): String {
         // WhatsApp Business support: value=whatsapp_business selects the
         // Business coordinator; no value keeps the original WhatsApp answer.
-        val source = if (sourceToken == null) {
-            com.antivocale.app.data.VoiceNoteSource.WHATSAPP
-        } else {
-            com.antivocale.app.data.VoiceNoteSource.entries
-                .firstOrNull { it.name.equals(sourceToken, ignoreCase = true) }
-                ?: throw IllegalArgumentException(
-                    "unknown source '$sourceToken' (valid: " +
-                        com.antivocale.app.data.VoiceNoteSource.entries.joinToString { it.name.lowercase() } + ")")
-        }
+        val source = parseVoiceNoteSource(sourceToken)
         val enabled = preferences.voiceNoteDetectionEnabled(source).first()
         val uri = preferences.voiceNoteTreeUri(source).first()
         val audioGranted = appContext?.let {
@@ -890,7 +1116,43 @@ internal class TestSpiOps(
          *  arg shape: entry=<catalog id> value=<variant name>. */
         const val OP_CLEAR_ORPHANED = "clear_orphaned"
         const val OP_VOICE_NOTE_STATE = "voice_note_state"
+        /** TASK-911: value=<query> mode=literal|similar, the History search
+         *  without UI (similar is the TranscriptFuzzySearch arm). */
+        const val OP_SEARCH = "search"
+        /** TASK-911: value=<result text>, plant a SUCCESS history row. */
+        const val OP_LOG = "log"
+        /** TASK-912: value=<row id>, the FULL row (no run-as DB pull). */
+        const val OP_LOG_READ = "log_read"
+        /** TASK-912: value=<row id> or "planted" to sweep the SPI rows. */
+        const val OP_LOG_DELETE = "log_delete"
+        /** TASK-912: value=<whatsapp default or whatsapp_business>; resets
+         *  through the detector's own production path (no raw setter, by
+         *  design: the format invariants are subtle). */
+        const val OP_VOICE_NOTE_WATERMARK_RESET = "voice_note_watermark_reset"
+        /** TASK-912: value=<note path inside the tree>, entry=<source>; the
+         *  auto-transcriber path without a real WhatsApp arrival. */
+        const val OP_VOICE_NOTE_SIMULATE = "voice_note_simulate"
+        /** TASK-912: value=<text>, entry=<sourcePackage optional>; a result
+         *  notification through the production factory. */
+        const val OP_NOTIFY_TEXT = "notify_text"
         const val OP_HELP = "help"
+
+        /** search op rendered-row cap (full count rides beside it). */
+        const val SEARCH_ROW_CAP = 20
+
+        /**
+         * log_read per-field cap: ~30 fields at 16K keeps the whole reply
+         * far under the binder limit even on repetition-loop rows
+         * (CLIPBOARD_TEXT_CAP's rationale, applied per field).
+         */
+        const val LOG_READ_FIELD_CAP = 16 * 1024
+
+        /**
+         * Single source of the planted-row marker: the log op writes it,
+         * the log_delete sweep keys on it (parameterized into the DAO, so
+         * the literal lives HERE only).
+         */
+        const val PLANTED_MARKER = "spi-planted"
 
         /**
          * Every op handle() dispatches; help() renders the array and the
@@ -899,7 +1161,7 @@ internal class TestSpiOps(
          * both are intercepted receiver-side before handle() runs, so they
          * live in the receiver's own table.
          */
-        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_HELP)
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_SEARCH, OP_LOG, OP_LOG_READ, OP_LOG_DELETE, OP_VOICE_NOTE_WATERMARK_RESET, OP_VOICE_NOTE_SIMULATE, OP_NOTIFY_TEXT, OP_HELP)
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024
