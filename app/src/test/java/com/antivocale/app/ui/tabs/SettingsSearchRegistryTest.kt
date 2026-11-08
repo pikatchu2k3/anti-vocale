@@ -40,6 +40,7 @@ class SettingsSearchRegistryTest {
         summarizeOn = summarizeOn,
         batteryExemptionOffered = batteryExemptionOffered,
         refinementOn = refinementOn,
+        refinementAvailable = refinementOn,
         speakerIdEnabled = speakerIdEnabled,
         transcriptionHintRes = transcriptionHintRes,
     )
@@ -154,7 +155,7 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.SWIPE_ACTION, SettingsSearchId.CONVERSATION_GROUPING,
                 SettingsSearchId.COMPACT_RESULT_ACTIONS, SettingsSearchId.TECHNICAL_DETAILS,
                 SettingsSearchId.LANGUAGE_CHIP, SettingsSearchId.RETRANSCRIBE,
-                SettingsSearchId.ADVANCED_SHARE_FORMATS),
+                SettingsSearchId.WORD_TAP_SEEK, SettingsSearchId.ADVANCED_SHARE_FORMATS),
             SettingsSearchGroup.INTEGRATIONS to listOf(
                 SettingsSearchId.SHARE_TARGETS, SettingsSearchId.SUBTITLE_TIMEOUT, SettingsSearchId.AUTOMATION_HUB,
                 SettingsSearchId.VOICE_NOTE_HUB,
@@ -348,7 +349,8 @@ class SettingsSearchRegistryTest {
                 SettingsSearchId.COMPACT_RESULT_ACTIONS,
                 SettingsSearchId.TECHNICAL_DETAILS,
                 SettingsSearchId.LANGUAGE_CHIP,
-                SettingsSearchId.RETRANSCRIBE, SettingsSearchId.ADVANCED_SHARE_FORMATS,
+                SettingsSearchId.RETRANSCRIBE, SettingsSearchId.WORD_TAP_SEEK,
+                SettingsSearchId.ADVANCED_SHARE_FORMATS,
             ),
             visibleIds(SettingsSearchSection.APPEARANCE, state()),
         )
@@ -361,6 +363,15 @@ class SettingsSearchRegistryTest {
                 R.string.text_size_title, R.string.text_size_description,
             ),
             res(SettingsSearchId.THEME, state()),
+        )
+        // TASK-918: the picker screen's notes are the card's children, so
+        // they belong to its search vocabulary like any other child string.
+        assertEquals(
+            listOf(
+                R.string.app_icon_title, R.string.app_icon_note,
+                R.string.app_icon_scope_note,
+            ),
+            res(SettingsSearchId.APP_ICON, state()),
         )
     }
 
@@ -456,9 +467,11 @@ class SettingsSearchRegistryTest {
     }
 
     @Test
-    fun `feedback is one entry carrying the whole card`() {
+    fun `feedback keeps the whole-card entry beside the what's-new hub`() {
+        // TASK-929: the section's second card (the What's-New hub) joins
+        // the single whole-card entry in tree order.
         assertEquals(
-            listOf(SettingsSearchId.FEEDBACK),
+            listOf(SettingsSearchId.FEEDBACK, SettingsSearchId.WHATS_NEW),
             visibleIds(SettingsSearchSection.FEEDBACK, state()),
         )
         assertEquals(
@@ -473,6 +486,10 @@ class SettingsSearchRegistryTest {
                 R.string.faq_full_link,
             ),
             res(SettingsSearchId.FEEDBACK, state()),
+        )
+        assertEquals(
+            listOf(R.string.whats_new_title, R.string.whats_new_summary),
+            res(SettingsSearchId.WHATS_NEW, state()),
         )
     }
 }

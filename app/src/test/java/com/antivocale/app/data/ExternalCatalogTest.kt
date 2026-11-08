@@ -183,7 +183,59 @@ class ExternalCatalogTest {
         // FLEURS ko vs SenseVoice 8.44% and whisper-small 21.19%; the
         // entry promised quality it does not have on general speech.
         // Still importable by URL; SenseVoice is the ko path)
-        assertEquals(32, entries.size)
+        // + whisper large v3 finnish (TASK-769: our conversion of
+        // Finnish-NLP/whisper-large-finnish-v3, FLEURS fi 7.09 vs
+        // turbo's 9.05; the on-device pass stays a separate gate,
+        // hosted at pantinor/sherpa-onnx-whisper-large-finnish-v3)
+        // + canary 1b v2 dutch int8 (TASK-954: bnoordhuis' prebuilt
+        // conversion; our FLEURS nl measurement 6.08 vs turbo 8.29
+        // and 2.4x faster decode; device pass pending)
+        // + whisper large v3 french distil int8 (TASK-953: our conversion
+        // of bofenghuang's distil-dec16, FLEURS fr 6.54 vs turbo 8.59
+        // and vs the full fine-tune's 7.10, at 1.35GB; hosted at
+        // pantinor/sherpa-onnx-whisper-large-v3-french-distil;
+        // device pass pending)
+        // + whisper large v3 german full fine-tune (GH #183 decision:
+        // ships beside turbo as the training-domain pick; FLEURS de
+        // 7.48 vs turbo 6.01, CV15 3.00 on its own domain; hosted at
+        // pantinor/sherpa-onnx-whisper-large-v3-german; device pass
+        // pending)
+        // + fritter english (2026-11-07 schema-1 CDN manifest import:
+        // Parakeet TDT v2 fine-tune, non-commercial CC-BY-NC-4.0, hosted on
+        // the publisher's CDN at a floating latest manifest) + sabich
+        // english-hebrew (Hebrish transducer, non-commercial Hebrish terms,
+        // same floating-manifest pattern). NOT shipped entry files: the
+        // entryUrl IS the schema-1 manifest the importer sniffs.
+        // Round 2: + fritter streaming english (Nemotron 0.6B streaming
+        // transducer, same manifest dialect; the INDEX entry carries the
+        // streaming flag, the manifest has no such field).
+        assertEquals(38, entries.size)
+
+        // The three schema-1 manifest entries: family/languages from the index,
+        // entryUrl is the live manifest (no committed asset; see the
+        // asset-pairing test's exemption).
+        // TASK-968 device finding: the STREAMING entry was pulled. Daniel's
+        // published int8 artifact is an OFFLINE export of the hybrid (no
+        // decode_chunk_len anywhere in the encoder): streaming=true dies at
+        // the TASK-720 gate, and without the flag the name heuristic rejects
+        // it. Relisted only when the artifact is a true online export.
+        val fritter = ExternalCatalog.filter(entries, "fritter")
+        assertEquals(1, fritter.size)
+        assertEquals(ModelFamily.TRANSDUCER, fritter[0].family)
+        assertEquals(listOf("en"), fritter[0].languages)
+        assertEquals("https://models.carrotcakeai.com/asr/fritter/latest/manifest.json",
+            fritter[0].entryUrl)
+        assertFalse(fritter[0].streaming)
+        val sabich = ExternalCatalog.filter(entries, "sabich")
+        assertEquals(1, sabich.size)
+        assertEquals(ModelFamily.TRANSDUCER, sabich[0].family)
+        assertEquals(listOf("en", "he"), sabich[0].languages)
+        assertEquals("https://cdn.hebrish.app/models/sabich/latest.json", sabich[0].entryUrl)
+        assertFalse(sabich[0].streaming)
+        // All three carry no authored licence in the index: the manifest's own
+        // licence/terms field supplies it at import time.
+        assertEquals(null, fritter[0].licence)
+        assertEquals(null, sabich[0].licence)
 
         // TASK-635/643: the omnilingual entry ships in the VERSIONED index
         // (the bundled asset); the unsuffixed index.json is the frozen legacy
@@ -232,6 +284,18 @@ class ExternalCatalogTest {
             Triple("moonshine-ukrainian.json", "MOONSHINE" to "", 3),
             Triple("moonshine-vietnamese.json", "MOONSHINE" to "", 3),
             Triple("arabic-small.json", "WHISPER" to "", 3),
+            // TASK-769: the Finnish quality pick rides the same pin tripwire
+            // as its siblings (family/modelType, file count, sha/size shape).
+            Triple("finnish.json", "WHISPER" to "", 3),
+            // TASK-954: the Dutch quality pick, same tripwire.
+            Triple("dutch.json", "CANARY" to "", 3),
+            // TASK-953: the French distil pick (the heavy tier lost to it on
+            // every axis and is NOT published).
+            Triple("french.json", "WHISPER" to "", 3),
+            // GH #183 maintainer decision: the German full fine-tune ships
+            // ALONGSIDE turbo (domain pick: CV15 3.00 on its training
+            // domain, FLEURS 7.48 vs turbo 6.01 on ours).
+            Triple("german-large.json", "WHISPER" to "", 3),
         ).forEach { (file, pin, fileCount) ->
             val obj = org.json.JSONObject(
                 RepoFiles.readText("src/main/assets/external-catalog/$file"))
@@ -263,6 +327,10 @@ class ExternalCatalogTest {
             "moonshine-spanish.json" to "es",
             "moonshine-ukrainian.json" to "uk",
             "moonshine-vietnamese.json" to "vi",
+            "finnish.json" to "fi",
+            "dutch.json" to "nl",
+            "french.json" to "fr",
+            "german-large.json" to "de",
         ).forEach { (file, lang) ->
             val obj = org.json.JSONObject(
                 RepoFiles.readText("src/main/assets/external-catalog/$file"))
@@ -287,13 +355,14 @@ class ExternalCatalogTest {
         assertEquals(ModelFamily.TRANSDUCER, persian[0].family)
         // "ry" is an inner substring of "Canary": word matching keeps it silent
         assertTrue(ExternalCatalog.filter(entries, "ry").isEmpty())
-        // a real name word still finds the four flash entries...
-        assertEquals(4, ExternalCatalog.filter(entries, "canary").size)
+        // a real name word still finds the four flash entries plus the
+        // Dutch 1B pick (TASK-954)...
+        assertEquals(5, ExternalCatalog.filter(entries, "canary").size)
         // ...and the "de" code surfaces every German-capable entry via
         // languages (TASK-596: orukeet now declares its full 24-language
         // set, so it joins the German results; TASK-855: transcribepsy
         // EU declares de too)
-        assertEquals(6, ExternalCatalog.filter(entries, "de").size)
+        assertEquals(7, ExternalCatalog.filter(entries, "de").size)
         // TASK-652: the six IndicConformer entries surface via their codes.
         // TASK-663: Dolphin declares the same six codes, so each surfaces
         // exactly the IndicConformer entry plus Dolphin (order: Dolphin first).
@@ -335,15 +404,23 @@ class ExternalCatalogTest {
             assertEquals(code, obj.getJSONArray("languages").getString(0))
             assertEquals(2, obj.getJSONArray("files").length())
         }
-        // every index entryUrl basename must be a committed asset (index
-        // parsed ONCE, not per entry: the loop below is per-name lookup)
+        // OUR entries' entryUrl basenames must be committed assets. Entries
+        // hosted elsewhere (the schema-1 CDN manifests since 2026-11-07, and
+        // any future publisher-hosted entry) are exempt: their entryUrl IS
+        // the live document, fetched and sniffed at import time, so there is
+        // deliberately no committed asset. The rule is inverted from the
+        // original all-entries form so a new CDN entry is auto-admitted
+        // without touching this test; our-repo URLs stay enforced (index
+        // parsed ONCE, not per entry).
+        val ourRawPrefix = "https://raw.githubusercontent.com/RisorseArtificiali/"
         val assetDir = RepoFiles.resolve("src/main/assets/external-catalog")
         val assets = assetDir.listFiles()?.map { it.name }?.toSet() ?: emptySet()
         val byName = parsedIndex.associateBy { it.name }
         indexNames.forEach { name ->
-            val basename = java.io.File(
-                requireNotNull(byName[name]) { "index entry $name missing" }.entryUrl).name
-            assertTrue("index entry $name references $basename but no such asset exists",
+            val entry = requireNotNull(byName[name]) { "index entry $name missing" }
+            if (!entry.entryUrl.startsWith(ourRawPrefix)) return@forEach
+            val basename = java.io.File(entry.entryUrl).name
+            assertTrue("our-repo index entry $name references $basename but no such asset exists",
                 basename in assets)
         }
     }

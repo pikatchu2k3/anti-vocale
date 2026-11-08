@@ -11,11 +11,13 @@ import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.data.catalog.CatalogDisplay
 import com.antivocale.app.data.catalog.CatalogStringKeys
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.antivocale.app.ui.components.countAwareString
+import com.antivocale.app.transcription.placeholderAwareString
+import com.antivocale.app.transcription.variantTitle
 
 /**
  * Immutable metadata about one transcription backend, tying together the two
@@ -152,12 +154,12 @@ internal fun variantAwareDisplayName(
     val familyResId = descriptor.displayNameResId
         ?: return descriptor.deriveDisplayName(context, savedPath ?: "")
     val entry = BundledCatalog.byId(descriptor.backendId)
-    // TASK-760: a countPlaceholder display formats the entry's language
+    // TASK-760: a placeholder-bearing display formats the entry's language
     // count (the same derivation the Model tab card uses). An entry without
     // a catalog record keeps the ORIGINAL precedence: the family label wins
     // (the llm backend's fixed localized name must not fall to the file
     // name), so the entry checks below stay gated on it.
-    val family = context.countAwareString(familyResId, entry?.titleCountArg())
+    val family = context.placeholderAwareString(familyResId, entry?.titleFormatArgs().orEmpty())
     if (entry == null || entry.variants.size <= 1) return family
     val dirName = savedPath?.takeUnless { it.isBlank() }?.let { File(it).name } ?: return family
     // Strict dir-name match (SherpaModelManager.isValidModelDir's scan idiom):
@@ -165,7 +167,7 @@ internal fun variantAwareDisplayName(
     // path with the wrong variant.
     val variant = entry.variants.firstOrNull { it.dirName == dirName } ?: return family
     val variantUi = CatalogVariantUi.of(entry.id, variant.name)
-    val variantTitle = context.countAwareString(variantUi.titleResId, variantUi.titleFormatArg())
+    val variantTitle = context.variantTitle(variantUi)
     return if (variantTitle.contains(family, ignoreCase = true)) variantTitle else "$family $variantTitle"
 }
 
@@ -186,6 +188,12 @@ internal fun variantAwareDisplayName(
  *
  * Dispatch-site status (the sherpa-onnx consolidation removed the bookkeeping
  * [ExtractionService.ModelType] enum; all sites now key on backend-id strings):
+ *  - id-keyed display-name wrappers ([OomBreadcrumbRecorder],
+ *    [com.antivocale.app.ui.viewmodel.LogsViewModel],
+ *    [com.antivocale.app.ui.viewmodel.SettingsViewModel] share icons,
+ *    [com.antivocale.app.benchmark.BenchmarkManager]) resolve through
+ *    [resolveDisplayName] (TASK-957 consolidation; each keeps its own
+ *    fallback at the call site)
  *  - [com.antivocale.app.data.ActiveModelRepository] — descriptor's model-path
  *    flow + display-name derivation; unknown ids keep the generic-modelPath
  *    fallback locally
@@ -201,6 +209,8 @@ internal fun variantAwareDisplayName(
  *  - [com.antivocale.app.service.ExtractionService] (downloads keyed by entry id)
  *  - [OomBreadcrumbRecorder] (TASK-679: display-name derivation for the
  *    resident engines the breadcrumb and the memory panel name)
+ *  - [com.antivocale.app.benchmark.BenchmarkManager] (TASK-955: busy/init
+ *    failure messages name the backend through variantAwareDisplayName)
  */
 @Singleton
 class BackendRegistry @Inject constructor(
@@ -279,7 +289,11 @@ class BackendRegistry @Inject constructor(
             },
             deriveDisplayName = { context, path ->
                 SherpaModelManager.of(entry.id).detectVariant(File(path).name)
-                    ?.let { variantName -> context.getString(CatalogVariantUi.of(entry.id, variantName).titleResId) }
+                    ?.let { variantName ->
+                        val variantUi = CatalogVariantUi.of(entry.id, variantName)
+                        // TASK-947: a slotted title formats its catalog args.
+                        context.variantTitle(variantUi)
+                    }
                     ?: File(path).name
             },
             modelPathFlow = { it.sherpaModelPath(entry.id) },
@@ -402,4 +416,35 @@ class BackendRegistry @Inject constructor(
      */
     fun byShareAlias(alias: String?): BackendDescriptor? =
         alias?.takeIf { it.isNotBlank() }?.let { a -> backends.firstOrNull { it.shareAlias == a } }
+
+    /**
+     * The ONE display-name resolve for an id the caller has NOT already
+     * turned into a descriptor: the registry lookup plus the shared
+     * [variantAwareDisplayName] derivation in one suspend call. Returns ""
+     * when the id is unregistered or the derivation comes back blank; each
+     * caller keeps its own fallback string at the call site (they differ by
+     * design: the backend displayName, the raw backendId, the engine name).
+     *
+     * Consumers (TASK-957; the class KDoc's dispatch-site checklist above
+     * is the ONE list - do not duplicate it here): OomBreadcrumbRecorder,
+     * LogsViewModel (re-transcribe picker), SettingsViewModel (share
+     * icons), BenchmarkManager. ModelActivator is a documented carve-out
+     * (comments only): its arms capture the ACTIVATED path before/around
+     * activation, not a fresh registry preference read.
+     *
+     * Sites holding a descriptor with the saved path already in hand (the
+     * shortcut eligibility check, ActiveModelRepository's flow, the
+     * orchestrator's log write, LogsViewModel's fast-backend label at the
+     * deliberate null-path pick) keep calling [variantAwareDisplayName]
+     * directly to avoid a second preference read.
+     */
+    suspend fun resolveDisplayName(
+        context: Context,
+        preferencesManager: PreferencesManager,
+        backendId: String,
+    ): String {
+        val descriptor = byBackendId(backendId) ?: return ""
+        return variantAwareDisplayName(
+            context, descriptor, descriptor.modelPathFlow(preferencesManager).first())
+    }
 }

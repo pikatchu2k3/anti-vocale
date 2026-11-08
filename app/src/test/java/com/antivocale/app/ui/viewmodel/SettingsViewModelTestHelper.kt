@@ -1,5 +1,7 @@
 package com.antivocale.app.ui.viewmodel
 
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import android.app.Application
 import android.content.Context
 import com.antivocale.app.data.ActiveModelRepository
@@ -38,8 +40,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * PRECONDITION: construct only AFTER Dispatchers.setMain(testDispatcher)
  * ran in the suite's setup (the ViewModel's init launches on Main; an
  * uninitialized Main fails every test with a dispatcher error that reads
- * like a harness bug). Pair every construction with [cleanup] in @After
- * (the speaker-ids temp dir is the helper's one filesystem footprint).
+ * like a harness bug). Since TASK-961 the pairing is registration:
+ * construct through ViewModelTeardownTest.register, which cancels the
+ * ViewModel's scope in the ordered teardown and calls [cleanup] after
+ * Main resets (the speaker-ids temp dir is the helper's one filesystem
+ * footprint).
  */
 internal class SettingsViewModelTestHelper(
     val fakePrefs: FakePreferencesManager = FakePreferencesManager(),
@@ -53,8 +58,16 @@ internal class SettingsViewModelTestHelper(
     private val speakerIdsDir = java.nio.file.Files
         .createTempDirectory("speaker-ids").toFile()
 
-    /** Deletes the one filesystem footprint; call from the suite's @After. */
+    /**
+     * The teardown half, run by [ViewModelTeardownTest]: cancels the
+     * harness ViewModel's scope (TASK-960: pending jobs must die before
+     * unmockkAll/resetMain or they resume against dead dispatchers and
+     * crash into the NEXT class's Main), then deletes the one filesystem
+     * footprint. The cancel is a no-op when the harness already cancelled
+     * the scope; idempotent by design.
+     */
     fun cleanup() {
+        viewModel.viewModelScope.cancel()
         speakerIdsDir.deleteRecursively()
     }
 

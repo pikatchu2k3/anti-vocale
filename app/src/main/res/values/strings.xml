@@ -152,21 +152,21 @@
     <string name="parakeet_download_confirm_title">Download Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">This will download ~%1$dMB. Parakeet is faster but less accurate than Gemma for transcription.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 languages • Alternative to the default</string>
+    <string name="parakeet_smoothquant_description">~%1$dMB • %2$d languages • Alternative to the default</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 languages • The default: best device-measured quality</string>
+    <string name="parakeet_stock_description">~%1$dMB • %2$d languages • The default: fastest multilingual</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
     <string name="whisper_description">Multilingual speech recognition</string>
     <string name="whisper_small_title">Whisper Small</string>
-    <string name="whisper_small_description">~358MB • Lower accuracy, especially on noisy audio • Unreliable language auto-detection (defaults to your app language) • Only for low-spec devices</string>
+    <string name="whisper_small_description">~%1$dMB • Lower accuracy, especially on noisy audio • Unreliable language auto-detection (defaults to your app language) • Only for low-spec devices</string>
     <string name="whisper_turbo_title">Whisper Turbo</string>
-    <string name="whisper_turbo_description">~988MB • Near large-v3 quality • Balanced multilingual</string>
+    <string name="whisper_turbo_description">~%1$dMB • Near large-v3 quality • Balanced multilingual</string>
     <string name="whisper_medium_title">Whisper Medium</string>
-    <string name="whisper_medium_description">~903MB • Good accuracy • Multilingual</string>
+    <string name="whisper_medium_description">~%1$dMB • Good accuracy • Multilingual</string>
     <string name="whisper_distil_large_v3_title">Distil Italian</string>
-    <string name="whisper_distil_large_v3_description">~939MB • 2 decoder layers • Fastest • Optimized for Italian</string>
+    <string name="whisper_distil_large_v3_description">~%1$dMB • 2 decoder layers • Fastest • Optimized for Italian</string>
     <string name="whisper_download">Download Whisper</string>
     <string name="whisper_download_confirm_title">Download %1$s?</string>
     <string name="whisper_download_confirm_message">This will download ~%1$dMB. Whisper provides excellent multilingual support with proper punctuation.</string>
@@ -177,7 +177,7 @@
     <string name="qwen3_asr_title">Qwen3-ASR (%1$d languages)</string>
     <string name="qwen3_asr_description">%1$d languages</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • %1$d languages</string>
+    <string name="qwen3_asr_0_6b_description">~%1$dMB • %2$d languages</string>
     <string name="qwen3_asr_download_confirm_title">Download %1$s?</string>
     <string name="qwen3_asr_download">Download Qwen3-ASR</string>
     <string name="qwen3_asr_delete_message">Delete Qwen3-ASR model?</string>
@@ -187,7 +187,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (streaming)</string>
-    <string name="nemotron_description">~640MB • Streaming • Accuracy over speed</string>
+    <string name="nemotron_description">~%1$dMB • Streaming • Accuracy over speed</string>
     <string name="nemotron_download_confirm_title">Download %1$s?</string>
     <string name="nemotron_download_confirm_message">This will download ~%1$dMB. Nemotron 3.5 is a streaming multilingual ASR model.</string>
     <string name="nemotron_download">Download Nemotron</string>
@@ -197,12 +197,12 @@
 
     <!-- GigaAM v3 model -->
     <string name="gigaam_title">GigaAM v3</string>
-    <string name="gigaam_description">~326MB • Fast • Russian ASR with punctuation</string>
+    <string name="gigaam_description">~%1$dMB • Fast • Russian ASR with punctuation</string>
     <string name="gigaam_name">GigaAM v3</string>
-    <string name="whistle_name">Whistle (17 MB)</string>
-    <string name="whistle_description">~17MB • Very fast • 7 languages, detected automatically</string>
+    <string name="whistle_name">Whistle (%1$d MB)</string>
+    <string name="whistle_description">~%1$dMB • Very fast • %2$d languages, detected automatically</string>
     <string name="benchmark_unsupported_engine">Benchmarking is not supported for this engine</string>
-    <string name="model_info_best_for_whistle">Fastest on-device start: 17 MB, 7 languages, instant first text</string>
+    <string name="model_info_best_for_whistle">Fastest on-device start: %1$d MB, %2$d languages, instant first text</string>
     <string name="model_info_notes_whistle">Word accuracy trails Parakeet on Italian; music can transcribe as text (the engine has no music filter)</string>
     <string name="gigaam_download_confirm_title">Download GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">This will download ~%1$dMB. GigaAM v3 is a Russian-only ASR model from Sber with strong Russian accuracy.</string>
@@ -375,6 +375,7 @@
     <string name="processing_segment_progress">Segment %1$d of %2$d…</string>
     <string name="progressive_initial">Preparing text; final result available on completion</string>
     <string name="added_to_queue">Added to queue…</string>
+    <string name="batch_enqueued">%1$d files selected for transcription</string>
     <string name="processing_chunk">Processing chunk %1$d/%2$d…</string>
     <string name="processing_audio">Processing audio…</string>
     <string name="processing_request">Processing %1$s request…</string>
@@ -616,8 +617,11 @@
     <string name="share_format_txt">Plain text</string>
     <string name="share_format_timed">Text with timestamps</string>
     <string name="share_format_srt">Subtitles (.srt)</string>
+    <string name="share_format_srt_word">Word-timed subtitles (.srt)</string>
     <string name="share_format_vtt">WebVTT (.vtt)</string>
     <string name="share_format_no_cues">This entry has no timestamps stored; the timed options will share plain text.</string>
+    <string name="share_format_txt_file_audio_name">Text file named after the audio (%1$s)</string>
+    <string name="share_format_txt_file_audio_name_date">Text file named after the audio, with date (%1$s)</string>
     <string name="saved_to_folder_nameless">Saved to %1$s</string>
 
     <!-- Settings Tab - Default Prompt -->
@@ -669,6 +673,7 @@
     <!-- Settings Tab - App icon (TASK-392) -->
     <string name="app_icon_title">App icon</string>
     <string name="app_icon_note">Switching may briefly hide the icon on some launchers; the store listing keeps the default icon.</string>
+    <string name="app_icon_scope_note">The variant applies to the launcher icon only; notifications and the share sheet keep the default app icon.</string>
     <string name="app_icon_variant_default">Default</string>
     <string name="app_icon_variant_wavecut">Interrupted Waveform</string>
     <string name="app_icon_variant_crossed">Crossed Waveform</string>
@@ -770,42 +775,38 @@
     <!-- Speed comparison -->
     <string name="speed_comparison_title">Speed Comparison</string>
     <string name="speed_comparison_subtitle">Relative performance on typical voice messages (CPU)</string>
+    <!-- TASK-942: the size column is catalog data, composed at render
+         time via speed_comparison_size_format; not translatable -->
+    <string name="speed_comparison_size_format" translatable="false">~%1$dMB</string>
+    <string name="speed_comparison_size_missing" translatable="false">-</string>
     <string name="speed_comparison_header_model">Model</string>
     <string name="speed_comparison_header_size">Size</string>
     <string name="speed_comparison_header_speed">Speed</string>
     <string name="speed_comparison_header_quality">Italian Quality</string>
     <string name="speed_comparison_small_name">Whisper Small</string>
-    <string name="speed_comparison_small_size">~358MB</string>
     <string name="speed_comparison_small_speed">1.0x</string>
     <string name="speed_comparison_small_quality">Fair</string>
     <string name="speed_comparison_turbo_name">Whisper Turbo</string>
-    <string name="speed_comparison_turbo_size">~988MB</string>
     <string name="speed_comparison_turbo_speed">1.3x</string>
     <string name="speed_comparison_turbo_quality">Good</string>
     <string name="speed_comparison_medium_name">Whisper Medium</string>
-    <string name="speed_comparison_medium_size">~903MB</string>
     <string name="speed_comparison_medium_speed">0.5x</string>
     <string name="speed_comparison_medium_quality">Good</string>
     <string name="speed_comparison_distil_it_name">Distil Italian</string>
-    <string name="speed_comparison_distil_it_size">~939MB</string>
     <string name="speed_comparison_distil_it_speed">~1.8x</string>
     <string name="speed_comparison_distil_it_quality">Best Italian</string>
     <string name="speed_comparison_distil_it_note">Best Italian</string>
     <string name="speed_comparison_parakeet_name">Parakeet TDT</string>
-    <string name="speed_comparison_parakeet_size">~640MB</string>
     <string name="speed_comparison_parakeet_speed">~17x</string>
     <string name="speed_comparison_parakeet_quality">Very Good</string>
     <string name="speed_comparison_parakeet_note">Recommended</string>
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
-    <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
     <string name="speed_comparison_qwen3_quality">%1$d langs, variable</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
-    <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Fast</string>
     <string name="speed_comparison_gigaam_quality">Russian only</string>
     <string name="speed_comparison_nemotron_name">Nemotron 3.5</string>
-    <string name="speed_comparison_nemotron_size">~600MB</string>
     <string name="speed_comparison_nemotron_speed">Streaming</string>
     <string name="speed_comparison_nemotron_quality">Experimental</string>
     <string name="fastest_badge">Fastest</string>
@@ -906,6 +907,11 @@
 
     <!-- Model Benchmark -->
     <string name="benchmark_title">Benchmark %1$s</string>
+    <string name="benchmark_busy">A transcription is running on %1$s; benchmark it again when idle</string>
+    <string name="benchmark_init_failed">Failed to initialize %1$s</string>
+    <string name="benchmark_unknown_backend">Unknown backend: %1$s</string>
+    <string name="benchmark_model_folder_missing">Model folder missing for %1$s</string>
+    <string name="benchmark_failed">Benchmark failed</string>
     <string name="benchmark_preparing">Preparing benchmark…</string>
     <string name="benchmark_running">Running benchmark…</string>
     <string name="benchmark_progress">%1$d%% complete</string>
@@ -978,11 +984,11 @@
     <string name="model_info_notes_whisper_turbo">Near large-v3 quality at moderate speed. Good for multilingual users.</string>
     <string name="model_info_best_for_whisper_medium">Mid-size multilingual model</string>
     <string name="model_info_notes_whisper_medium">Good balance between accuracy and resource usage.</string>
-    <string name="model_info_best_for_distil_it">Best Italian accuracy (4.3%% WER)</string>
+    <string name="model_info_best_for_distil_it">Best Italian accuracy (3.5%% WER)</string>
     <string name="model_info_notes_distil_it">Italian-only. Highest accuracy for Italian voice messages. Prioritize accuracy over speed.</string>
-    <string name="model_info_best_for_qwen3">59-language auto-detection</string>
+    <string name="model_info_best_for_qwen3">%1$d-language auto-detection</string>
     <string name="model_info_notes_qwen3">Broadest language coverage. Note: truncates audio longer than 30 seconds. ARM64 devices only.</string>
-    <string name="model_info_best_for_parakeet">Fastest transcription (17.6x faster than Whisper, 5.4%% WER)</string>
+    <string name="model_info_best_for_parakeet">Fastest transcription (4.0%% WER in Italian)</string>
     <string name="model_info_notes_parakeet">No audio length limit. VAD not needed. Best for users who prioritize speed.</string>
 <string name="model_info_best_for_gigaam">Best Russian accuracy on-device</string>
 <string name="model_info_notes_gigaam">Russian only. Native punctuation and capitalization.</string>
@@ -1026,6 +1032,9 @@
     <string name="external_importing_file">Importing %1$s (%2$d of %3$d)…</string>
     <string name="external_import_failed">Import failed: %1$s</string>
     <string name="external_imported">Imported %1$s</string>
+    <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
+    <string name="bundle_restored_builtin">Restored %1$s</string>
+    <string name="bundle_restore_unsupported">This bundle\'s model comes from a newer app version and cannot be restored on this device.</string>
     <string name="external_delete_confirm">Delete external model %1$s?</string>
     <string name="external_deleted">%1$s deleted</string>
         <string name="external_catalog_all">All languages</string>
@@ -1069,8 +1078,8 @@
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Models in Share Menu</string>
     <string name="voice_note_settings_title">Voice notes</string>
-    <string name="voice_note_settings_summary_on">Automatic WhatsApp voice-note transcription · on</string>
-    <string name="voice_note_settings_summary_off">Automatic WhatsApp voice-note transcription · off</string>
+    <string name="voice_note_settings_summary_on">Automatic voice-note transcription · on</string>
+    <string name="voice_note_settings_summary_off">Automatic voice-note transcription · off</string>
     <string name="voice_note_settings_summary_limited">Sender recognition for voice notes</string>
     <string name="voice_note_identity_title">Voice note sender recognition</string>
     <string name="voice_note_identity_description">Labels transcribed voice notes with the sender\'s name, shared here or automatic. WhatsApp only for now. The name appears only when the note\'s notification arrived while this was on and its length matches (no guessed names); the waiting list lives in memory only. Requires notification access.</string>
@@ -1099,6 +1108,12 @@
     <string name="voice_note_business_folder_grant_rejected">That is not the WhatsApp Business Voice Notes folder. Pick the folder named WhatsApp Business Voice Notes and try again.</string>
     <string name="voice_note_business_folder_card_desc">To read the notes, grant access once to the folder where WhatsApp Business saves them:</string>
     <string name="voice_note_business_folder_sheet_step3">With the WhatsApp Business Voice Notes folder selected (don\'t open it), tap USE THIS FOLDER, then ALLOW.</string>
+    <string name="voice_note_source_watched_folder">Watched folder</string>
+    <string name="voice_note_watched_detection_description">For any app that saves voice notes to a folder you can see in your file manager (for example Signal, which saves to Music/Signal): turn it on and pick that folder once, and new audio files landing there are transcribed as they arrive. Each file is read only to transcribe it, and only on this device; with the feature off, nothing is read. Requires audio access.</string>
+    <string name="voice_note_watched_folder_grant_rejected">That folder cannot be watched. Pick a folder on this device\'s storage (not the whole storage root, and not the WhatsApp folders, which have their own section).</string>
+    <string name="voice_note_watched_folder_card_desc">To read the notes, grant access once to the folder your other app saves them to (any folder on this device\'s storage):</string>
+    <string name="voice_note_watched_folder_sheet_step2">Open the folder your other app saves voice notes to (for example Music › Signal):</string>
+    <string name="voice_note_watched_folder_sheet_step3">With that folder selected (don\'t open it), tap USE THIS FOLDER, then ALLOW.</string>
     <string name="share_targets_description">Each downloaded model appears as a separate option in the system menu. Audio is processed by the selected model.</string>
     <string name="advanced_sharing_toggle">Show downloaded models</string>
     <string name="share_targets_models_info">Each downloaded model will appear as an item in the share menu. Deleting a model removes it from the menu.</string>
@@ -1124,6 +1139,8 @@
     <string name="retranscribe_active_badge">Active</string>
     <string name="retranscribe_setting_title">Re-transcribe Button</string>
     <string name="retranscribe_setting_description">Show a button on audio transcriptions to retry with a different model.</string>
+    <string name="word_tap_seek_title">Tap Words to Seek</string>
+    <string name="word_tap_seek_description">In an expanded transcript, tapping a word moves audio playback to that word. Off by default.</string>
     <string name="advanced_share_formats_title">Share as…</string>
     <string name="advanced_share_formats_description">Adds a second Share… button on results that offers subtitle and timestamped formats, in addition to the default plain-text share.</string>
 
@@ -1167,6 +1184,8 @@
     <string name="error_oom_transcription_protected">Not enough memory to transcribe this audio even with memory protection on. Try a shorter file, a smaller model, or close other apps.</string>
     <string name="external_family_detected">Detected: %1$s</string>
     <string name="external_family_pick_title">Which family is this model?</string>
+    <string name="external_bundles_pick_title">Multiple bundles found</string>
+    <string name="external_bundles_pick_subtitle">Pick one to import</string>
     <string name="subtitle_timeout_title">Automatic Choice Timeout</string>
     <string name="subtitle_timeout_description">How long the choice notification for a video with subtitles waits before transcription starts on its own.</string>
     <string name="transcript_export_format_title">Auto-Save File Format</string>
@@ -1174,6 +1193,7 @@
     <string name="transcript_export_format_txt">Plain text</string>
     <string name="transcript_export_format_txt_timed">Timestamped text (experimental)</string>
     <string name="transcript_export_format_srt">SRT subtitles (experimental)</string>
+    <string name="transcript_export_format_srt_word">SRT subtitles with word timing (experimental)</string>
     <string name="transcript_export_format_vtt">WebVTT subtitles (experimental)</string>
     
     <string name="partial_transcript_label">Partial transcript</string>
@@ -1236,6 +1256,8 @@
     <string name="refinement_model_description">The model the second pass uses. Leave on inherit to use your active model.</string>
     <string name="refinement_model_inherit">Inherit active model</string>
     <string name="refinement_description">Stream an instant preview with the fast model, then refine it with the selected model in the background</string>
+    <string name="refinement_description_dynamic">Stream an instant preview with %1$s, then refine it with %2$s in the background</string>
+    <string name="refinement_locked_reason">Download a second model to enable two-pass transcription</string>
     <string name="language_chip_setting_note">Only the Whisper and SenseVoice models can detect the language.</string>
     <string name="technical_details_title">Show technical details</string>
     <string name="technical_details_description">Show the technical processing line (decode path, chunks, VAD, memory) under each transcript entry. Off by default; the details are always included in feedback reports.</string>
@@ -1333,4 +1355,10 @@
         <item quantity="other">Transcribing %1$d voice notes that arrived while the app was away. Results will appear in History.</item>
     </plurals>
     <string name="history_db_recovered_unpreserved">The history database was damaged and has been reset. The damaged files could not be preserved.</string>
+    <string name="bundle_restore_download_active">A download of this model is still in progress. Wait for it to finish or cancel it, then import the bundle again.</string>
+    <string name="model_download_restore_active">A restore of this model is in progress. Wait for it to finish, then download it again.</string>
+
+    <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
+    <string name="whats_new_title">What\'s New</string>
+    <string name="whats_new_summary">Release notes for this version</string>
 </resources>

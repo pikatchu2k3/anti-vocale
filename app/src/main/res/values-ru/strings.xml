@@ -134,21 +134,21 @@
     <string name="parakeet_download_confirm_title">Скачать Parakeet TDT?</string>
     <string name="parakeet_download_confirm_message">Будет загружено ~%1$d МБ. Parakeet быстрее Gemma, но менее точна при распознавании.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862 МБ • 25 языков • Альтернатива стандартному</string>
+    <string name="parakeet_smoothquant_description">~%1$d МБ • %2$d языков • Альтернатива стандартному</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640 МБ • 25 языков • Стандартный: лучшее качество по замерам на устройстве</string>
+    <string name="parakeet_stock_description">~%1$d МБ • %2$d языков • Стандартный: самый быстрый многоязычный вариант</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
     <string name="whisper_description">Многоязычное распознавание речи</string>
     <string name="whisper_small_title">Whisper Small</string>
-    <string name="whisper_small_description">~358 МБ • Ниже точность, особенно на зашумлённом аудио • Ненадёжное автоопределение языка (по умолчанию язык приложения) • Только для слабых устройств</string>
+    <string name="whisper_small_description">~%1$d МБ • Ниже точность, особенно на зашумлённом аудио • Ненадёжное автоопределение языка (по умолчанию язык приложения) • Только для слабых устройств</string>
     <string name="whisper_turbo_title">Whisper Turbo</string>
-    <string name="whisper_turbo_description">~988 МБ • Качество почти как у large-v3 • Сбалансированная многоязычная</string>
+    <string name="whisper_turbo_description">~%1$d МБ • Качество почти как у large-v3 • Сбалансированная многоязычная</string>
     <string name="whisper_medium_title">Whisper Medium</string>
-    <string name="whisper_medium_description">~903 МБ • Хорошая точность • Многоязычная</string>
+    <string name="whisper_medium_description">~%1$d МБ • Хорошая точность • Многоязычная</string>
     <string name="whisper_distil_large_v3_title">Distil Italian</string>
-    <string name="whisper_distil_large_v3_description">~939 МБ • 2 слоя декодера • Самая быстрая • Оптимизирована для итальянского</string>
+    <string name="whisper_distil_large_v3_description">~%1$d МБ • 2 слоя декодера • Самая быстрая • Оптимизирована для итальянского</string>
     <string name="whisper_download">Скачать Whisper</string>
     <string name="whisper_download_confirm_title">Скачать %1$s?</string>
     <string name="whisper_download_confirm_message">Будет загружено ~%1$d МБ. Whisper обеспечивает отличную поддержку многих языков с правильной пунктуацией.</string>
@@ -159,7 +159,7 @@
     <string name="qwen3_asr_title">Qwen3-ASR (%1$d языков)</string>
     <string name="qwen3_asr_description">%1$d языков</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938 МБ • %1$d языков</string>
+    <string name="qwen3_asr_0_6b_description">~%1$d МБ • %2$d языков</string>
     <string name="qwen3_asr_download_confirm_title">Скачать %1$s?</string>
     <string name="qwen3_asr_download">Скачать Qwen3-ASR</string>
     <string name="qwen3_asr_delete_message">Удалить модель Qwen3-ASR?</string>
@@ -169,7 +169,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (потоковая)</string>
-    <string name="nemotron_description">~640 МБ • Потоковая • Точность важнее скорости</string>
+    <string name="nemotron_description">~%1$d МБ • Потоковая • Точность важнее скорости</string>
     <string name="nemotron_download_confirm_title">Скачать %1$s?</string>
     <string name="nemotron_download_confirm_message">Будет загружено ~%1$d МБ. Nemotron 3.5, многоязычная потоковая модель распознавания речи.</string>
     <string name="nemotron_download">Скачать Nemotron</string>
@@ -179,12 +179,12 @@
 
     <!-- GigaAM v3 model (flagship Russian model) -->
     <string name="gigaam_title">GigaAM v3</string>
-    <string name="gigaam_description">~326 МБ • Быстрая • Распознавание русской речи с пунктуацией</string>
+    <string name="gigaam_description">~%1$d МБ • Быстрая • Распознавание русской речи с пунктуацией</string>
     <string name="gigaam_name">GigaAM v3</string>
-    <string name="whistle_name">Whistle (17 MB)</string>
-    <string name="whistle_description">~17 МБ • Очень быстро • 7 языков, автоопределение</string>
+    <string name="whistle_name">Whistle (%1$d MB)</string>
+    <string name="whistle_description">~%1$d МБ • Очень быстро • %2$d языков, автоопределение</string>
     <string name="benchmark_unsupported_engine">Бенчмарк не поддерживается для этого движка</string>
-    <string name="model_info_best_for_whistle">Самый быстрый запуск на устройстве: 17 МБ, 7 языков, мгновенный первый текст</string>
+    <string name="model_info_best_for_whistle">Самый быстрый запуск на устройстве: %1$d МБ, %2$d языков, мгновенный первый текст</string>
     <string name="model_info_notes_whistle">Точность ниже Parakeet на итальянском; музыка может распознаться как текст (нет музыкального фильтра)</string>
     <string name="gigaam_download_confirm_title">Скачать GigaAM v3?</string>
     <string name="gigaam_download_confirm_message">Будет загружено ~%1$d МБ. GigaAM v3, модель распознавания речи только для русского языка от Сбера с высокой точностью для русского.</string>
@@ -361,6 +361,7 @@
     <string name="processing_segment_progress">Сегмент %1$d из %2$d…</string>
     <string name="progressive_initial">Подготовка текста; финальный результат после завершения</string>
     <string name="added_to_queue">Добавлено в очередь…</string>
+    <string name="batch_enqueued">Выбрано файлов для распознавания: %1$d</string>
     <string name="processing_chunk">Обработка фрагмента %1$d/%2$d…</string>
     <string name="processing_audio">Обработка аудио…</string>
     <string name="processing_request">Обработка запроса %1$s…</string>
@@ -582,8 +583,11 @@
     <string name="share_format_txt">Обычный текст</string>
     <string name="share_format_timed">Текст с временными метками</string>
     <string name="share_format_srt">Субтитры (.srt)</string>
+    <string name="share_format_srt_word">Субтитры с пословным таймингом (.srt)</string>
     <string name="share_format_vtt">WebVTT (.vtt)</string>
     <string name="share_format_no_cues">В этой записи нет сохранённых временных меток; параметры с временем поделят обычным текстом.</string>
+    <string name="share_format_txt_file_audio_name">Текстовый файл с именем аудиофайла (%1$s)</string>
+    <string name="share_format_txt_file_audio_name_date">Текстовый файл с именем аудиофайла и датой (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Запрос по умолчанию</string>
@@ -634,6 +638,7 @@
     <!-- Settings Tab - App icon (TASK-392) -->
     <string name="app_icon_title">Значок приложения</string>
     <string name="app_icon_note">При смене значок может на время исчезнуть в некоторых лаунчерах; в магазине остаётся значок по умолчанию.</string>
+    <string name="app_icon_scope_note">Вариант применяется только к значку лаунчера; уведомления и меню «Поделиться» сохраняют значок приложения по умолчанию.</string>
     <string name="app_icon_variant_default">По умолчанию</string>
     <string name="app_icon_variant_wavecut">Прерванная волна</string>
     <string name="app_icon_variant_crossed">Перечёркнутая волна</string>
@@ -740,37 +745,29 @@
     <string name="speed_comparison_header_speed">Скорость</string>
     <string name="speed_comparison_header_quality">Качество для итальянского</string>
     <string name="speed_comparison_small_name">Whisper Small</string>
-    <string name="speed_comparison_small_size">~358MB</string>
     <string name="speed_comparison_small_speed">1.0x</string>
     <string name="speed_comparison_small_quality">Среднее</string>
     <string name="speed_comparison_turbo_name">Whisper Turbo</string>
-    <string name="speed_comparison_turbo_size">~988MB</string>
     <string name="speed_comparison_turbo_speed">1.3x</string>
     <string name="speed_comparison_turbo_quality">Хорошее</string>
     <string name="speed_comparison_medium_name">Whisper Medium</string>
-    <string name="speed_comparison_medium_size">~903MB</string>
     <string name="speed_comparison_medium_speed">0.5x</string>
     <string name="speed_comparison_medium_quality">Хорошее</string>
     <string name="speed_comparison_distil_it_name">Distil Italian</string>
-    <string name="speed_comparison_distil_it_size">~939MB</string>
     <string name="speed_comparison_distil_it_speed">~1.8x</string>
     <string name="speed_comparison_distil_it_quality">Лучший для итальянского</string>
     <string name="speed_comparison_distil_it_note">Лучший для итальянского</string>
     <string name="speed_comparison_parakeet_name">Parakeet TDT</string>
-    <string name="speed_comparison_parakeet_size">~640MB</string>
     <string name="speed_comparison_parakeet_speed">~17x</string>
     <string name="speed_comparison_parakeet_quality">Очень хорошее</string>
     <string name="speed_comparison_parakeet_note">Рекомендуется</string>
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
-    <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
     <string name="speed_comparison_qwen3_quality">%1$d языков, нестабильное</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
-    <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Быстрая</string>
     <string name="speed_comparison_gigaam_quality">Только русский</string>
     <string name="speed_comparison_nemotron_name">Nemotron 3.5</string>
-    <string name="speed_comparison_nemotron_size">~600MB</string>
     <string name="speed_comparison_nemotron_speed">Потоковая</string>
     <string name="speed_comparison_nemotron_quality">Экспериментальная</string>
     <string name="fastest_badge">Самая быстрая</string>
@@ -953,11 +950,11 @@
     <string name="model_info_notes_whisper_turbo">Качество почти как у large-v3 при умеренной скорости. Подходит для многоязычных пользователей.</string>
     <string name="model_info_best_for_whisper_medium">Многоязычная модель среднего размера</string>
     <string name="model_info_notes_whisper_medium">Хороший баланс между точностью и потреблением ресурсов.</string>
-    <string name="model_info_best_for_distil_it">Лучшая точность для итальянского (WER 4.3%%)</string>
+    <string name="model_info_best_for_distil_it">Лучшая точность для итальянского (WER 3.5%%)</string>
     <string name="model_info_notes_distil_it">Только итальянский. Максимальная точность для итальянских голосовых сообщений. Приоритет: точность, а не скорость.</string>
-    <string name="model_info_best_for_qwen3">Автоопределение для 59 языков</string>
+    <string name="model_info_best_for_qwen3">Автоопределение для %1$d языков</string>
     <string name="model_info_notes_qwen3">Самое широкое покрытие языков. Внимание: обрезает аудио длиннее 30 секунд. Только устройства ARM64.</string>
-    <string name="model_info_best_for_parakeet">Самое быстрое распознавание (в 17,6 раза быстрее Whisper, WER 5.4%%)</string>
+    <string name="model_info_best_for_parakeet">Самое быстрое распознавание (WER 4.0%% для итальянского)</string>
     <string name="model_info_notes_parakeet">Без ограничения длительности аудио. VAD не требуется. Лучший выбор для тех, кому важна скорость.</string>
     <string name="model_info_best_for_gigaam">Лучшая точность для русского языка на устройстве</string>
     <string name="model_info_notes_gigaam">Только русский. Собственная пунктуация и заглавные буквы.</string>
@@ -966,6 +963,11 @@
     <string name="model_info_best_for_gemma">Мультимодальная LLM для задач с текстом и аудио</string>
     <string name="model_info_notes_gemma">Не оптимизирована для чистого распознавания речи. Используйте для расширенных возможностей: понимание аудио в сочетании с генерацией текста.</string>
     <string name="model_info_benchmark_wer">Доля ошибок на словах (итальянский): %.1f%%</string>
+    <string name="benchmark_busy">На %1$s выполняется расшифровка; запустите тест повторно, когда модель освободится</string>
+    <string name="benchmark_init_failed">Не удалось инициализировать %1$s</string>
+    <string name="benchmark_unknown_backend">Неизвестный движок: %1$s</string>
+    <string name="benchmark_model_folder_missing">Отсутствует папка модели для %1$s</string>
+    <string name="benchmark_failed">Не удалось выполнить тест</string>
     <string name="model_info_relative_speed">Скорость: %s</string>
     <string name="model_info_close">Закрыть</string>
 
@@ -991,6 +993,9 @@
     <string name="external_importing_file">Импорт %1$s (%2$d из %3$d)…</string>
     <string name="external_import_failed">Не удалось импортировать: %1$s</string>
     <string name="external_imported">Импортировано: %1$s</string>
+    <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
+    <string name="bundle_restored_builtin">Восстановлено: %1$s</string>
+    <string name="bundle_restore_unsupported">Модель из этого пакета создана в более новой версии приложения и не может быть восстановлена на этом устройстве.</string>
     <string name="external_delete_confirm">Удалить внешнюю модель %1$s?</string>
     <string name="external_deleted">%1$s удалена</string>
         <string name="external_catalog_all">Все языки</string>
@@ -1034,8 +1039,8 @@
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Модели в меню «Поделиться»</string>
     <string name="voice_note_settings_title">Голосовые сообщения</string>
-    <string name="voice_note_settings_summary_on">Автоматическая расшифровка голосовых сообщений WhatsApp · включена</string>
-    <string name="voice_note_settings_summary_off">Автоматическая расшифровка голосовых сообщений WhatsApp · выключена</string>
+    <string name="voice_note_settings_summary_on">Автоматическая расшифровка голосовых сообщений · включена</string>
+    <string name="voice_note_settings_summary_off">Автоматическая расшифровка голосовых сообщений · выключена</string>
     <string name="voice_note_settings_summary_limited">Распознавание отправителя голосовых сообщений</string>
     <string name="voice_note_identity_title">Распознавание отправителя голосовых</string>
     <string name="voice_note_identity_description">Помечает расшифрованные голосовые сообщения именем отправителя: отправленные в приложение или автоматические. Пока только WhatsApp. Имя появляется, только если уведомление пришло при включённой опции и длительность совпадает (без угадывания); список ожидания живёт только в памяти. Требуется доступ к уведомлениям.</string>
@@ -1062,6 +1067,12 @@
     <string name="voice_note_business_folder_grant_rejected">Это не папка голосовых сообщений WhatsApp Business. Выберите папку с именем WhatsApp Business Voice Notes и попробуйте ещё раз.</string>
     <string name="voice_note_business_folder_card_desc">Чтобы читать сообщения, один раз предоставьте доступ к папке, куда WhatsApp Business их сохраняет:</string>
     <string name="voice_note_business_folder_sheet_step3">Выберите папку WhatsApp Business Voice Notes (не открывая) и нажмите ИСПОЛЬЗОВАТЬ ЭТУ ПАПКУ, затем РАЗРЕШИТЬ.</string>
+    <string name="voice_note_source_watched_folder">Отслеживаемая папка</string>
+    <string name="voice_note_watched_detection_description">Для любого приложения, которое сохраняет голосовые сообщения в папку, видимую в файловом менеджере (например Signal, сохраняющий в Music/Signal): включите один раз и выберите эту папку, и новые аудиофайлы, попадающие туда, будут расшифровываться сразу. Каждый файл читается только для расшифровки и только на этом устройстве; при выключенной функции ничего не читается. Требуется доступ к аудио.</string>
+    <string name="voice_note_watched_folder_grant_rejected">Эту папку нельзя отслеживать. Выберите папку в памяти устройства (не весь корень хранилища и не папки WhatsApp, у них есть свои разделы).</string>
+    <string name="voice_note_watched_folder_card_desc">Чтобы читать сообщения, один раз предоставьте доступ к папке, куда их сохраняет другое приложение (любая папка в памяти устройства):</string>
+    <string name="voice_note_watched_folder_sheet_step2">Откройте папку, куда другое приложение сохраняет голосовые сообщения (например Music › Signal):</string>
+    <string name="voice_note_watched_folder_sheet_step3">Выбрав эту папку (не открывая), нажмите ИСПОЛЬЗОВАТЬ ЭТУ ПАПКУ, затем РАЗРЕШИТЬ.</string>
     <string name="share_targets_description">Каждая скачанная модель отображается отдельным пунктом системного меню. Аудио обрабатывает выбранная модель</string>
     <string name="advanced_sharing_toggle">Показывать скачанные модели</string>
     <string name="share_targets_models_info">Каждая скачанная модель появится отдельным пунктом в меню «Поделиться». Удаление модели уберёт её из меню</string>
@@ -1089,6 +1100,8 @@
     <string name="retranscribe_active_badge">Активна</string>
     <string name="retranscribe_setting_title">Кнопка повторного распознавания</string>
     <string name="retranscribe_setting_description">Показывать кнопку повторного распознавания другой моделью для готовых результатов.</string>
+    <string name="word_tap_seek_title">Коснитесь слова для перехода</string>
+    <string name="word_tap_seek_description">В развёрнутой расшифровке касание слова переводит воспроизведение на его момент. По умолчанию выключено.</string>
     <string name="advanced_share_formats_title">Поделиться как…</string>
     <string name="advanced_share_formats_description">Добавляет вторую кнопку Поделиться… в результатах, предлагающую форматы субтитров и с временными метками, помимо обычной отправки текста.</string>
 
@@ -1151,6 +1164,8 @@
     <string name="error_oom_transcription_protected">Недостаточно памяти для расшифровки этого аудио даже при включённой защите памяти. Попробуйте более короткий файл, меньшую модель или закройте другие приложения.</string>
     <string name="external_family_detected">Обнаружено: %1$s</string>
     <string name="external_family_pick_title">К какому семейству относится эта модель?</string>
+    <string name="external_bundles_pick_title">Найдено несколько архивов</string>
+    <string name="external_bundles_pick_subtitle">Выберите один для импорта</string>
     <string name="subtitle_timeout_title">Таймаут автоматического выбора</string>
     <string name="subtitle_timeout_description">Сколько ждёт уведомление с выбором для видео с субтитрами, прежде чем начать расшифровку самостоятельно.</string>
     <string name="transcript_export_format_title">Формат автосохранения</string>
@@ -1158,6 +1173,7 @@
     <string name="transcript_export_format_txt">Простой текст</string>
     <string name="transcript_export_format_txt_timed">Текст с метками времени (экспериментально)</string>
     <string name="transcript_export_format_srt">Субтитры SRT (экспериментально)</string>
+    <string name="transcript_export_format_srt_word">Субтитры SRT с пословным таймингом (экспериментально)</string>
     <string name="transcript_export_format_vtt">Субтитры WebVTT (экспериментально)</string>
     <string name="settings_search_hint">Поиск в настройках…</string>
     <plurals name="settings_search_matches">
@@ -1215,6 +1231,8 @@
     <string name="transcription_refined_from">Уточнено с %1$s</string>
     <string name="refinement_title">Двухпроходная расшифровка</string>
     <string name="refinement_description">Сначала мгновенный предпросмотр быстрой моделью, затем уточнение в фоне выбранной моделью</string>
+    <string name="refinement_description_dynamic">Сначала мгновенный предпросмотр моделью %1$s, затем уточнение в фоне моделью %2$s</string>
+    <string name="refinement_locked_reason">Скачайте вторую модель, чтобы включить двухпроходную расшифровку</string>
     <string name="curated_why_distil_it">Дообучен для итальянского: самый точный выбор</string>
     <string name="curated_why_parakeet">Очень быстрый (примерно в 17 раз) и всё ещё очень точный</string>
     <string name="curated_why_german_whisper">Дообучен для немецкого: самый точный вариант</string>
@@ -1342,4 +1360,10 @@
         <item quantity="other">Идёт расшифровка %1$d голосовых сообщений, поступивших, пока приложение было закрыто. Результаты появятся в истории.</item>
     </plurals>
     <string name="history_db_recovered_unpreserved">База данных истории оказалась повреждена и была сброшена. Сохранить повреждённые файлы не удалось.</string>
+    <string name="bundle_restore_download_active">Загрузка этой модели ещё идёт. Дождитесь её окончания или отмените, затем импортируйте пакет снова.</string>
+    <string name="model_download_restore_active">Восстановление этой модели выполняется. Дождитесь его окончания и скачайте модель снова.</string>
+
+    <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
+    <string name="whats_new_title">Что нового</string>
+    <string name="whats_new_summary">Что нового в этой версии</string>
 </resources>

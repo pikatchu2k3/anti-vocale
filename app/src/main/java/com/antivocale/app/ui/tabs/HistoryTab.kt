@@ -1,6 +1,8 @@
 package com.antivocale.app.ui.tabs
 
 import com.antivocale.app.service.ResultNotificationFactory
+import com.antivocale.app.ui.components.TranscriptWordTaps
+import com.antivocale.app.util.SubtitleFormatter
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -373,6 +375,9 @@ private fun shareTranscription(context: Context, text: String) {
  * TXT and TXT_TIMED share as inline text; SRT/VTT share a uniquely named
  * file from cacheDir/share via FileProvider, written off the main thread
  * and guarded (a share tap must never crash).
+ *
+ * GH #185: [outputFileName] forces the FILE arm with that exact name (the
+ * audio-derived txt options; null keeps the per-format behavior above).
  */
 private fun shareInFormat(
     scope: kotlinx.coroutines.CoroutineScope,
@@ -381,6 +386,7 @@ private fun shareInFormat(
     transcript: String,
     segmentsJson: String?,
     failedChunkCount: Int,
+    outputFileName: String? = null,
 ) {
     scope.launch(kotlinx.coroutines.Dispatchers.IO) {
         // Review F1: parse + render + sign ALL run off-main (a streamed
@@ -395,44 +401,57 @@ private fun shareInFormat(
             // both the inline-txt and the file arms.
             val signed = com.antivocale.app.util.TranscriptFileSaver.signedExport(
                 decision, sig.text, sig.position)
-            if (decision.format != com.antivocale.app.util.SubtitleFormatter.Format.SRT &&
-                decision.format != com.antivocale.app.util.SubtitleFormatter.Format.VTT
-            ) {
+            val timedFile = decision.format == com.antivocale.app.util.SubtitleFormatter.Format.SRT ||
+                decision.format == com.antivocale.app.util.SubtitleFormatter.Format.SRT_WORD ||
+                decision.format == com.antivocale.app.util.SubtitleFormatter.Format.VTT
+            if (outputFileName == null && !timedFile) {
                 return@runCatching ShareOutcome.Inline(signed)
             }
-            // Review F2: real uniqueness (createTempFile), not a
-            // second-granularity stamp two fast shares would share.
             val shareDir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
-            val file = java.io.File.createTempFile(
-                "transcript_", ".${decision.format.extension}", shareDir)
+            val file = if (outputFileName != null) {
+                // GH #185: the audio-derived name the user picked; the
+                // receiving app sees exactly it. The share dir is staging:
+                // a re-share of the same name replaces the staged copy.
+                java.io.File(shareDir, outputFileName)
+            } else {
+                // Review F2: real uniqueness (createTempFile), not a
+                // second-granularity stamp two fast shares would share.
+                java.io.File.createTempFile(
+                    "transcript_", ".${decision.format.extension}", shareDir)
+            }
             file.writeText(signed)
             ShareOutcome.File(
                 androidx.core.content.FileProvider.getUriForFile(
                     context, context.packageName + ".fileprovider", file),
                 decision.format.mime)
         }
-        outcome.onSuccess { result ->
-            val sendIntent = Intent().apply {
-                action = Intent.ACTION_SEND
-                when (result) {
-                    is ShareOutcome.Inline -> {
-                        putExtra(Intent.EXTRA_TEXT, result.text)
-                        type = "text/plain"
-                    }
-                    is ShareOutcome.File -> {
-                        putExtra(Intent.EXTRA_STREAM, result.uri)
-                        type = result.mime
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
+        dispatchShareOutcome(context, outcome)
+    }
+}
+
+/** The chooser dispatch both share arms share: the intent build and the one hop back to main. */
+private suspend fun dispatchShareOutcome(context: Context, outcome: kotlin.Result<ShareOutcome>) {
+    outcome.onSuccess { result ->
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            when (result) {
+                is ShareOutcome.Inline -> {
+                    putExtra(Intent.EXTRA_TEXT, result.text)
+                    type = "text/plain"
+                }
+                is ShareOutcome.File -> {
+                    putExtra(Intent.EXTRA_STREAM, result.uri)
+                    type = result.mime
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
             }
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                context.startActivity(
-                    Intent.createChooser(sendIntent, context.getString(R.string.share_transcription)))
-            }
-        }.onFailure {
-            android.util.Log.w("HistoryTab", "timed-format share failed", it)
         }
+        withContext(kotlinx.coroutines.Dispatchers.Main) {
+            context.startActivity(
+                Intent.createChooser(sendIntent, context.getString(R.string.share_transcription)))
+        }
+    }.onFailure {
+        android.util.Log.w("HistoryTab", "format share failed", it)
     }
 }
 
@@ -768,6 +787,7 @@ fun HistoryTab(
     val showLanguageChip by viewModel.languageChipEnabled.collectAsState()
     val reRunLanguages by viewModel.offeredLanguageCodes.collectAsState()
     val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
+    val wordTapSeekEnabled by viewModel.wordTapSeek.collectAsState()
     // TASK-898: one-minute tick driving the rows' relative-time labels:
     // the per-row remember(timestamp, minuteTick) refreshes the string at
     // most once a minute instead of re-running the formatter per emission.
@@ -877,11 +897,38 @@ fun HistoryTab(
     // TASK-500: browse-audio FAB. The system document picker returns a
     // content URI with a transient read grant; the ViewModel copies it
     // through the same shared-audio path as the share receiver and enqueues
-    // transcription, so no storage permission is needed.
+    // transcription, so no storage permission is needed. TASK-927: the
+    // multi contract sets EXTRA_ALLOW_MULTIPLE (checkboxes in the picker);
+    // every picked URI enqueues through the same per-file path. Review V1:
+    // the intakes run SEQUENTIALLY, so a duplicate dialog resolves before
+    // the next file starts. The snackbar is a pick-time claim (review V7):
+    // it announces the SELECTION, not completed enqueues. The template
+    // resolves in composition (the count is only known at result time;
+    // TASK-898's rememberUpdatedState keeps the coroutine reading the
+    // latest locale).
+    val batchEnqueuedTemplate = stringResource(R.string.batch_enqueued)
+    val currentBatchEnqueuedTemplate by rememberUpdatedState(batchEnqueuedTemplate)
+    val browseScope = rememberCoroutineScope()
     val browseLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) viewModel.transcribeLocalFile(context, uri)
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        // Review W3: the intake starts immediately; showSnackbar suspends
+        // until dismissal, so awaiting it first idled a 20-file pick for
+        // the snackbar's whole display duration.
+        viewModel.transcribeLocalFiles(context, uris)
+        if (uris.size > 1) {
+            browseScope.launch {
+                // Review W6: the explicit locale keeps the count's digits on
+                // the app's language, not the device's (Arabic-Indic
+                // numerals inside a pinned-English UI otherwise).
+                snackbarHostState.showSnackbar(
+                    String.format(
+                        LocaleManager.effectiveLocale(),
+                        currentBatchEnqueuedTemplate,
+                        uris.size))
+            }
+        }
     }
     // TASK-842 browse arm: the open-or-reprocess dialog (the same four
     // strings and arms as the share flow's platform dialog; open rides the
@@ -889,12 +936,12 @@ fun HistoryTab(
     // without the activity roundtrip).
     val pendingDuplicate by viewModel.pendingBrowseDuplicate.collectAsState()
     pendingDuplicate?.let { hit ->
+        // Round-3 review: the dialog is app STATE: it re-presents here on
+        // every recomposition, so there is deliberately no disposal hook (a
+        // config-change recreation must not cancel a live dialog).
         com.antivocale.app.ui.dialogs.DuplicateFoundDialog(
             modelName = hit.modelName,
-            onOpen = {
-                viewModel.clearPendingBrowseDuplicate()
-                viewModel.highlightLogEntry(hit.existingTaskId)
-            },
+            onOpen = { viewModel.onBrowseDuplicateOpen(hit.existingTaskId) },
             onReprocess = {
                 viewModel.clearPendingBrowseDuplicate()
                 hit.continueRequest()
@@ -1145,6 +1192,7 @@ fun HistoryTab(
                         showLanguageChip = showLanguageChip,
                         reRunLanguages = reRunLanguages,
                         showTechnicalDetails = showTechnicalDetails,
+                        wordTapSeek = wordTapSeekEnabled,
                         minuteTick = minuteTick,
                         onNavigateToSettings = onNavigateToSettings,
                         onOpenLanguageSetting = onOpenLanguageSetting,
@@ -1524,6 +1572,10 @@ fun LogEntryItem(
      *  a call site that forgets the pass-through must be a compile error,
      *  not a silently dropped diagnostics line. */
     showTechnicalDetails: Boolean,
+    /** TASK-939: render the word-tap seek read-along surface. No default:
+     *  a call site that forgets the pass-through must be a compile error,
+     *  not a silently dead arm. */
+    wordTapSeek: Boolean,
     /** TASK-898: the tab's one-minute tick, keying the relative-time
      *  remember so the label refreshes at most once a minute. No default,
      *  like its siblings. */
@@ -1791,11 +1843,48 @@ fun LogEntryItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        // TASK-928: the word-tap timeline, derived off-main
+                        // like the cues parse. Every gate is honest: the row's
+                        // audio must still exist, every cue must carry word
+                        // timing, and the displayed text must align onto the
+                        // cues word for word (the punctuation pass breaks
+                        // count alignment on some rows; those stay read-only).
+                        // TASK-939: the whole surface is opt-in (default off);
+                        // while off, the transcript stays plain text.
+                        val wordTaps by produceState<TranscriptWordTaps?>(
+                            initialValue = null,
+                            rowSegmentsJson, displayResult, log.filePath, wordTapSeek,
+                        ) {
+                            value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                if (!wordTapSeek ||
+                                    playback == null ||
+                                    !playbackFileExists(log.filePath)
+                                ) {
+                                    return@withContext null
+                                }
+                                val cues =
+                                    com.antivocale.app.data.local.TimedSegmentsConverter
+                                        .fromJson(rowSegmentsJson)
+                                if (cues.isEmpty() || cues.any { it.words.isEmpty() }) {
+                                    return@withContext null
+                                }
+                                val aligned = SubtitleFormatter.alignPolishedText(displayResult, cues)
+                                    ?: return@withContext null
+                                TranscriptWordTaps.of(
+                                    displayResult,
+                                    aligned.flatMap { cue -> cue.words.map { it.startMs } },
+                                )
+                            }
+                        }
                         CappedTranscriptText(
                             text = displayResult,
                             searchQuery = searchQuery,
                             container = MaterialTheme.colorScheme.primaryContainer,
                             onAutoSaveHintClick = onNavigateToSettings,
+                            wordTaps = wordTaps,
+                            onWordTap = if (wordTapSeek) playback?.let { controller ->
+                                { startMs: Long -> controller.seekTo(log.taskId, log.filePath, startMs) }
+                            } else null,
                         )
 
                         // TASK-121.4: the AI summary of a long transcript, when the
@@ -2134,6 +2223,7 @@ fun LogEntryItem(
                                                     R.string.share_format_txt to com.antivocale.app.util.SubtitleFormatter.Format.TXT,
                                                     R.string.share_format_timed to com.antivocale.app.util.SubtitleFormatter.Format.TXT_TIMED,
                                                     R.string.share_format_srt to com.antivocale.app.util.SubtitleFormatter.Format.SRT,
+                                                    R.string.share_format_srt_word to com.antivocale.app.util.SubtitleFormatter.Format.SRT_WORD,
                                                     R.string.share_format_vtt to com.antivocale.app.util.SubtitleFormatter.Format.VTT,
                                                 ).forEach { (labelRes, fmt) ->
                                                     ShareFormatOption(
@@ -2146,6 +2236,35 @@ fun LogEntryItem(
                                                         shareInFormat(
                                                             rowScope, context, fmt,
                                                             log.result, rowSegmentsJson ?: log.segments, log.failedChunkCount)
+                                                    }
+                                                }
+                                                // GH #185: the audio-derived txt file names,
+                                                // offered only when the row's audio file is
+                                                // known (a text entry has nothing to name
+                                                // after; the options above stand). The label
+                                                // previews the exact name the share carries.
+                                                remember(log.filePath) {
+                                                    com.antivocale.app.util.ExportFileNamer.txtFileName(
+                                                        log.filePath, com.antivocale.app.util.ExportFileNamer.Scheme.AUDIO_NAME) to
+                                                        com.antivocale.app.util.ExportFileNamer.txtFileName(
+                                                            log.filePath, com.antivocale.app.util.ExportFileNamer.Scheme.AUDIO_NAME_DATE)
+                                                }.let { (plainName, datedName) ->
+                                                    listOfNotNull(
+                                                        plainName?.let {
+                                                            R.string.share_format_txt_file_audio_name to it },
+                                                        datedName?.let {
+                                                            R.string.share_format_txt_file_audio_name_date to it },
+                                                    ).forEach { (labelRes, fileName) ->
+                                                        ShareFormatOption(
+                                                            label = stringResource(labelRes, fileName),
+                                                        ) {
+                                                            shareFormatOpen = false
+                                                            shareInFormat(
+                                                                rowScope, context,
+                                                                com.antivocale.app.util.SubtitleFormatter.Format.TXT,
+                                                                log.result, rowSegmentsJson ?: log.segments, log.failedChunkCount,
+                                                                outputFileName = fileName)
+                                                        }
                                                     }
                                                 }
                                                 if (!hasCues) {
@@ -2362,6 +2481,8 @@ private fun LogEntryWithSwipe(
     showLanguageChip: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
     reRunLanguages: Set<String> = emptySet(),
     showTechnicalDetails: Boolean = PreferencesManager.DEFAULT_SHOW_TECHNICAL_DETAILS,
+    /** TASK-939: the word-tap seek read-along gate; default OFF. */
+    wordTapSeek: Boolean = PreferencesManager.DEFAULT_WORD_TAP_SEEK,
     minuteTick: Long = 0L,
     onNavigateToSettings: (() -> Unit)? = null,
     onOpenLanguageSetting: (() -> Unit)? = null,
@@ -2477,6 +2598,7 @@ private fun LogEntryWithSwipe(
                 reRunLanguages = reRunLanguages,
                 onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
                 showTechnicalDetails = showTechnicalDetails,
+                wordTapSeek = wordTapSeek,
                         minuteTick = minuteTick,
             )
         }
@@ -2537,6 +2659,7 @@ private fun LogEntryWithSwipe(
                 reRunLanguages = reRunLanguages,
                 onReRunWithLanguage = { code -> viewModel.reTranscribeWithLanguage(log, code, context) },
                 showTechnicalDetails = showTechnicalDetails,
+                wordTapSeek = wordTapSeek,
                         minuteTick = minuteTick,
             )
         }

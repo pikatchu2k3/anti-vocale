@@ -16,15 +16,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * TASK-871's investigation closed as a MISDIAGNOSIS (2026-10-23): the
@@ -51,9 +51,12 @@ import org.junit.Test
  * way ModelViewModelBundleLinkTest.await does.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class ModelViewModelOrphanSweepTest {
+class ModelViewModelOrphanSweepTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private val recordsProvider = FakeExternalRecordsProvider()
     private lateinit var viewModel: ModelViewModel
 
@@ -91,7 +94,7 @@ class ModelViewModelOrphanSweepTest {
         com.antivocale.app.data.catalog.BundledCatalog.attach(mockContext)
 
         val fakePrefs = FakePreferencesManager()
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = fakePrefs,
             activeModelRepository = ActiveModelRepository(fakePrefs, mockContext, staticRegistry(), recordsProvider),
             tokenManager = mockk(relaxed = true),
@@ -108,13 +111,11 @@ class ModelViewModelOrphanSweepTest {
             externalCatalogRepository = mockk(relaxed = true),
             silentModelDemoter = mockk(relaxed = true),
             modelActivator = mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
-        )
+            applicationScope = applicationScope,
+        ))
     }
 
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+    override fun afterTeardown() {
         filesRoot.deleteRecursively()
     }
 

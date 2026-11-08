@@ -26,21 +26,20 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import com.antivocale.app.testing.TempDataStoreRule
-import kotlinx.coroutines.SupervisorJob
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * TASK-373 (device-free): the litert-lm URL import must persist model_path and
@@ -51,9 +50,12 @@ import org.robolectric.annotation.Config
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
-class ModelViewModelLitertLmImportTest {
+class ModelViewModelLitertLmImportTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private val backendKey = stringPreferencesKey("transcription_backend")
     private val modelPathKey = stringPreferencesKey("model_path")
 
@@ -90,7 +92,7 @@ class ModelViewModelLitertLmImportTest {
         every { mockContext.applicationContext } returns mockContext
         com.antivocale.app.data.catalog.BundledCatalog.attach(mockContext)
         val sharedDemoter = com.antivocale.app.transcription.SilentModelDemoter(prefs)
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = prefs,
             activeModelRepository = ActiveModelRepository(prefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
@@ -108,7 +110,7 @@ class ModelViewModelLitertLmImportTest {
             ),
             litertLmUrlImporter = importer,
             externalCatalogRepository = mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(SupervisorJob()),
+            applicationScope = applicationScope,
             // TASK-675: real demoter over the same preferences.
             silentModelDemoter = sharedDemoter,
             modelActivator = com.antivocale.app.transcription.ModelActivator(
@@ -117,12 +119,7 @@ class ModelViewModelLitertLmImportTest {
                 externalModelStore = com.antivocale.app.data.ExternalModelStore(prefs),
                 backendRegistry = staticRegistry(),
                 ),
-        )
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        ))
     }
 
     @Test

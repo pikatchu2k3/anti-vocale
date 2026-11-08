@@ -39,11 +39,11 @@ Mallit eroavat toisistaan koon, nopeuden, kielikattavuuden ja tarkkuuden mukaan.
 | Malli | Koko | Kielet | Huomiot |
 |---|---|---|---|
 | Parakeet TDT stock int8 | 640 Mt | 25 eurooppalaista | Nopea ja kevyt; oletussuositus |
-| Parakeet TDT SmoothQuant | 862 Mt | 25 eurooppalaista | Tarkempi, raskaampi; tarvitsee enemmän RAM-muistia |
-| Whisper Turbo | 988 Mt | 101 | Paras tasapaino Whisper-malliperheessä |
-| Whisper Medium | 903 Mt | 101 | Hitaampi kuin Turbo, ei parempi useimmille äänille |
-| Whisper Small | 358 Mt | 101 | Kevyin Whisper-malli; kohtuullinen laatu |
-| Whisper Distil Italian | 938 Mt | Vain italia | Sisäänrakennetun joukon paras italian tarkkuus |
+| Parakeet TDT SmoothQuant | 862 Mt | 25 eurooppalaista | Oletusta raskaampi; tarvitsee enemmän RAM-muistia |
+| Whisper Turbo | 1037 Mt | 99 | Paras tasapaino Whisper-malliperheessä |
+| Whisper Medium | 949 Mt | 99 | Hitaampi kuin Turbo, ei parempi useimmille äänille |
+| Whisper Small | 378 Mt | 99 | Kevyin Whisper-malli; kohtuullinen laatu |
+| Whisper Distil Italian | 984 Mt | Vain italia | Sisäänrakennetun joukon paras italian tarkkuus |
 | Qwen3-ASR | 938 Mt | Monikielinen | Vaihtoehtoinen arkkitehtuuri |
 | Nemotron streaming | 640 Mt | Monikielinen | Näyttää tekstin puhuessasi (streaming) |
 | GigaAM v3 | 326 Mt | Venäjä | Venäjän kielen erikoismalli |
@@ -96,7 +96,7 @@ Yksi varaus, suoraan sanottuna: puhelimilla, joiden akunhallinta on aggressiivis
 
 ## Yhteisömallit ja tuonnit
 
-Sisäänrakennettu valikoima ei kata kaikkia kieliä. Anti-Vocaleen sisältyy yhteisöluettelo lisämalleja, jotka tuot kahdella napautuksella: Mallit-välilehti, Lisäasetukset, ONNX Sherpa, Tuo luettelosta, suodata oman kielesi mukaan, napauta mallia, vahvista. Luettelo kasvaa jatkuvasti ja sisältää tänään yli 30 tarkistettua merkintää: arabia (murteellinen, täysikokoinen ja kevyt), saksa (streaming ja Whisper-fine-tune), espanja (streaming ja kevyt Moonshine), sveitsinsaksa, heprea, persia, venäjä, vietnam, korea, ukraina, kuusi intialaista kieltä (bengali, gudžarati, hindi, marathi, tamili, telugu), englannin ja ranskan Canary Flash, SenseVoice, Dolphin, Orukeet (Parakeet-fine-tune, joka kattaa 24 kieltä italian mukaan lukien) ja vähän RAM-muistia vaativa monikielinen Whisper Tiny. Jos kielesi puuttuu, avaa issue: niin merkinnät lisätään.
+Sisäänrakennettu valikoima ei kata kaikkia kieliä. Anti-Vocaleen sisältyy yhteisöluettelo lisämalleja, jotka tuot kahdella napautuksella: Mallit-välilehti, Lisäasetukset, ONNX Sherpa, Tuo luettelosta, suodata oman kielesi mukaan, napauta mallia, vahvista. Luettelo kasvaa jatkuvasti ja sisältää tänään yli 30 tarkistettua merkintää: arabia (murteellinen, täysikokoinen ja kevyt), saksa (streaming ja kaksi Whisper-fine-tunea, turbo ja täysikokoinen), espanja (streaming ja kevyt Moonshine), sveitsinsaksa, heprea, persia, venäjä, vietnam (streaming ja kevyt Moonshine), ukraina, kuusi intialaista kieltä (bengali, gudžarati, hindi, marathi, tamili, telugu), turkki (Whisper small -fine-tune), suomi (Whisper large v3 -fine-tune), ranska (Whisper large v3 -distillaatio), brasilianportugali (Distil Whisper large v3), englannin, ranskan, saksan ja espanjan Canary Flash, hollannin täysi Canary, englannin Parakeet TDT-CTC 110M, SenseVoice, Dolphin, Orukeet (Parakeet-fine-tune, joka kattaa 24 kieltä italian mukaan lukien), TranscribePsy (Parakeet-distillaatio, joka kattaa 20 eurooppalaista kieltä), Omnilingual ASR 300M (monikielinen, kokeellinen) ja vähän RAM-muistia vaativa monikielinen Whisper Tiny. Jos kielesi puuttuu, avaa issue: niin merkinnät lisätään.
 
 Edistyneet käyttäjät voivat myös:
 - tuoda mallin Hugging Face -repositorion URL-osoitteesta tai luettelomerkinnän linkistä (edistynyt vaihtoehto samassa valintaikkunassa);

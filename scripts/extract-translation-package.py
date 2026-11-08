@@ -21,7 +21,6 @@ import csv
 import re
 import sys
 import xml.etree.ElementTree as ET
-from datetime import date
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -81,16 +80,22 @@ def extract() -> tuple[list[list[str]], list[tuple[str, dict[str, str]]], list[s
     return rows, plurals, warnings
 
 
-def main(tag: str) -> None:
-    if tag not in CLDR_CARDINALS:
-        print(f"unsupported locale tag {tag!r}; supported: {sorted(CLDR_CARDINALS)}")
-        raise SystemExit(2)
+def write_package_csv(
+    rows: list[list[str]],
+    plurals: list[tuple[str, dict[str, str]]],
+    out_dir: Path,
+) -> Path:
+    """Write the shared translation-package CSV into out_dir.
 
-    rows, plurals, warnings = extract()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # ONE shared package: the CSV never depends on the tag.
-    csv_path = OUT_DIR / "translation-package.csv"
+    Byte-stable by construction (TASK-950 freshness check depends on it):
+    newline="" keeps csv.writer's CRLF terminators intact, the CSV carries
+    no timestamps, and row order is strings.xml document order with plural
+    quantities sorted per key. scripts/check-translation-package.sh
+    regenerates through THIS function so the committed file is compared
+    against exactly what a real regeneration emits.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "translation-package.csv"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["key", "english", "kind", "notes"])
@@ -99,12 +104,28 @@ def main(tag: str) -> None:
             for qty, text in sorted(items.items()):
                 w.writerow([f"{name} [{qty}]", text, "plural",
                             "supply only the quantities the locale table lists"])
+    return csv_path
 
+
+def write_plurals_md(
+    tag: str,
+    rows: list[list[str]],
+    plurals: list[tuple[str, dict[str, str]]],
+    out_dir: Path,
+) -> Path:
+    """Write plurals-<tag>.md into out_dir and return its path.
+
+    Deliberately date-free (TASK-959): the header counts strings and plural
+    keys, which only move when strings.xml moves. A date line would make the
+    file differ from a fresh regeneration every day and keep the freshness
+    check from byte-comparing these files at all.
+    """
     wanted = CLDR_CARDINALS[tag]
-    md = OUT_DIR / f"plurals-{tag}.md"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    md = out_dir / f"plurals-{tag}.md"
     with open(md, "w", encoding="utf-8") as f:
         f.write(f"# Plural rules for values-{tag}\n\n")
-        f.write(f"Extracted {date.today()} from values/strings.xml "
+        f.write(f"Extracted from values/strings.xml "
                 f"({len(rows)} strings, {len(plurals)} plural keys).\n\n")
         f.write(f"CLDR cardinal categories for {tag}: **{', '.join(wanted)}**\n\n")
         f.write("Every plural key in the package must supply exactly these quantities:\n\n")
@@ -117,6 +138,19 @@ def main(tag: str) -> None:
                 f.write(f"- {t}\n")
         else:
             f.write("\nNo locale-specific plural lint traps apply.\n")
+    return md
+
+
+def main(tag: str) -> None:
+    if tag not in CLDR_CARDINALS:
+        print(f"unsupported locale tag {tag!r}; supported: {sorted(CLDR_CARDINALS)}")
+        raise SystemExit(2)
+
+    rows, plurals, warnings = extract()
+
+    # ONE shared package: the CSV never depends on the tag.
+    csv_path = write_package_csv(rows, plurals, OUT_DIR)
+    md = write_plurals_md(tag, rows, plurals, OUT_DIR)
     for wn in warnings:
         print("WARN", wn)
     print(f"{tag}: {len(rows)} strings, {len(plurals)} plural keys -> "

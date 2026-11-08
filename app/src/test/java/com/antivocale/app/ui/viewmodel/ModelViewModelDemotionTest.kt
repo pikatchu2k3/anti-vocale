@@ -23,15 +23,12 @@ import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,6 +40,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * TASK-675: the Model-tab half of silent-model demotion. Auto-selection (the
@@ -54,9 +53,12 @@ import org.robolectric.annotation.Config
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
-class ModelViewModelDemotionTest {
+class ModelViewModelDemotionTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private val backendKey = stringPreferencesKey("transcription_backend")
     private val demotedKey = stringSetPreferencesKey("demoted_backends")
 
@@ -89,7 +91,7 @@ class ModelViewModelDemotionTest {
         }
         every { mockContext.applicationContext } returns mockContext
         com.antivocale.app.data.catalog.BundledCatalog.attach(mockContext)
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = prefs,
             activeModelRepository = ActiveModelRepository(prefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
@@ -107,7 +109,7 @@ class ModelViewModelDemotionTest {
             ),
             litertLmUrlImporter = mockk(relaxed = true),
             externalCatalogRepository = mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(SupervisorJob()),
+            applicationScope = applicationScope,
             silentModelDemoter = demoter,
             modelActivator = com.antivocale.app.transcription.ModelActivator(
                 prefs,
@@ -115,12 +117,7 @@ class ModelViewModelDemotionTest {
                 externalModelStore = com.antivocale.app.data.ExternalModelStore(prefs),
                 backendRegistry = staticRegistry(),
             ),
-        )
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        ))
     }
 
     /** Files of the whisper "small" variant, non-empty so the sidecar check passes. */
@@ -131,8 +128,8 @@ class ModelViewModelDemotionTest {
         )
         dir.mkdirs()
         listOf(
-            "small-encoder.int8.onnx",
-            "small-decoder.int8.onnx",
+            "small-encoder-attn.int8.onnx",
+            "small-decoder-attn.int8.onnx",
             "small-tokens.txt",
         ).forEach { File(dir, it).writeText("placeholder") }
         return dir

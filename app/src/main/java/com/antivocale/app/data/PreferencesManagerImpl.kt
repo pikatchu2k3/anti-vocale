@@ -100,6 +100,8 @@ class PreferencesManagerImpl(
         private val SHOW_TECHNICAL_DETAILS = booleanPreferencesKey("show_technical_details")
         private val ADVANCED_SHARING_ENABLED = booleanPreferencesKey("advanced_sharing_enabled")
         private val SHOW_RETRANSCRIBE_BUTTON = booleanPreferencesKey("show_retranscribe_button")
+        // TASK-939: the word-tap seek read-along gate.
+        private val WORD_TAP_SEEK = booleanPreferencesKey("word_tap_seek")
         private val ADVANCED_SHARE_FORMATS = booleanPreferencesKey("advanced_share_formats")
         // TASK-631: replaces the old force-load key with NO migration; that key's only
         // signal was an opt-out of the block, which the new default (no block) grants
@@ -116,6 +118,10 @@ class PreferencesManagerImpl(
         // WhatsApp Business support: the same pair for the Business client.
         private val VOICE_NOTE_BUSINESS_DETECTION_ENABLED = booleanPreferencesKey("voice_note_business_detection_enabled")
         private val VOICE_NOTE_BUSINESS_TREE_URI = stringPreferencesKey("voice_note_business_tree_uri")
+        // TASK-966: the same pair for the generic watched-folder source
+        // (no watermark twin: that source has no keyed catch-up).
+        private val VOICE_NOTE_WATCHED_DETECTION_ENABLED = booleanPreferencesKey("voice_note_watched_detection_enabled")
+        private val VOICE_NOTE_WATCHED_TREE_URI = stringPreferencesKey("voice_note_watched_tree_uri")
         // TASK-778: the persisted voice-note watermark (the durable dedup
         // boundary the cold-start catch-up sweep compares against).
         private val VOICE_NOTE_WATERMARK = stringPreferencesKey("voice_note_watermark")
@@ -139,6 +145,8 @@ class PreferencesManagerImpl(
         private val DEMOTED_BACKENDS = stringSetPreferencesKey("demoted_backends")
         // TASK-685: the Models-filter favorite; key absence = untouched.
         private val MODEL_FILTER_LANGUAGE = stringPreferencesKey("model_filter_language")
+        // TASK-929: the What's-New popup's once-per-update marker.
+        private val WHATS_NEW_LAST_SHOWN_VERSION = intPreferencesKey("whats_new_last_shown_version")
     }
 
     private val cache = AtomicReference(CachedPreferences())
@@ -189,6 +197,7 @@ class PreferencesManagerImpl(
         val advancedSharingEnabled: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         val showRetranscribeButton: Boolean = PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         val advancedShareFormats: Boolean = PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
+        val wordTapSeek: Boolean = PreferencesManager.DEFAULT_WORD_TAP_SEEK,
         val memoryProtection: Boolean = PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         val externalAutomationEnabled: Boolean = PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
         val openTranscribeEnabled: Boolean = PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
@@ -197,6 +206,8 @@ class PreferencesManagerImpl(
         val voiceNoteTreeUri: String? = null,
         val voiceNoteBusinessDetectionEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
         val voiceNoteBusinessTreeUri: String? = null,
+        val voiceNoteWatchedDetectionEnabled: Boolean = PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        val voiceNoteWatchedTreeUri: String? = null,
         val voiceNoteWatermark: String? = null,
         val voiceNoteBusinessWatermark: String? = null,
         val remoteOmnivoiceEnabled: Boolean = PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
@@ -206,7 +217,8 @@ class PreferencesManagerImpl(
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         val languageChipEnabled: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         val externalModelsJson: String? = null,
-        val scheduledFoldersJson: String? = null
+        val scheduledFoldersJson: String? = null,
+        val whatsNewLastShownVersion: Int = PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION
     )
 
     private fun Preferences.toCached() = CachedPreferences(
@@ -263,6 +275,7 @@ class PreferencesManagerImpl(
         advancedSharingEnabled = this[ADVANCED_SHARING_ENABLED] ?: PreferencesManager.DEFAULT_ADVANCED_SHARING_ENABLED,
         showRetranscribeButton = this[SHOW_RETRANSCRIBE_BUTTON] ?: PreferencesManager.DEFAULT_SHOW_RETRANSCRIBE_BUTTON,
         advancedShareFormats = this[ADVANCED_SHARE_FORMATS] ?: PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS,
+        wordTapSeek = this[WORD_TAP_SEEK] ?: PreferencesManager.DEFAULT_WORD_TAP_SEEK,
         memoryProtection = this[MEMORY_PROTECTION] ?: PreferencesManager.DEFAULT_MEMORY_PROTECTION,
         externalAutomationEnabled = this[EXTERNAL_AUTOMATION_ENABLED] ?: PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED,
         openTranscribeEnabled = this[OPEN_TRANSCRIBE_ENABLED] ?: PreferencesManager.DEFAULT_OPEN_TRANSCRIBE_ENABLED,
@@ -271,6 +284,8 @@ class PreferencesManagerImpl(
         voiceNoteTreeUri = this[VOICE_NOTE_TREE_URI],
         voiceNoteBusinessDetectionEnabled = this[VOICE_NOTE_BUSINESS_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
         voiceNoteBusinessTreeUri = this[VOICE_NOTE_BUSINESS_TREE_URI],
+        voiceNoteWatchedDetectionEnabled = this[VOICE_NOTE_WATCHED_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED,
+        voiceNoteWatchedTreeUri = this[VOICE_NOTE_WATCHED_TREE_URI],
         voiceNoteWatermark = this[VOICE_NOTE_WATERMARK],
         voiceNoteBusinessWatermark = this[VOICE_NOTE_BUSINESS_WATERMARK],
         remoteOmnivoiceEnabled = this[REMOTE_OMNIVOICE_ENABLED] ?: PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED,
@@ -281,7 +296,9 @@ class PreferencesManagerImpl(
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         languageChipEnabled = this[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         externalModelsJson = this[EXTERNAL_MODELS_JSON],
-        scheduledFoldersJson = this[SCHEDULED_FOLDERS_JSON]
+        scheduledFoldersJson = this[SCHEDULED_FOLDERS_JSON],
+        whatsNewLastShownVersion =
+            this[WHATS_NEW_LAST_SHOWN_VERSION] ?: PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION
     )
 
     fun initialize() {
@@ -338,6 +355,17 @@ class PreferencesManagerImpl(
             preferences[SUBTITLE_CHOICE_TIMEOUT] = minutes
         }
         cache.updateAndGet { it.copy(subtitleChoiceTimeout = minutes) }
+    }
+
+    override val whatsNewLastShownVersion: Flow<Int> = dataStore.data.map {
+        it[WHATS_NEW_LAST_SHOWN_VERSION] ?: PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION
+    }.onStart { emit(cache.get().whatsNewLastShownVersion) }
+
+    override suspend fun saveWhatsNewLastShownVersion(versionCode: Int) {
+        dataStore.edit { preferences ->
+            preferences[WHATS_NEW_LAST_SHOWN_VERSION] = versionCode
+        }
+        cache.updateAndGet { it.copy(whatsNewLastShownVersion = versionCode) }
     }
 
     override suspend fun getLegacyLanguagePreference(): String {
@@ -898,6 +926,16 @@ class PreferencesManagerImpl(
         cache.updateAndGet { it.copy(showRetranscribeButton = enabled) }
     }
 
+    override val wordTapSeek: Flow<Boolean> = dataStore.data.map { it[WORD_TAP_SEEK] ?: PreferencesManager.DEFAULT_WORD_TAP_SEEK }
+        .onStart { emit(cache.get().wordTapSeek) }
+
+    override suspend fun saveWordTapSeek(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[WORD_TAP_SEEK] = enabled
+        }
+        cache.updateAndGet { it.copy(wordTapSeek = enabled) }
+    }
+
     override val advancedShareFormats: Flow<Boolean> = dataStore.data.map { it[ADVANCED_SHARE_FORMATS] ?: PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS }
         .onStart { emit(cache.get().advancedShareFormats) }
 
@@ -953,6 +991,29 @@ class PreferencesManagerImpl(
             else preferences[VOICE_NOTE_BUSINESS_TREE_URI] = uri
         }
         cache.updateAndGet { it.copy(voiceNoteBusinessTreeUri = uri) }
+    }
+
+    // TASK-966: the watched-folder source's pair, the twin of the blocks
+    // above over its own keys (a user-picked folder instead of a fixed
+    // WhatsApp tree; no watermark twin, that source has no keyed catch-up).
+    override val voiceNoteWatchedDetectionEnabled: Flow<Boolean> = dataStore.data.map { it[VOICE_NOTE_WATCHED_DETECTION_ENABLED] ?: PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED }
+        .onStart { emit(cache.get().voiceNoteWatchedDetectionEnabled) }
+    override val voiceNoteWatchedTreeUri: Flow<String?> = dataStore.data.map { it[VOICE_NOTE_WATCHED_TREE_URI] }
+        .onStart { emit(cache.get().voiceNoteWatchedTreeUri) }
+
+    override suspend fun saveVoiceNoteWatchedDetectionEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[VOICE_NOTE_WATCHED_DETECTION_ENABLED] = enabled
+        }
+        cache.updateAndGet { it.copy(voiceNoteWatchedDetectionEnabled = enabled) }
+    }
+
+    override suspend fun saveVoiceNoteWatchedTreeUri(uri: String?) {
+        dataStore.edit { preferences ->
+            if (uri == null) preferences.remove(VOICE_NOTE_WATCHED_TREE_URI)
+            else preferences[VOICE_NOTE_WATCHED_TREE_URI] = uri
+        }
+        cache.updateAndGet { it.copy(voiceNoteWatchedTreeUri = uri) }
     }
 
     override suspend fun bumpVoiceNoteWatermark(candidate: String) {

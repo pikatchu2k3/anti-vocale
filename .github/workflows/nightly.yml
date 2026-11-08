@@ -126,6 +126,26 @@ jobs:
           # remote configured, which checkout provides.
           fetch-depth: 1
 
+      # GH #175: the sherpa srclib pin in the F-Droid recipe drifted
+      # 3.5 months behind .sherpa-version because only the release
+      # workflow ran this check. Running it on every nightly catches
+      # the drift the day it lands on main, not at release time.
+      - name: Sherpa sync check (6 sync points including the F-Droid recipe)
+        run: ./scripts/check-sherpa-sync.sh
+
+      # TASK-923: user-facing size claims (app strings, store listings,
+      # README tables) are copies of the catalog's estimatedSizeMB; the
+      # fastlane listings shipped 464MB for a 640MB model and the strings
+      # kept pre-re-export Whisper sizes until this check existed.
+      - name: Model size claims match the catalog
+        run: ./scripts/check-model-sizes.sh
+
+      # TASK-950: docs/i18n/translation-package.csv is the volunteer
+      # translator hand-off derived from values/strings.xml; string edits
+      # drifted it silently until someone remembered to regenerate it.
+      - name: Translation package freshness
+        run: ./scripts/check-translation-package.sh
+
       # TASK-784 review: record the CHECKOUT's HEAD, not github.sha. On
       # schedule events github.sha is the trigger-time HEAD while the
       # artifacts build from this fresh checkout a moment later; the tag

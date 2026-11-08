@@ -25,22 +25,21 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import com.antivocale.app.testing.TempDataStoreRule
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * TASK-342 defect 1: the Model tab USE button must persist the backend selection
@@ -59,9 +58,12 @@ import org.robolectric.annotation.Config
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
-class ModelViewModelUseModelPersistenceTest {
+class ModelViewModelUseModelPersistenceTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private val backendKey = stringPreferencesKey("transcription_backend")
     private val sherpaWhisperKey = stringPreferencesKey("sherpa_model_path_whisper")
 
@@ -96,7 +98,7 @@ class ModelViewModelUseModelPersistenceTest {
         every { mockContext.applicationContext } returns mockContext
         com.antivocale.app.data.catalog.BundledCatalog.attach(mockContext)
         val sharedDemoter = com.antivocale.app.transcription.SilentModelDemoter(prefs)
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = prefs,
             activeModelRepository = ActiveModelRepository(prefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
@@ -114,7 +116,7 @@ class ModelViewModelUseModelPersistenceTest {
             ),
             litertLmUrlImporter = io.mockk.mockk(relaxed = true),
             externalCatalogRepository = io.mockk.mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(SupervisorJob()),
+            applicationScope = applicationScope,
             // TASK-675: real demoter over the same preferences.
             silentModelDemoter = sharedDemoter,
             modelActivator = com.antivocale.app.transcription.ModelActivator(
@@ -123,13 +125,8 @@ class ModelViewModelUseModelPersistenceTest {
                 externalModelStore = com.antivocale.app.data.ExternalModelStore(prefs),
                 backendRegistry = staticRegistry(),
                 ),
-        )
+        ))
 
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
     }
 
     /** Files of the whisper "small" variant, non-empty so the sidecar check passes. */
@@ -140,8 +137,8 @@ class ModelViewModelUseModelPersistenceTest {
         )
         dir.mkdirs()
         listOf(
-            "small-encoder.int8.onnx",
-            "small-decoder.int8.onnx",
+            "small-encoder-attn.int8.onnx",
+            "small-decoder-attn.int8.onnx",
             "small-tokens.txt",
         ).forEach { File(dir, it).writeText("placeholder") }
         return dir
@@ -222,7 +219,7 @@ class ModelViewModelUseModelPersistenceTest {
             "sherpa-onnx-whisper-small",
         )
         dir.mkdirs()
-        File(dir, "small-encoder.int8.onnx").writeText("placeholder")
+        File(dir, "small-encoder-attn.int8.onnx").writeText("placeholder")
 
         val events = mutableListOf<ModelViewModel.SnackbarEvent>()
         val collector = launch { viewModel.snackbarEvent.collect { events.add(it) } }

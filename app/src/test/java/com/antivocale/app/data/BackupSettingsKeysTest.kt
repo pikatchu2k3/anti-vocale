@@ -20,6 +20,7 @@ class BackupSettingsKeysTest {
         "output_folder_uri" to "device-bound (per-install SAF grant)",
         "voice_note_tree_uri" to "device-bound (per-install SAF grant)",
         "voice_note_business_tree_uri" to "device-bound (per-install SAF grant)",
+        "voice_note_watched_tree_uri" to "device-bound (per-install SAF grant)",
         // TASK-778: names a THIS device's WhatsApp note history; restored on
         // another install it would wrongly suppress that install's catch-up.
         "voice_note_watermark" to "device-bound (per-install WhatsApp note history)",
@@ -38,6 +39,7 @@ class BackupSettingsKeysTest {
         "demoted_backends" to "device-derived",
         "inference_provider" to "device-derived (NNAPI crash class)",
         "external_migration_done" to "migration marker",
+        "whats_new_last_shown_version" to "session marker (the TASK-929 once-per-update popup state)",
         "partial_transcription_text" to "transient",
         "partial_transcription_timestamp" to "transient",
         "pending_backend_load" to "transient",

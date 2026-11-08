@@ -5,10 +5,12 @@ import android.util.Log
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.antivocale.app.data.ActiveModelRepository
 import com.antivocale.app.data.ModelBundleCodec
+import com.antivocale.app.data.ModelBundleTransfer
 import com.antivocale.app.data.HuggingFaceTokenManager
 import com.antivocale.app.BuildConfig
 import com.antivocale.app.data.ModelDownloader
@@ -17,6 +19,7 @@ import com.antivocale.app.di.ApplicationScope
 import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.ExternalModelImportOperations
+import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalCatalogRepository
@@ -30,6 +33,7 @@ import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.transcription.ModelFamilySupport
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.CatalogVariantUi
+import com.antivocale.app.transcription.variantTitle
 import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.ModelFamilyDetector
 import com.antivocale.app.transcription.SherpaModelDownloader
@@ -40,6 +44,7 @@ import com.antivocale.app.transcription.cleanOrphanedModelDirs
 import com.antivocale.app.R
 import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.data.catalog.CatalogEntry
+import com.antivocale.app.data.download.CatalogModelValidator
 import com.antivocale.app.data.download.DownloadConfig
 import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.data.download.ResumeDownloadHelper
@@ -211,6 +216,13 @@ class ModelViewModel @Inject constructor(
         val variantToDelete: String? = null,
         val variantsNeedingExtraction: Set<String> = emptySet(),
         val orphanedVariants: Set<String> = emptySet(),
+        /** TASK-933: the variants a bundle restore is landing right now.
+         *  The exclusivity slot the download start checks in the SAME
+         *  atomic domain as isDownloading, so a restore claim and a
+         *  download registration cannot interleave onto one variant dir.
+         *  No UI reads it: the restore's progress lives in the external
+         *  import state. */
+        val restoringVariants: Set<String> = emptySet(),
         /** TASK-801: variant dirName -> the linked record's backendId, for the
          *  card's active dot when the record (not the catalog dir) is active. */
         val linkedVariantBackendIds: Map<String, String> = emptyMap()
@@ -470,7 +482,8 @@ class ModelViewModel @Inject constructor(
                     if (_uiState.value.modelName.isBlank()) {
                         autoSelectIfNotDemoted(entryId) { useModel(entryId, variantName) }
                     }
-                    val displayName = ctx.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
+                    val variantUi = CatalogVariantUi.of(entryId, variantName)
+                    val displayName = ctx.variantTitle(variantUi)
                     viewModelScope.launch { _snackbarEvent.tryEmit(SnackbarEvent.Message(ctx.getString(R.string.catalog_model_downloaded, displayName))) }
                 }
             },
@@ -1067,19 +1080,39 @@ class ModelViewModel @Inject constructor(
      * Starts a download for one catalog entry's variant via [ExtractionService].
      * The whole sherpa-onnx family (Parakeet, Whisper, Qwen3-ASR, Nemotron, GigaAM)
      * shares this single path; everything model-specific comes from the catalog.
+     *
+     * TASK-933: the registration and the restore-marker check share one
+     * atomic update (the claimRestoreVariant invariant): a bundle restore
+     * holding the variant refuses the download right here, with the error
+     * slot carrying the reason and no service dispatched.
      */
     fun startDownload(entryId: String, variantName: String, dismissDialog: Boolean = false, initialState: DownloadState = DownloadState.Connecting("")) {
-        updateEntry(entryId) { it.copy(
-            showDownloadDialog = if (dismissDialog) false else it.showDownloadDialog,
-            selectedVariant = variantName,
-            variantDownloadStates = it.variantDownloadStates + (variantName to VariantDownloadState(
-                downloadState = initialState,
-                downloadProgress = 0f,
-                isDownloading = true,
-                errorMessage = null,
-                partialDownload = null
-            ))
-        ) }
+        var restoreInProgress = false
+        updateEntry(entryId) {
+            if (variantName in it.restoringVariants) {
+                restoreInProgress = true
+                it.copy(
+                    showDownloadDialog = if (dismissDialog) false else it.showDownloadDialog,
+                    selectedVariant = variantName,
+                    variantDownloadStates = it.variantDownloadStates.updateVariant(variantName) {
+                        copy(errorMessage = ctx.getString(R.string.model_download_restore_active))
+                    },
+                )
+            } else {
+                it.copy(
+                    showDownloadDialog = if (dismissDialog) false else it.showDownloadDialog,
+                    selectedVariant = variantName,
+                    variantDownloadStates = it.variantDownloadStates + (variantName to VariantDownloadState(
+                        downloadState = initialState,
+                        downloadProgress = 0f,
+                        isDownloading = true,
+                        errorMessage = null,
+                        partialDownload = null
+                    ))
+                )
+            }
+        }
+        if (restoreInProgress) return
 
         val context = ctx
         val intent = ExtractionService.downloadIntent(context, entryId, variantName)
@@ -1156,13 +1189,15 @@ class ModelViewModel @Inject constructor(
                 .firstOrNull(File::isFile)
         }
         if (file == null) {
-            val displayName = context.getString(CatalogVariantUi.of(entryId, variant.name).titleResId)
+            val variantUi = CatalogVariantUi.of(entryId, variant.name)
+            val displayName = context.variantTitle(variantUi)
             _snackbarEvent.tryEmit(SnackbarEvent.Message(
                 context.getString(R.string.model_use_missing_files, displayName)))
             return
         }
         modelActivator.activateLlm(file)
-        val displayName = context.getString(CatalogVariantUi.of(entryId, variant.name).titleResId)
+        val variantUi = CatalogVariantUi.of(entryId, variant.name)
+        val displayName = context.variantTitle(variantUi)
         val message = context.getString(R.string.model_selected_message, displayName)
         _uiState.update {
             it.copy(modelPath = file.absolutePath, modelName = displayName,
@@ -1203,7 +1238,8 @@ class ModelViewModel @Inject constructor(
             val modelPath = modelActivator.activateCatalog(
                 context, entryId, variantName, _catalogStates.value[entryId]?.modelPath)
             if (modelPath != null) {
-                val displayName = context.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
+                val variantUi = CatalogVariantUi.of(entryId, variantName)
+                val displayName = context.variantTitle(variantUi)
                 val message = context.getString(R.string.model_selected_message, displayName)
                 _uiState.update {
                     it.copy(
@@ -1219,7 +1255,8 @@ class ModelViewModel @Inject constructor(
                 // No valid model directory resolved: previously a SILENT no-op, which
                 // left the previous backend preference (possibly a dangling external id)
                 // active while the user believed they had switched (TASK-342 defect 1).
-                val displayName = context.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
+                val variantUi = CatalogVariantUi.of(entryId, variantName)
+                val displayName = context.variantTitle(variantUi)
                 _snackbarEvent.tryEmit(SnackbarEvent.Message(
                     context.getString(R.string.model_use_missing_files, displayName)))
             }
@@ -1278,7 +1315,8 @@ class ModelViewModel @Inject constructor(
                     }
                 }
                 updateEntry(entryId) { it.copy(modelPath = activePath) }
-                val displayName = context.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
+                val variantUi = CatalogVariantUi.of(entryId, variantName)
+                val displayName = context.variantTitle(variantUi)
                 _snackbarEvent.tryEmit(SnackbarEvent.Message(context.getString(R.string.catalog_model_deleted, displayName)))
             }
         }
@@ -1350,7 +1388,8 @@ class ModelViewModel @Inject constructor(
             }
         }
         if (deletedAny) {
-            val displayName = context.getString(CatalogVariantUi.of(entryId, variantName).titleResId)
+            val variantUi = CatalogVariantUi.of(entryId, variantName)
+            val displayName = context.variantTitle(variantUi)
             _snackbarEvent.tryEmit(SnackbarEvent.Message(context.getString(R.string.catalog_model_deleted, displayName)))
         }
     }
@@ -1502,15 +1541,26 @@ class ModelViewModel @Inject constructor(
         }
     }
     /**
-     * TASK-796 round 3: the single-picker bundle auto-detect. Returns the
-     * ONLY .zip child's URI when the picked folder holds exactly one (a
-     * random archive among many must not hijack the flow: several zips
-     * means the user must pick the specific folder). Null = no bundle
-     * candidate, the folder import proceeds with its own reporting.
-     * Binder work on IO inside the importer; the UI branch only decides.
+     * TASK-925 (GH #124 reopen 2): every .zip child of the picked folder,
+     * full list. Binder work on IO inside the importer; the UI branch
+     * decides (none = folder import, one = that bundle, several = the
+     * one-tap chooser). Replaces TASK-796 round 3's singleOrNull gate,
+     * which left a several-zips folder to the misleading folder-import
+     * error.
      */
-    suspend fun singleBundleChild(context: Context, treeUri: Uri): Uri? =
-        externalModelImporter.bundleZipChildren(context, treeUri).singleOrNull()
+    suspend fun zipChildren(context: Context, treeUri: Uri): List<Uri> =
+        externalModelImporter.bundleZipChildren(context, treeUri)
+
+    /**
+     * TASK-925: the chooser row's label for one bundle candidate. The
+     * DocumentFile query swallows provider failures, so the fallbacks keep
+     * this never-throw (an unresolvable row must not kill the chooser).
+     */
+    suspend fun bundleZipDisplayName(context: Context, uri: Uri): String =
+        withContext(Dispatchers.IO) {
+            DocumentFile.fromSingleUri(context, uri)?.name
+                ?: uri.lastPathSegment ?: uri.toString()
+        }
 
 
     /** TASK-513: lists a picked SAF folder and detects the family, so the
@@ -1535,21 +1585,53 @@ class ModelViewModel @Inject constructor(
         options: Map<String, String> = emptyMap(),
         languages: List<String> = emptyList(),
     ) = runExternalImport("External folder", onProgress = null) {
-        externalModelImporter.importFromTreeUri(
+        ModelBundleTransfer.Outcome.Imported(externalModelImporter.importFromTreeUri(
             context, treeUri,
             modelType = ctcModelType(family, ctcModelType),
-            family = family, options = options, languages = languages)
+            family = family, options = options, languages = languages))
+    }
+
+    /**
+     * TASK-933: atomically refuses-and-claims [variantName] for a bundle
+     * restore. The in-flight-download check and the restore marker flip
+     * inside ONE _catalogStates update, the same domain the download
+     * start registers in: whichever side moves second sees the other's
+     * marker and loses, so no download can start on the variant dir
+     * between the restore's check and its landing (and vice versa). The
+     * returned handle clears the marker; restoreBuiltin closes it when
+     * the landing ends either way. internal for the restore/ordering
+     * test, like the service's notification-band constant.
+     */
+    internal fun claimRestoreVariant(entryId: String, variantName: String): AutoCloseable {
+        var downloadActive = false
+        updateEntry(entryId) { state ->
+            if (state.variantDownloadStates[variantName]?.isDownloading == true) {
+                downloadActive = true
+                state
+            } else {
+                state.copy(restoringVariants = state.restoringVariants + variantName)
+            }
+        }
+        if (downloadActive) {
+            throw ModelBundleTransfer.DownloadActiveException(entryId, variantName)
+        }
+        return AutoCloseable {
+            updateEntry(entryId) { state ->
+                state.copy(restoringVariants = state.restoringVariants - variantName)
+            }
+        }
     }
 
     /**
      * TASK-742 (GH #124): the offline-transfer bundle import. The codec
      * verifies every sha256 into a staging dir under cacheDir (outside the
      * orphan sweep's filesRoot), the parsed record params come from the
-     * codec (ONE owner of the manifest vocabulary), and registration rides
-     * the SAME importFromDirectory core as a folder import, so
-     * residency/records stay coherent and the startup sweep cannot eat the
-     * result. A failure surfaces through the same error channel as every
-     * external import.
+     * codec (ONE owner of the manifest vocabulary). TASK-924: a bundle
+     * whose bytes match this device's catalog variant restores onto the
+     * built-in card (no record); every other bundle rides the SAME
+     * importFromDirectory core as a folder import, so residency/records
+     * stay coherent and the startup sweep cannot eat the result. A failure
+     * surfaces through the same error channel as every external import.
      */
     fun importExternalFromBundle(context: Context, bundleUri: Uri) =
         runExternalImport("Bundle", onProgress = null) {
@@ -1557,68 +1639,19 @@ class ModelViewModel @Inject constructor(
             // FOLDER picker; the caller releases the persisted read grant
             // before invoking this, so the one-shot read rides the
             // picker's transient grant again (nothing persists).
-            val staging = File(context.cacheDir, "bundle-import-${System.currentTimeMillis()}")
-            try {
-                val manifest = context.contentResolver.openInputStream(bundleUri)?.use { input ->
-                    ModelBundleCodec.import(input, staging)
-                } ?: error("cannot open the selected bundle")
-                val params = ModelBundleCodec.recordParams(manifest)
-                val record = externalModelImporter.importFromDirectory(
-                    src = staging,
-                    modelType = params.modelType,
-                    family = params.family,
-                    options = params.options,
-                    languages = params.languages,
-                    streaming = params.streaming,
-                    displayName = params.displayName,
-                    // TASK-801 (the TASK-797 device trial's answer): the
-                    // entity link. The record keeps its external canonical
-                    // file names and the built-in loader is untouched (a
-                    // saved-path alias made the card claim installed and die
-                    // in ModelLoadError, exactly because the importer's names
-                    // differ from the catalog's); the card derives presence
-                    // from the linked record and Use activates it.
-                    linkedCatalog = linkedCatalogRefFor(params),
+            // TASK-931: staging, the identity pass, and the restore/external
+            // routing live in the shared transfer core; this stays the SAF
+            // shell plus the UI-state wiring.
+            val input = context.contentResolver.openInputStream(bundleUri)
+                ?: error("cannot open the selected bundle")
+            input.use {
+                com.antivocale.app.data.ModelBundleTransfer.importBundle(
+                    context, it, externalModelImporter,
+                    claimRestoreVariant = ::claimRestoreVariant,
+                    noFamilyError = ctx.getString(R.string.bundle_restore_unsupported),
                 )
-                record
-            } finally {
-                staging.deleteRecursively()
             }
         }
-
-    /**
-     * TASK-801: the catalog identity a bundle import links to, or null for a
-     * plain import. Linked only when the manifest's entry still exists in THIS
-     * device's bundled catalog, the modelTypes match (a relabeled or
-     * hand-edited manifest must not hijack an unrelated card), the variant
-     * resolves (the manifest's dirName when it names one of the entry's
-     * variants, else the entry's only variant; pre-801 manifests carry no
-     * variant identity, and a multi-variant entry is not linkable without
-     * one), AND the bundle's pinned bytes are the catalog variant's pinned
-     * bytes: the card must not vouch for weights the catalog never named.
-     */
-    private fun linkedCatalogRefFor(params: ModelBundleCodec.RecordParams): LinkedCatalogRef? {
-        val entryId = params.catalogEntryId ?: return null
-        val entry = BundledCatalog.byId(entryId) ?: return null
-        if (entry.modelType != params.modelType) return null
-        val variantDir = params.catalogVariantDir
-            ?.takeIf { dir -> entry.variants.any { it.dirName == dir } }
-            ?: entry.variants.singleOrNull()?.dirName
-            ?: return null
-        val variant = entry.variants.first { it.dirName == variantDir }
-        // Key-set equality, not just coverage: an extra canonical-named file
-        // (encoder.int8.onnx) riding the bundle could win the importer's
-        // role matching over the verified catalog-named file, so the card
-        // would vouch for bytes the record never loads.
-        val pinsMatch = params.filePins.keys == variant.files.map { it.name }.toSet() &&
-            variant.files.all { catalogFile ->
-                // Unpinned catalog files (none today, TASK-661 pins all)
-                // ride unconstrained.
-                catalogFile.sha256 == null || params.filePins[catalogFile.name] == catalogFile.sha256
-            }
-        if (!pinsMatch) return null
-        return LinkedCatalogRef(entryId, variantDir)
-    }
 
     /**
      * TASK-761 (review triage): the offline-transfer bundle export (GH
@@ -1635,40 +1668,15 @@ class ModelViewModel @Inject constructor(
         variant: CatalogVariantUi,
     ) = viewModelScope.launch(Dispatchers.IO) {
         try {
-            val metadata = ModelBundleCodec.BundleMetadata(
-                displayName = ctx.getString(variant.titleResId),
-                // The IMPORT family (the sherpa import taxonomy), NOT the
-                // entry's architecture string: the manifest round-trips into
-                // ModelFamily on the receiving device.
-                family = ModelBundleCodec
-                    .importFamilyForModelType(entry.modelType)?.name
-                    // Unreachable for the button (it is gated on the same
-                    // predicate); the loud fallback if a future call site
-                    // forgets the gate.
-                    ?: error("model type '${entry.modelType}' is not bundle-transferable"),
-                modelType = entry.modelType,
-                languages = BundledCatalog.byId(entry.id)?.let { catalogEntry ->
-                    // The UI variantName is the catalog variant NAME ("v3"),
-                    // never the dirName ("gigaam-v3"): comparing dirNames here
-                    // silently exported empty language lists (TASK-801 review).
-                    // Entries may also declare their languages at entry level
-                    // only (gigaam: ['ru'], no per-variant list).
-                    catalogEntry.variants
-                        .firstOrNull { it.name == variant.variantName }
-                        ?.languages
-                        ?.takeIf { it.isNotEmpty() }
-                        ?: catalogEntry.languages
-                } ?: emptyList(),
-                streaming = entry.isStreaming,
-                options = emptyMap(),
-                appVersion = BuildConfig.VERSION_NAME,
-                // TASK-797: the built-in entry the bundle came from; the
-                // receiver links the imported record to its card (TASK-801).
-                catalogEntryId = entry.id,
-                catalogVariantDir = variant.dirName,
-            )
             ctx.contentResolver.openOutputStream(uri)?.use { out ->
-                ModelBundleCodec.export(dir, out, metadata)
+                // TASK-931: the metadata rules and the zip live in the
+                // shared transfer core (the debug SPI exports the same
+                // bytes through the same code).
+                com.antivocale.app.data.ModelBundleTransfer.export(
+                    dir, entry, variant.variantName,
+                    displayName = ctx.variantTitle(variant),
+                    variantDirName = variant.dirName,
+                    appVersion = BuildConfig.VERSION_NAME, out = out)
             } ?: error("cannot open export target $uri")
             Log.i(TAG, "Model bundle exported: ${dir.name} -> $uri")
         } catch (e: Exception) {
@@ -1676,13 +1684,31 @@ class ModelViewModel @Inject constructor(
         }
     }
 
-    /** URL import: a HuggingFace repo URL or a catalog-entry JSON URL. */
+    /** Catalog-pick import: the ONE entry point both dialog sites use. The
+     *  entry's metadata rides the import for BOTH dialects: languages reach a
+     *  schema-1 manifest record from the index (the manifest has none) and a
+     *  legacy entry-JSON record from its own document (TASK-820), while the
+     *  name, licence, and streaming flag merge over whatever the fetched
+     *  document declares. */
+    fun importExternalFromCatalogEntry(entry: ExternalCatalog.CatalogEntry) =
+        importExternalFromUrl(
+            entry.entryUrl, entry.family, languages = entry.languages,
+            displayName = entry.name, licence = entry.licence,
+            streaming = entry.streaming)
+
+    /** URL import: a HuggingFace repo URL, a catalog-entry JSON URL, or a
+     *  schema-1 CDN manifest URL. [displayName], [licence] and [streaming]
+     * carry the community-index metadata of an index pick; they merge over
+     * the manifest-derived values and mean nothing to the repo arm. */
     fun importExternalFromUrl(
         url: String,
         family: ModelFamily,
         ctcModelType: String = ModelFamilySupport.CTC_TYPE_NEMO,
         options: Map<String, String> = emptyMap(),
         languages: List<String> = emptyList(),
+        displayName: String? = null,
+        licence: String? = null,
+        streaming: Boolean = false,
     ) = runExternalImport("External URL",
         onProgress = { index, count, name, bytes, total ->
             _externalImportState.value = ExternalImportState.Importing(
@@ -1690,11 +1716,15 @@ class ModelViewModel @Inject constructor(
                 bytes = bytes, totalBytes = total,
                 progress = if (total > 0) bytes.toFloat() / total else 0f)
         }) { onProgress ->
-        externalModelImporter.importFromUrl(
+        ModelBundleTransfer.Outcome.Imported(externalModelImporter.importFromUrlWithMetadata(
             url,
+            displayName = displayName,
+            licence = licence,
             modelType = ctcModelType(family, ctcModelType),
-            family = family, options = options, languages = languages,
-            onProgress = onProgress)
+            options = options,
+            family = family, languages = languages,
+            streaming = streaming,
+            onProgress = onProgress))
     }
 
     /** Only CTC takes an explicit modelType (it selects the sherpa config subtype);
@@ -1712,11 +1742,13 @@ class ModelViewModel @Inject constructor(
 
     /** Shared import scaffolding: progress state, IO dispatching, and the failure tail.
      *  [onProgress] is handed to the block so URL imports can stream download telemetry
-     *  into the state (TASK-398); null for the folder path (nothing to report). */
+     *  into the state (TASK-398); null for the folder path (nothing to report).
+     *  TASK-924: the success payload is the [ModelBundleTransfer.Outcome] pair:
+     *  an external record, or a builtin restore that wrote no record. */
     private fun runExternalImport(
         label: String,
         onProgress: ((Int, Int, String, Long, Long) -> Unit)?,
-        block: suspend ((Int, Int, String, Long, Long) -> Unit) -> ExternalModelRecord,
+        block: suspend ((Int, Int, String, Long, Long) -> Unit) -> ModelBundleTransfer.Outcome,
     ) {
         val noop: (Int, Int, String, Long, Long) -> Unit = { _, _, _, _, _ -> }
         viewModelScope.launch(Dispatchers.IO) {
@@ -1724,30 +1756,54 @@ class ModelViewModel @Inject constructor(
                 _externalImportState.value = ExternalImportState.Importing()
                 runCatching { block(onProgress ?: noop) }
                     .fold(
-                        onSuccess = { record -> onExternalImported(record) },
+                        onSuccess = { outcome ->
+                            _externalImportState.value = ExternalImportState.Idle
+                            // Called from a non-suspend fold callback; TASK-738:
+                            // the manager's fire-and-forget entry point is
+                            // exactly for scope-less callers.
+                            shareTargetManager.onModelDownloaded()
+                            when (outcome) {
+                                is ModelBundleTransfer.Outcome.Imported -> {
+                                    _snackbarEvent.tryEmit(SnackbarEvent.Message(
+                                        ctx.getString(R.string.external_imported, outcome.record.displayName)))
+                                    // First-run behavior: auto-select when nothing
+                                    // is active. TASK-675: a demoted external model
+                                    // is skipped by that auto-selection.
+                                    if (_uiState.value.modelName.isBlank()) {
+                                        autoSelectIfNotDemoted(outcome.record.backendId) {
+                                            activateExternalModel(outcome.record)
+                                        }
+                                    }
+                                }
+                                is ModelBundleTransfer.Outcome.Restored -> {
+                                    // No record exists to name or activate; the
+                                    // card flips via the disk-truth refresh.
+                                    _snackbarEvent.tryEmit(SnackbarEvent.Message(
+                                        ctx.getString(R.string.bundle_restored_builtin, outcome.displayName)))
+                                    refreshCatalogEntries()
+                                }
+                            }
+                        },
                         onFailure = { e ->
                             Log.e(TAG, "$label import failed", e)
-                            _externalImportState.value = ExternalImportState.Error(e.message ?: "unknown error")
+                            // The typed restore refusal comes from the shared
+                            // transfer core, whose exceptions carry no
+                            // resources; re-localize it at this UI boundary
+                            // (the 16-locale string the TASK-931 move
+                            // orphaned).
+                            val message =
+                                if (e is ModelBundleTransfer.DownloadActiveException)
+                                    ctx.getString(R.string.bundle_restore_download_active)
+                                else e.message ?: "unknown error"
+                            _externalImportState.value = ExternalImportState.Error(message)
                             _snackbarEvent.tryEmit(SnackbarEvent.Message(
-                                ctx.getString(R.string.external_import_failed, e.message ?: "")))
+                                ctx.getString(R.string.external_import_failed, message)))
                         },
                     )
             }
         }
     }
 
-    private fun onExternalImported(record: ExternalModelRecord) {
-        _externalImportState.value = ExternalImportState.Idle
-        _snackbarEvent.tryEmit(SnackbarEvent.Message(ctx.getString(R.string.external_imported, record.displayName)))
-        // Called from a non-suspend fold callback; TASK-738: the manager's
-        // fire-and-forget entry point is exactly for scope-less callers.
-        shareTargetManager.onModelDownloaded()
-        // First-run behavior: auto-select when nothing is active.
-        // TASK-675: a demoted external model is skipped by that auto-selection.
-        if (_uiState.value.modelName.isBlank()) {
-            autoSelectIfNotDemoted(record.backendId) { activateExternalModel(record) }
-        }
-    }
 
     fun useExternalModel(record: ExternalModelRecord) {
         viewModelScope.launch { activateExternalModel(record) }

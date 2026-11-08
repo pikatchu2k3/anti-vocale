@@ -148,21 +148,21 @@
     <string name="parakeet_download_confirm_title">Parakeet TDT indirilsin mi?</string>
     <string name="parakeet_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Parakeet, metin çıkarmada Gemma kadar doğru olmasa da daha hızlıdır.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 dil • Varsayılanın alternatifi</string>
+    <string name="parakeet_smoothquant_description">~%1$dMB • %2$d dil • Varsayılanın alternatifi</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 dil • Varsayılan: cihazda ölçülen en iyi kalite</string>
+    <string name="parakeet_stock_description">~%1$dMB • %2$d dil • Varsayılan: en hızlı çok dilli seçenek</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
     <string name="whisper_description">Çok dilli konuşma tanıma</string>
     <string name="whisper_small_title">Whisper Small</string>
-    <string name="whisper_small_description">~358MB • Daha düşük doğruluk, özellikle gürültülü seste • Dil otomatik algılaması güvenilmez (varsayılan: uygulama dili) • Yalnızca düşük özellikli cihazlar için</string>
+    <string name="whisper_small_description">~%1$dMB • Daha düşük doğruluk, özellikle gürültülü seste • Dil otomatik algılaması güvenilmez (varsayılan: uygulama dili) • Yalnızca düşük özellikli cihazlar için</string>
     <string name="whisper_turbo_title">Whisper Turbo</string>
-    <string name="whisper_turbo_description">~988MB • large-v3 kalitesine yakın • Dengeli çok dilli</string>
+    <string name="whisper_turbo_description">~%1$dMB • large-v3 kalitesine yakın • Dengeli çok dilli</string>
     <string name="whisper_medium_title">Whisper Medium</string>
-    <string name="whisper_medium_description">~903MB • İyi doğruluk • Çok dilli</string>
+    <string name="whisper_medium_description">~%1$dMB • İyi doğruluk • Çok dilli</string>
     <string name="whisper_distil_large_v3_title">Distil Italian</string>
-    <string name="whisper_distil_large_v3_description">~939MB • 2 kod çözücü katmanı • En hızlı • İtalyanca için optimize</string>
+    <string name="whisper_distil_large_v3_description">~%1$dMB • 2 kod çözücü katmanı • En hızlı • İtalyanca için optimize</string>
     <string name="whisper_download">Whisper indir</string>
     <string name="whisper_download_confirm_title">%1$s indirilsin mi?</string>
     <string name="whisper_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Whisper, doğru noktalama ile mükemmel çok dilli destek sağlar.</string>
@@ -173,7 +173,7 @@
     <string name="qwen3_asr_title">Qwen3-ASR (%1$d dil)</string>
     <string name="qwen3_asr_description">%1$d dil</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • %1$d dil</string>
+    <string name="qwen3_asr_0_6b_description">~%1$dMB • %2$d dil</string>
     <string name="qwen3_asr_download_confirm_title">%1$s indirilsin mi?</string>
     <string name="qwen3_asr_download">Qwen3-ASR indir</string>
     <string name="qwen3_asr_delete_message">Qwen3-ASR modeli silinsin mi?</string>
@@ -183,7 +183,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (akış)</string>
-    <string name="nemotron_description">~640MB • Akış • Hız yerine doğruluk</string>
+    <string name="nemotron_description">~%1$dMB • Akış • Hız yerine doğruluk</string>
     <string name="nemotron_download_confirm_title">%1$s indirilsin mi?</string>
     <string name="nemotron_download_confirm_message">Bu, yaklaşık %1$dMB indirir. Nemotron 3.5, çok dilli bir akış ASR modelidir.</string>
     <string name="nemotron_download">Nemotron indir</string>
@@ -193,12 +193,12 @@
 
     <!-- GigaAM v3 model -->
     <string name="gigaam_title">GigaAM v3</string>
-    <string name="gigaam_description">~326MB • Hızlı • Noktalama içeren Rusça ASR</string>
+    <string name="gigaam_description">~%1$dMB • Hızlı • Noktalama içeren Rusça ASR</string>
     <string name="gigaam_name">GigaAM v3</string>
-    <string name="whistle_name">Whistle (17 MB)</string>
-    <string name="whistle_description">~17MB • Çok hızlı • 7 dil, otomatik algılanır</string>
+    <string name="whistle_name">Whistle (%1$d MB)</string>
+    <string name="whistle_description">~%1$dMB • Çok hızlı • %2$d dil, otomatik algılanır</string>
     <string name="benchmark_unsupported_engine">Bu motor icin benchmark desteklenmiyor</string>
-    <string name="model_info_best_for_whistle">Cihazda en hızlı başlangıç: 17 MB, 7 dil, anında ilk metin</string>
+    <string name="model_info_best_for_whistle">Cihazda en hızlı başlangıç: %1$d MB, %2$d dil, anında ilk metin</string>
     <string name="model_info_notes_whistle">Italyancada Parakeet\'ten dusuk dogruluk; müzik metin olarak çıkabilir (müzik filtresi yok)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 indirilsin mi?</string>
     <string name="gigaam_download_confirm_message">Bu, yaklaşık %1$dMB indirir. GigaAM v3, Sber tarafından geliştirilen, güçlü Rusça doğruluğuna sahip yalnızca Rusça bir ASR modelidir.</string>
@@ -373,6 +373,7 @@
     <string name="processing_segment_progress">Dilim %1$d / %2$d…</string>
     <string name="progressive_initial">Metin hazırlanıyor; tamamlanınca nihai sonuç</string>
     <string name="added_to_queue">Kuyruğa eklendi…</string>
+    <string name="batch_enqueued">Transkripsiyon için %1$d dosya seçildi</string>
     <string name="processing_chunk">Parça %1$d/%2$d işleniyor…</string>
     <string name="processing_audio">Ses işleniyor…</string>
     <string name="processing_request">%1$s isteği işleniyor…</string>
@@ -592,8 +593,11 @@
     <string name="share_format_txt">Düz metin</string>
     <string name="share_format_timed">Zaman damgalı metin</string>
     <string name="share_format_srt">Altyazılar (.srt)</string>
+    <string name="share_format_srt_word">Kelime zamanlı altyazılar (.srt)</string>
     <string name="share_format_vtt">WebVTT (.vtt)</string>
     <string name="share_format_no_cues">Bu kayıtta saklı zaman damgası yok; zaman damgalı seçenekler düz metin paylaşacak.</string>
+    <string name="share_format_txt_file_audio_name">Ses dosyasının adını taşıyan metin dosyası (%1$s)</string>
+    <string name="share_format_txt_file_audio_name_date">Ses dosyasının adını ve tarihi taşıyan metin dosyası (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Varsayılan Komut</string>
@@ -644,6 +648,7 @@
     <!-- Settings Tab - App icon (TASK-392) -->
     <string name="app_icon_title">Uygulama simgesi</string>
     <string name="app_icon_note">Değiştirirken simge bazı başlatıcılarda kısa süre kaybolabilir; mağaza listesinde varsayılan simge kalır.</string>
+    <string name="app_icon_scope_note">Varyant yalnızca başlatıcı simgesi için geçerlidir; bildirimler ve paylaşım menüsü uygulamanın varsayılan simgesini korur.</string>
     <string name="app_icon_variant_default">Varsayılan</string>
     <string name="app_icon_variant_wavecut">Kesik dalga</string>
     <string name="app_icon_variant_crossed">Üstü çizili dalga</string>
@@ -750,37 +755,29 @@
     <string name="speed_comparison_header_speed">Hız</string>
     <string name="speed_comparison_header_quality">İtalyanca Kalitesi</string>
     <string name="speed_comparison_small_name">Whisper Small</string>
-    <string name="speed_comparison_small_size">~358MB</string>
     <string name="speed_comparison_small_speed">1.0x</string>
     <string name="speed_comparison_small_quality">Orta</string>
     <string name="speed_comparison_turbo_name">Whisper Turbo</string>
-    <string name="speed_comparison_turbo_size">~988MB</string>
     <string name="speed_comparison_turbo_speed">1.3x</string>
     <string name="speed_comparison_turbo_quality">İyi</string>
     <string name="speed_comparison_medium_name">Whisper Medium</string>
-    <string name="speed_comparison_medium_size">~903MB</string>
     <string name="speed_comparison_medium_speed">0.5x</string>
     <string name="speed_comparison_medium_quality">İyi</string>
     <string name="speed_comparison_distil_it_name">Distil Italian</string>
-    <string name="speed_comparison_distil_it_size">~939MB</string>
     <string name="speed_comparison_distil_it_speed">~1.8x</string>
     <string name="speed_comparison_distil_it_quality">En İyi İtalyanca</string>
     <string name="speed_comparison_distil_it_note">En İyi İtalyanca</string>
     <string name="speed_comparison_parakeet_name">Parakeet TDT</string>
-    <string name="speed_comparison_parakeet_size">~640MB</string>
     <string name="speed_comparison_parakeet_speed">~17x</string>
     <string name="speed_comparison_parakeet_quality">Çok İyi</string>
     <string name="speed_comparison_parakeet_note">Önerilen</string>
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
-    <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
     <string name="speed_comparison_qwen3_quality">%1$d dil, değişken</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
-    <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Hızlı</string>
     <string name="speed_comparison_gigaam_quality">Yalnızca Rusça</string>
     <string name="speed_comparison_nemotron_name">Nemotron 3.5</string>
-    <string name="speed_comparison_nemotron_size">~600MB</string>
     <string name="speed_comparison_nemotron_speed">Akış</string>
     <string name="speed_comparison_nemotron_quality">Deneysel</string>
     <string name="fastest_badge">En Hızlı</string>
@@ -953,11 +950,11 @@
     <string name="model_info_notes_whisper_turbo">Orta hızda large-v3 kalitesine yakın. Çok dilli kullanıcılar için iyi.</string>
     <string name="model_info_best_for_whisper_medium">Orta boy çok dilli model</string>
     <string name="model_info_notes_whisper_medium">Doğruluk ve kaynak kullanımı arasında iyi denge.</string>
-    <string name="model_info_best_for_distil_it">En iyi İtalyanca doğruluk (4.3%% WER)</string>
+    <string name="model_info_best_for_distil_it">En iyi İtalyanca doğruluk (3.5%% WER)</string>
     <string name="model_info_notes_distil_it">Yalnızca İtalyanca. İtalyanca sesli mesajlar için en yüksek doğruluk. Hızdan çok doğruluğa öncelik verin.</string>
-    <string name="model_info_best_for_qwen3">59 dilli otomatik algılama</string>
+    <string name="model_info_best_for_qwen3">%1$d dilli otomatik algılama</string>
     <string name="model_info_notes_qwen3">En geniş dil kapsamı. Not: 30 saniyeden uzun sesleri keser. Yalnızca ARM64 cihazlar.</string>
-    <string name="model_info_best_for_parakeet">En hızlı metin çıkarma (Whisper\'dan 17,6 kat hızlı, 5.4%% WER)</string>
+    <string name="model_info_best_for_parakeet">En hızlı metin çıkarma (İtalyanca için 4.0%% WER)</string>
     <string name="model_info_notes_parakeet">Ses uzunluğu sınırı yok. VAD gerekmez. Hızı öncelik eden kullanıcılar için en iyisi.</string>
 <string name="model_info_best_for_gigaam">Cihazda en iyi Rusça doğruluk</string>
 <string name="model_info_notes_gigaam">Yalnızca Rusça. Yerel noktalama ve büyük harf kullanımı.</string>
@@ -966,6 +963,11 @@
     <string name="model_info_best_for_gemma">Metin + ses görevleri için çok kipli LLM</string>
     <string name="model_info_notes_gemma">Saf ASR için optimize değil. Metin üretimiyle birleşik ses anlama gibi gelişmiş özellikler için kullanın.</string>
     <string name="model_info_benchmark_wer">Sözcük Hata Oranı (İtalyanca): %.1f%%</string>
+    <string name="benchmark_busy">%1$s üzerinde bir transkripsiyon çalışıyor; model boşta olduğunda kıyaslamayı tekrar çalıştır</string>
+    <string name="benchmark_init_failed">%1$s başlatılamadı</string>
+    <string name="benchmark_unknown_backend">Bilinmeyen arka uç: %1$s</string>
+    <string name="benchmark_model_folder_missing">%1$s için model klasörü eksik</string>
+    <string name="benchmark_failed">Kıyaslama başarısız oldu</string>
     <string name="model_info_relative_speed">Hız: %s</string>
     <string name="model_info_close">Kapat</string>
 
@@ -991,6 +993,9 @@
     <string name="external_importing_file">%1$s içe aktarılıyor (%2$d/%3$d)…</string>
     <string name="external_import_failed">İçe aktarma başarısız: %1$s</string>
     <string name="external_imported">%1$s içe aktarıldı</string>
+    <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
+    <string name="bundle_restored_builtin">%1$s geri yüklendi</string>
+    <string name="bundle_restore_unsupported">Bu paketteki model daha yeni bir uygulama sürümünden geliyor ve bu cihazda geri yüklenemiyor.</string>
     <string name="external_delete_confirm">%1$s harici modeli silinsin mi?</string>
     <string name="external_deleted">%1$s silindi</string>
         <string name="external_catalog_all">Tüm diller</string>
@@ -1034,8 +1039,8 @@
     <!-- Advanced sharing settings -->
     <string name="share_targets_title">Paylaşım Menüsünde Modeller</string>
     <string name="voice_note_settings_title">Sesli mesajlar</string>
-    <string name="voice_note_settings_summary_on">WhatsApp sesli mesajlarının otomatik yazıya çevirisi · açık</string>
-    <string name="voice_note_settings_summary_off">WhatsApp sesli mesajlarının otomatik yazıya çevirisi · kapalı</string>
+    <string name="voice_note_settings_summary_on">Sesli mesajların otomatik yazıya çevirisi · açık</string>
+    <string name="voice_note_settings_summary_off">Sesli mesajların otomatik yazıya çevirisi · kapalı</string>
     <string name="voice_note_settings_summary_limited">Sesli mesaj gönderenini tanıma</string>
     <string name="voice_note_identity_title">Sesli not gönderenini tanıma</string>
     <string name="voice_note_identity_description">Transkripte edilen sesli mesajları gönderenin adıyla etiketler; buraya paylaşılan ya da otomatik olanlar. Şimdilik sadece WhatsApp. Ad, yalnızca bildirim bu açıkken geldiyse ve süre uyuyorsa görünür (tahmine dayalı ad yok); bekleme listesi yalnız bellekte yaşar. Bildirim erişimi gerekir.</string>
@@ -1062,6 +1067,12 @@
     <string name="voice_note_business_folder_grant_rejected">Bu, WhatsApp Business sesli notları klasörü değil. WhatsApp Business Voice Notes adlı klasörü seçin ve tekrar deneyin.</string>
     <string name="voice_note_business_folder_card_desc">Notları okumak için WhatsApp Business\'ın kaydettiği klasöre bir kez erişim verin:</string>
     <string name="voice_note_business_folder_sheet_step3">WhatsApp Business Voice Notes klasörü seçiliyken (açmadan) BU KLASÖRÜ KULLAN\'a, ardından İZİN VER\'e dokunun.</string>
+    <string name="voice_note_source_watched_folder">İzlenen klasör</string>
+    <string name="voice_note_watched_detection_description">Sesli mesajları dosya yöneticinizde görebileceğiniz bir klasöre kaydeden her uygulama için (örneğin Music/Signal konumuna kaydeden Signal): bir kez açıp o klasörü seçin; oraya gelen yeni ses dosyaları geldiği anda yazıya çevrilir. Her dosya yalnızca yazıya çevrilmek için okunur ve yalnızca bu cihazda; özellik kapalıyken hiçbir şey okunmaz. Ses erişimi gerektirir.</string>
+    <string name="voice_note_watched_folder_grant_rejected">Bu klasör izlenemez. Bu cihazın deposunda bir klasör seçin (deponun tamamı değil; WhatsApp klasörleri de değil, onların kendi bölümü var).</string>
+    <string name="voice_note_watched_folder_card_desc">Mesajları okumak için diğer uygulamanın kaydettiği klasöre bir kez erişim verin (bu cihazın deposundaki herhangi bir klasör):</string>
+    <string name="voice_note_watched_folder_sheet_step2">Diğer uygulamanın sesli mesajları kaydettiği klasörü açın (örneğin Music › Signal):</string>
+    <string name="voice_note_watched_folder_sheet_step3">Bu klasör seçiliyken (açmadan) BU KLASÖRÜ KULLAN\'a, ardından İZİN VER\'e dokunun.</string>
     <string name="share_targets_description">İndirilen her model sistem menüsünde ayrı bir seçenek olarak görünür. Sesi seçilen model işler.</string>
     <string name="advanced_sharing_toggle">İndirilen modelleri göster</string>
     <string name="share_targets_models_info">İndirilen her model paylaşım menüsünde ayrı bir öğe olarak görünür. Model silindiğinde menüden kalkar.</string>
@@ -1087,6 +1098,8 @@
     <string name="retranscribe_active_badge">Etkin</string>
     <string name="retranscribe_setting_title">Yeniden Metne Çıkarma Düğmesi</string>
     <string name="retranscribe_setting_description">Sesli metin çıkarmalarında farklı bir modelle yeniden denemek için bir düğme göster.</string>
+    <string name="word_tap_seek_title">Sözcüklere dokunarak atla</string>
+    <string name="word_tap_seek_description">Genişletilmiş metinde bir sözcüğe dokunmak oynatmayı o sözcüğün anına taşır. Varsayılan olarak kapalı.</string>
     <string name="advanced_share_formats_title">Şu olarak paylaş…</string>
     <string name="advanced_share_formats_description">Sonuçlara, normal düz metin paylaşımına ek olarak altyazı ve zaman damgalı biçimler sunan ikinci bir Paylaş… düğmesi ekler.</string>
 
@@ -1130,6 +1143,8 @@
     <string name="error_oom_transcription_protected">Bellek koruması açık olsa bile bu sesi yazıya dökmek için yeterli bellek yok. Daha kısa bir dosya veya daha küçük bir model deneyin ya da diğer uygulamaları kapatın.</string>
     <string name="external_family_detected">Algılandı: %1$s</string>
     <string name="external_family_pick_title">Bu model hangi aileden?</string>
+    <string name="external_bundles_pick_title">Birden fazla paket bulundu</string>
+    <string name="external_bundles_pick_subtitle">İçe aktarmak için birini seç</string>
     <string name="subtitle_timeout_title">Otomatik seçim süresi</string>
     <string name="subtitle_timeout_description">Altyazılı videonun seçim bildirimi kendi kendine transkript başlamadan ne kadar bekler.</string>
     <string name="transcript_export_format_title">Otomatik kayıt dosyası biçimi</string>
@@ -1137,6 +1152,7 @@
     <string name="transcript_export_format_txt">Düz metin</string>
     <string name="transcript_export_format_txt_timed">Zaman damgalı metin (deneysel)</string>
     <string name="transcript_export_format_srt">SRT altyazıları (deneysel)</string>
+    <string name="transcript_export_format_srt_word">Kelime zamanlı SRT altyazıları (deneysel)</string>
     <string name="transcript_export_format_vtt">WebVTT altyazıları (deneysel)</string>
     <string name="settings_search_hint">Ayarları ara…</string>
     <plurals name="settings_search_matches">
@@ -1192,6 +1208,8 @@
     <string name="transcription_refined_from">%1$s ile rafine edildi</string>
     <string name="refinement_title">İki aşamalı transkripsiyon</string>
     <string name="refinement_description">Hızlı modelle anında önizleme göster, sonra arka planda seçili modelle rafine et</string>
+    <string name="refinement_description_dynamic">%1$s ile anında önizleme göster, sonra arka planda %2$s ile rafine et</string>
+    <string name="refinement_locked_reason">İki aşamalı transkripsiyonu etkinleştirmek için ikinci bir model indirin</string>
     <string name="curated_why_distil_it">İtalyanca için ince ayarlı: en isabetli seçim</string>
     <string name="curated_why_parakeet">Çok hızlı (yaklaşık 17 kat) ve yine de çok isabetli</string>
     <string name="curated_why_german_whisper">Almanca için ince ayarlı: en isabetli seçenek</string>
@@ -1313,4 +1331,10 @@
         <item quantity="other">Uygulama kapalıyken gelen %1$d sesli not şu anda yazıya çevriliyor. Sonuçlar geçmişte görünecek.</item>
     </plurals>
     <string name="history_db_recovered_unpreserved">Geçmiş veritabanı hasarlıydı ve sıfırlandı. Hasarlı dosyalar korunamadı.</string>
+    <string name="bundle_restore_download_active">Bu modelin indirilmesi hâlâ sürüyor. Bitmesini bekleyin veya iptal edin, sonra paketi yeniden içe aktarın.</string>
+    <string name="model_download_restore_active">Bu modelin geri yüklenmesi sürüyor. Bitmesini bekleyin, sonra yeniden indirin.</string>
+
+    <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
+    <string name="whats_new_title">Yenilikler</string>
+    <string name="whats_new_summary">Bu sürümdeki yenilikler</string>
 </resources>

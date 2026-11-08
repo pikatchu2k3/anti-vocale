@@ -39,11 +39,11 @@ Les modèles diffèrent par la taille, la vitesse, la couverture des langues et 
 | Modèle | Taille | Langues | Remarques |
 |---|---|---|---|
 | Parakeet TDT stock int8 | 640 Mo | 25 européennes | Rapide et léger ; la recommandation par défaut |
-| Parakeet TDT SmoothQuant | 862 Mo | 25 européennes | Plus précis, plus lourd ; demande plus de RAM |
-| Whisper Turbo | 988 Mo | 101 | Meilleur équilibre de la famille Whisper |
-| Whisper Medium | 903 Mo | 101 | Plus lent que Turbo, pas meilleur pour la plupart des audios |
-| Whisper Small | 358 Mo | 101 | Whisper le plus léger ; qualité correcte |
-| Whisper Distil Italian | 938 Mo | Italien uniquement | Meilleure précision en italien des modèles intégrés |
+| Parakeet TDT SmoothQuant | 862 Mo | 25 européennes | Plus lourd que le modèle par défaut ; demande plus de RAM |
+| Whisper Turbo | 1037 Mo | 99 | Meilleur équilibre de la famille Whisper |
+| Whisper Medium | 949 Mo | 99 | Plus lent que Turbo, pas meilleur pour la plupart des audios |
+| Whisper Small | 378 Mo | 99 | Whisper le plus léger ; qualité correcte |
+| Whisper Distil Italian | 984 Mo | Italien uniquement | Meilleure précision en italien des modèles intégrés |
 | Qwen3-ASR | 938 Mo | Multilingue | Architecture alternative |
 | Nemotron streaming | 640 Mo | Multilingue | Affiche le texte pendant que vous parlez (streaming) |
 | GigaAM v3 | 326 Mo | Russe | Spécialiste du russe |
@@ -96,7 +96,7 @@ Une réserve, dite sans détour : sur les téléphones aux économiseurs de batt
 
 ## Modèles de la communauté et import
 
-Le catalogue intégré ne couvre pas toutes les langues. Anti-Vocale embarque un catalogue communautaire de modèles supplémentaires que vous importez en deux gestes : onglet Modèles, Avancé, ONNX Sherpa, Importer du catalogue, filtrez par votre langue, touchez le modèle, confirmez. Le catalogue grandit sans cesse et compte aujourd'hui plus de 30 entrées validées : l'arabe (dialectal, complet et léger), l'allemand (streaming et un fine-tune Whisper), l'espagnol (streaming et Moonshine léger), le suisse allemand, l'hébreu, le persan, le russe, le vietnamien, le coréen, l'ukrainien, six langues indiennes (bengali, gujarati, hindi, marathi, tamoul, télougou), Canary Flash pour l'anglais et le français, SenseVoice, Dolphin, Orukeet (un fine-tune de Parakeet couvrant 24 langues dont l'italien) et un Whisper Tiny multilingue à faible RAM. Si votre langue manque, ouvrez un ticket : c'est ainsi que les entrées sont ajoutées.
+Le catalogue intégré ne couvre pas toutes les langues. Anti-Vocale embarque un catalogue communautaire de modèles supplémentaires que vous importez en deux gestes : onglet Modèles, Avancé, ONNX Sherpa, Importer du catalogue, filtrez par votre langue, touchez le modèle, confirmez. Le catalogue grandit sans cesse et compte aujourd'hui plus de 30 entrées validées : l'arabe (dialectal, complet et léger), l'allemand (streaming et deux fine-tunes Whisper, turbo et large v3 complet), l'espagnol (streaming et Moonshine léger), le suisse allemand, l'hébreu, le persan, le russe, le vietnamien (streaming et Moonshine léger), l'ukrainien, six langues indiennes (bengali, gujarati, hindi, marathi, tamoul, télougou), le turc (un fine-tune Whisper small), le finnois (un fine-tune Whisper large v3), le français (une distillation de Whisper large v3), le portugais brésilien (un Distil Whisper large v3), Canary Flash pour l'anglais, le français, l'allemand et l'espagnol, un Canary complet pour le néerlandais, un Parakeet TDT-CTC 110M pour l'anglais, SenseVoice, Dolphin, Orukeet (un fine-tune de Parakeet couvrant 24 langues dont l'italien), TranscribePsy (une distillation de Parakeet couvrant 20 langues européennes), Omnilingual ASR 300M (multilingue, expérimental) et un Whisper Tiny multilingue à faible RAM. Si votre langue manque, ouvrez un ticket : c'est ainsi que les entrées sont ajoutées.
 
 Les utilisateurs avancés peuvent aussi :
 - importer un modèle depuis l'URL d'un dépôt Hugging Face ou depuis un lien d'entrée de catalogue (la partie avancée de la même boîte de dialogue) ;

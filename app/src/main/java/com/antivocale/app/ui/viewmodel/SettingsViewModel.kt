@@ -399,6 +399,24 @@ class SettingsViewModel @Inject constructor(
         )
 
     /**
+     * TASK-929: the What's-New startup probe reads the DataStore-backed
+     * flows directly, because the StateFlow INITIALS answer a cold start
+     * before the first emission lands and would flip it to the wrong arm
+     * (the tour's fail-closed true; this pref's never-shown 0).
+     */
+    suspend fun readWhatsNewLastShownVersion(): Int =
+        preferencesManager.whatsNewLastShownVersion.first()
+
+    suspend fun readOnboardingCompleted(): Boolean =
+        preferencesManager.onboardingCompleted.first()
+
+    fun saveWhatsNewLastShownVersion(versionCode: Int) {
+        viewModelScope.launch {
+            preferencesManager.saveWhatsNewLastShownVersion(versionCode)
+        }
+    }
+
+    /**
      * TASK-491's tour-completion moment, now also the TASK-685 (GH #112)
      * first-run favorite seed. The interface language becomes the initial
      * Models-filter favorite when the filter offers it, and only when that
@@ -457,9 +475,18 @@ class SettingsViewModel @Inject constructor(
     private val _refinementModelBackendId = MutableStateFlow("")
     val refinementModelBackendId: StateFlow<String> = _refinementModelBackendId.asStateFlow()
 
-    /** TASK-740.1: the FAST arm's backend id (excluded from the refine picker). */
-    private val _streamingBackendId = MutableStateFlow<String?>(null)
-    val streamingBackendId: StateFlow<String?> = _streamingBackendId.asStateFlow()
+    /** TASK-932: the FAST arm's resolved backend id (the streaming entry
+     *  when installed, else the smallest installed catalog entry); null
+     *  when no candidate resolves. */
+    private val _fastBackendId = MutableStateFlow<String?>(null)
+    val fastBackendId: StateFlow<String?> = _fastBackendId.asStateFlow()
+
+    /** TASK-937: the refine target the gate resolved (pin if usable, else
+     *  the selected backend) from the SAME combine as [fastBackendId], so
+     *  the card's two-pass description names exactly what will run. */
+    private val _refinementTargetBackendId = MutableStateFlow<String?>(null)
+    val refinementTargetBackendId: StateFlow<String?> =
+        _refinementTargetBackendId.asStateFlow()
     fun saveRefinementModelBackendId(backendId: String) {
         viewModelScope.launch {
             try {
@@ -599,6 +626,20 @@ class SettingsViewModel @Inject constructor(
     fun saveAdvancedShareFormats(enabled: Boolean) {
         viewModelScope.launch {
             preferencesManager.saveAdvancedShareFormats(enabled)
+        }
+    }
+
+    /** TASK-939: the word-tap seek read-along gate; default off. */
+    val wordTapSeek: StateFlow<Boolean> = preferencesManager.wordTapSeek
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PreferencesManager.DEFAULT_WORD_TAP_SEEK
+        )
+
+    fun saveWordTapSeek(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.saveWordTapSeek(enabled)
         }
     }
 
@@ -981,28 +1022,56 @@ class SettingsViewModel @Inject constructor(
                 if (it) refreshSpeakerIdentities()
             }
         }
-        // TASK-603 F6: availability has TWO inputs, and both are collected:
-        // the backend selection (a switch) and the streaming entry's saved
-        // path (a bare install writes no backend value, and the backend flow
-        // is distinctUntilChanged, so collecting it alone never re-probes on
-        // install; review F1). The disk probe rides each (rare) emission of
-        // either source, through the shared owner of the probe.
-        val streamingEntry = com.antivocale.app.data.catalog.BundledCatalog.entries()
-            .firstOrNull { it.isStreaming }
-        if (streamingEntry != null) {
-            viewModelScope.launch(Dispatchers.Default) {
-                kotlinx.coroutines.flow.combine(
-                    preferencesManager.transcriptionBackend,
-                    preferencesManager.sherpaModelPath(streamingEntry.id),
-                ) { selected, _ -> selected }
-                    .collect { selected ->
-                        val installedId =
+        // TASK-932 (GH #176): availability has THREE inputs, and all are
+        // collected: the backend selection, the refine-model pin, and the
+        // installed set (any install or uninstall re-probes; the TASK-603
+        // F6 lesson: collecting the backend alone never re-probes on
+        // install). The disk probe rides each (rare) emission, through the
+        // shared owner of the probe. The accurate side resolves EXACTLY as
+        // the runtime does (review F2: the pin when set, the selected
+        // backend otherwise) and is passed as the probe's exclusion, so a
+        // non-null fast arm is by construction a second model besides the
+        // refinement target and no further comparison is needed.
+        viewModelScope.launch(Dispatchers.Default) {
+            kotlinx.coroutines.flow.combine(
+                preferencesManager.transcriptionBackend,
+                preferencesManager.refinementModelBackendId,
+                activeModelRepository.installedBackendsFlow,
+            ) { selected, pin, installed -> Triple(selected, pin, installed) }
+                .collect { (selected, pin, installed) ->
+                    val accurate = pin.takeIf { it.isNotBlank() } ?: selected
+                    val fastId =
+                        com.antivocale.app.transcription.SherpaModelManager
+                            .installedFastEntryId(getApplication<Application>(), accurate)
+                    // A non-blank pin must itself be a usable refinement
+                    // target: a STALE pin (recorded, model since deleted)
+                    // would otherwise leave the gate open while every run
+                    // degrades to SKIP_REFINE_LOAD_FAILED. Built-in pins
+                    // resolve through the manager's dir probe (the same
+                    // probe class the fast arm uses, so heal and delete
+                    // keep the lock truthful); any other id (LLM,
+                    // external) resolves through this combine's installed
+                    // set, which already re-probes on install/uninstall.
+                    val pinUsable = pin.isBlank() ||
+                        installed.any { it.backendId == pin } ||
+                        runCatching {
                             com.antivocale.app.transcription.SherpaModelManager
-                                .installedStreamingEntryId(getApplication<Application>())
-                        _streamingBackendId.value = installedId
-                        _refinementAvailable.value = installedId != null && streamingEntry.id != selected
-                    }
-            }
+                                .of(pin)
+                                .resolveActiveModelPath(getApplication<Application>()) != null
+                        }.getOrDefault(false)
+                    _fastBackendId.value = fastId
+                    // TASK-937: available implies a resolved fast arm (the
+                    // same assignment block); the card description pairs the
+                    // two arms from these sibling flows.
+                    _refinementTargetBackendId.value = accurate
+                    // TASK-937 review: the remote-offload accurate side never
+                    // two-passes (the policy returns null for it), so the
+                    // gate locks there instead of advertising a dead toggle.
+                    val accurateIsRemoteOffload =
+                        accurate == com.antivocale.app.transcription.RemoteOmnivoiceBackend.BACKEND_ID
+                    _refinementAvailable.value =
+                        pinUsable && fastId != null && !accurateIsRemoteOffload
+                }
         }
         // Load text size from preferences (TASK-576)
         viewModelScope.launch {
@@ -1757,8 +1826,8 @@ class SettingsViewModel @Inject constructor(
         _shareIconBackends.value = backendRegistry.backends
             .filter { it.shareAlias.isNotBlank() }
             .map { d ->
-                val path = d.modelPathFlow(preferencesManager).first()
-                val label = com.antivocale.app.transcription.variantAwareDisplayName(context, d, path)
+                val label = backendRegistry
+                    .resolveDisplayName(context, preferencesManager, d.backendId)
                     .ifBlank { d.backendId }
                 ShareIconBackend(
                     backendId = d.backendId,

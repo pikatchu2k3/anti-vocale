@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.PreferencesManager
+import com.antivocale.app.data.ReleaseNotes
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
@@ -84,6 +85,7 @@ import com.antivocale.app.ui.components.CardTitleRow
 import com.antivocale.app.ui.components.VoiceNoteFolderGrantCard
 import com.antivocale.app.ui.components.VoiceNoteFolderGrantSheet
 import com.antivocale.app.ui.components.languageOptionLabel
+import com.antivocale.app.ui.components.titleRes
 import com.antivocale.app.ui.components.transcriptionSentinelLabels
 import com.antivocale.app.ui.components.CollapsibleSection
 import com.antivocale.app.ui.components.GroupHeader
@@ -100,6 +102,7 @@ import com.antivocale.app.ui.screens.PerAppSettingsScreen
 import com.antivocale.app.ui.screens.PromptSettingsScreen
 import com.antivocale.app.ui.components.SettingsHubCard
 import com.antivocale.app.ui.components.SubPageScrollScaffold
+import com.antivocale.app.ui.components.WhatsNewDialog
 import com.antivocale.app.ui.screens.SpeakerSettingsScreen
 import com.antivocale.app.ui.screens.PerformanceSettingsScreen
 import com.antivocale.app.ui.screens.AutomationSettingsScreen
@@ -146,6 +149,7 @@ fun SettingsTab(
     val advancedShareFormats by viewModel.advancedShareFormats.collectAsState()
     val compactResultActions by viewModel.compactResultActions.collectAsState()
     val showTechnicalDetails by viewModel.showTechnicalDetails.collectAsState()
+    val wordTapSeek by viewModel.wordTapSeek.collectAsState()
     // TASK-546: the chip flag (maintainer directive: the flag lives here).
     val languageChipEnabled by viewModel.languageChipEnabled.collectAsState()
     val tokenState by viewModel.tokenState.collectAsState()
@@ -178,6 +182,10 @@ fun SettingsTab(
     var showAutomationSettings by rememberSaveable("showAutomationSettings") { mutableStateOf(false) }
     var showVoiceNoteSettings by rememberSaveable("showVoiceNoteSettings") { mutableStateOf(false) }
     var showBackupTransfer by rememberSaveable("showBackupTransfer") { mutableStateOf(false) }
+    // TASK-929: the What's-New notes hold a List<String>, which is not
+    // saveable; the dialog is transient view state and drops on rotation
+    // like every other content dialog.
+    var showWhatsNewNotes by remember { mutableStateOf<List<String>?>(null) }
 
     // The ONE sub-page clear (TASK-632): system back and every nav-effect
     // branch share it, so a future sub-page flag cannot be cleared in one
@@ -484,6 +492,7 @@ fun SettingsTab(
             summarizeOn = summarizeOn,
             batteryExemptionOffered = offerBatteryExemption,
             refinementOn = refinementEnabled && refinementAvailable,
+            refinementAvailable = refinementAvailable,
             speakerIdEnabled = speakerIdEnabled,
             transcriptionHintRes = transcriptionHintRes,
         )
@@ -843,7 +852,54 @@ fun SettingsTab(
 
             // GH #43: two-pass transcription (instant preview, then refine).
             val refinementTitle = stringResource(R.string.refinement_title)
-            val refinementDescription = stringResource(R.string.refinement_description)
+            // TASK-937 (maintainer trial): "the fast model" was undefined now
+            // that the fast arm auto-resolves (streaming preferred, else the
+            // smallest installed besides the target); the available-state
+            // description NAMES both arms so the user sees who runs what.
+            // Both arm ids come from the gate's own combine (the target
+            // rule lives in the ViewModel, exactly where the runtime
+            // resolves it); available implies a resolved fast arm because
+            // the same assignment block sets both.
+            val refinementFastId by viewModel.fastBackendId.collectAsState()
+            val refinementTargetId by viewModel.refinementTargetBackendId.collectAsState()
+            // TASK-937 simplify: one collector set for the whole card; the
+            // picker below reuses these instead of recollecting.
+            val refinementInstalled by viewModel.installedBackends.collectAsState()
+            val refinementPinned by viewModel.refinementModelBackendId.collectAsState()
+
+            @androidx.compose.runtime.Composable
+            fun refinementArmLabel(id: String): String {
+                refinementInstalled.firstOrNull { it.backendId == id }
+                    ?.displayName?.let { return it }
+                // Same stale-fallback rule as the picker: the catalog family
+                // title, never a raw backend id in a user-facing sentence.
+                // TASK-947: a slotted title formats its catalog args (the
+                // bare stringResource would leak the literal %1$d).
+                val ui = androidx.compose.runtime.remember(id) {
+                    runCatching {
+                        com.antivocale.app.transcription.CatalogVariantUi.of(id)
+                    }.getOrNull()
+                }
+                return ui?.let {
+                    it.titleRes()
+                } ?: id
+            }
+
+            val refinementFast = refinementFastId
+            val refinementTarget = refinementTargetId
+            val refinementDescription =
+                if (refinementFast != null && refinementTarget != null && refinementAvailable) {
+                    stringResource(
+                        R.string.refinement_description_dynamic,
+                        refinementArmLabel(refinementFast),
+                        refinementArmLabel(refinementTarget),
+                    )
+                } else {
+                    stringResource(R.string.refinement_description)
+                }
+            // TASK-932: the locked state names its own fix (the language-chip
+            // note pattern: the why-unavailable line rides supportingText).
+            val refinementLockedReason = stringResource(R.string.refinement_locked_reason)
             // TASK-689: the gate reads the registry; this GH #43 card had a
             // gate but no count entry under the old two-list convention.
             SearchFilterRow(searchQuery, SettingsSearchId.REFINEMENT, searchState) {
@@ -851,8 +907,10 @@ fun SettingsTab(
                     icon = Icons.Default.Bolt,
                     title = refinementTitle,
                     description = refinementDescription,
-                    // Greyed out until a streaming model is installed and the
-                    // selected backend is not the streaming one itself.
+                    // Greyed out until a fast arm resolves besides the
+                    // refinement target (the pinned model, else the selected
+                    // one; the orchestrator enforces the same gate).
+                    supportingText = refinementLockedReason.takeIf { !refinementAvailable },
                     enabled = refinementAvailable,
                     checked = refinementEnabled && refinementAvailable,
                     onCheckedChange = { enabled -> viewModel.saveRefinementEnabled(enabled) }
@@ -862,31 +920,31 @@ fun SettingsTab(
                 // active backend (the pre-feature behavior).
                 if (refinementEnabled && refinementAvailable) {
                     SearchFilterRow(searchQuery, SettingsSearchId.REFINEMENT_MODEL, searchState) {
-                    val installed by viewModel.installedBackends.collectAsState()
-                    val pinned by viewModel.refinementModelBackendId.collectAsState()
+                    val installed = refinementInstalled
+                    val pinned = refinementPinned
                     SectionCard(
                         icon = Icons.Default.Tune,
                         title = stringResource(R.string.refinement_model_title),
                         description = stringResource(R.string.refinement_model_description)
                     ) {
                         val inheritLabel = stringResource(R.string.refinement_model_inherit)
-                        // The FAST arm (the installed streaming backend) is
-                        // excluded: pinning it would silently kill the
-                        // two-pass (the policy's degenerate check) while the
-                        // toggle stays on.
-                        val streamingId by viewModel.streamingBackendId.collectAsState()
-                        val options = listOf("") + installed
-                            .map { it.backendId }
-                            .filter { it != streamingId }
+                        // TASK-932: every installed model may pin, the fast
+                        // arm's own id included (the fast arm then resolves
+                        // to the smallest other candidate; the policy's
+                        // degenerate check stays the guard).
+                        val options = listOf("") + installed.map { it.backendId }
                         // A stale pin (model deleted after pinning) falls
                         // back to the catalog family label, never the raw
-                        // backend id (the picker invariant).
-                        val staleTitleRes: Int? = remember(pinned) {
+                        // backend id (the picker invariant). TASK-947: a
+                        // slotted title formats its catalog args.
+                        val staleTitleUi: com.antivocale.app.transcription.CatalogVariantUi? = remember(pinned) {
                             runCatching {
-                                com.antivocale.app.transcription.CatalogVariantUi.of(pinned).titleResId
+                                com.antivocale.app.transcription.CatalogVariantUi.of(pinned)
                             }.getOrNull()
                         }
-                        val staleTitle = staleTitleRes?.let { stringResource(it) } ?: inheritLabel
+                        val staleTitle = staleTitleUi?.let {
+                            it.titleRes()
+                        } ?: inheritLabel
                         fun labelFor(id: String) =
                             if (id.isBlank()) inheritLabel
                             else installed.firstOrNull { it.backendId == id }?.displayName
@@ -1469,6 +1527,20 @@ fun SettingsTab(
                 )
             }
 
+            // TASK-939: the word-tap seek read-along surface is opt-in,
+            // default off; off, expanded transcripts stay plain text.
+            val wordTapSeekTitle = stringResource(R.string.word_tap_seek_title)
+            val wordTapSeekDescription = stringResource(R.string.word_tap_seek_description)
+            SearchFilterRow(searchQuery, SettingsSearchId.WORD_TAP_SEEK, searchState) {
+                ToggleSettingCard(
+                    icon = Icons.Default.GraphicEq,
+                    title = wordTapSeekTitle,
+                    description = wordTapSeekDescription,
+                    checked = wordTapSeek,
+                    onCheckedChange = { viewModel.saveWordTapSeek(it) }
+                )
+            }
+
             // TASK-800 (GH #128 pt 3, maintainer direction): the advanced
             // Share… button is opt-in, default off.
             SearchFilterRow(searchQuery, SettingsSearchId.ADVANCED_SHARE_FORMATS, searchState) {
@@ -1998,12 +2070,16 @@ fun SettingsTab(
             // part inside. Search contract: the hub's registry vocabulary
             // is the static union of its own and all three children's
             // strings.
-            // Either client on reads as on (WhatsApp Business support).
+            // Any source on reads as on (WhatsApp Business support; the
+            // TASK-966 watched-folder source).
             val whatsAppDetectionEnabled by viewModel
                 .voiceNoteDetectionEnabled(com.antivocale.app.data.VoiceNoteSource.WHATSAPP).collectAsState()
             val businessDetectionEnabled by viewModel
                 .voiceNoteDetectionEnabled(com.antivocale.app.data.VoiceNoteSource.WHATSAPP_BUSINESS).collectAsState()
-            val voiceNoteDetectionEnabledForSummary = whatsAppDetectionEnabled || businessDetectionEnabled
+            val watchedDetectionEnabled by viewModel
+                .voiceNoteDetectionEnabled(com.antivocale.app.data.VoiceNoteSource.WATCHED_FOLDER).collectAsState()
+            val voiceNoteDetectionEnabledForSummary =
+                whatsAppDetectionEnabled || businessDetectionEnabled || watchedDetectionEnabled
             // R-1 (review 2026-10-14): the subpage's own ON_RESUME probe only
             // runs while the page is open; an external grant or revoke of the
             // read-media permission must re-evaluate the coordinator's
@@ -2039,6 +2115,33 @@ fun SettingsTab(
             currentLanguage = currentLanguage,
             onReplayTour = { viewModel.replayOnboardingTour() }
         )
+
+        // TASK-929: the What's-New hub card, the auto-popup's persistent
+        // About entry. The notes are the store listing's bullets for the
+        // running version, resolved with the same locale rule the feedback
+        // body uses (in-app language first, blank = system locale).
+        // TASK-936: a version without notes (a SNAPSHOT build) hides the
+        // row instead of leaving a visible no-op behind the empty guard.
+        val whatsNewNotes = remember(currentLanguage) {
+            ReleaseNotes.notesFor(currentLanguage, BuildConfig.VERSION_NAME, context.assets)
+        }
+        if (feedbackVisible && whatsNewNotes.isNotEmpty()) {
+            SearchFilterRow(searchQuery, SettingsSearchId.WHATS_NEW, searchState) {
+                SettingsHubCard(
+                    titleRes = R.string.whats_new_title,
+                    summaryRes = R.string.whats_new_summary,
+                ) {
+                    // Review R2: the hub card shares the popup's empty guard
+                    // (a version without notes must not open an empty dialog
+                    // with just a version line; the popup checks isNotEmpty
+                    // in MainScreen).
+                    showWhatsNewNotes = whatsNewNotes
+                }
+            }
+            showWhatsNewNotes?.let { notes ->
+                WhatsNewDialog(notes = notes) { showWhatsNewNotes = null }
+            }
+        }
 
         // Spacer for scroll
         Spacer(modifier = Modifier.height(32.dp))
@@ -2095,6 +2198,8 @@ internal fun VoiceNoteSettingsScreen(
                                 R.string.voice_note_source_whatsapp
                             com.antivocale.app.data.VoiceNoteSource.WHATSAPP_BUSINESS ->
                                 R.string.voice_note_source_whatsapp_business
+                            com.antivocale.app.data.VoiceNoteSource.WATCHED_FOLDER ->
+                                R.string.voice_note_source_watched_folder
                         })
                     // key: each source keeps its own remembered state.
                     androidx.compose.runtime.key(source) {
@@ -2249,6 +2354,8 @@ private fun VoiceNoteDetectionSection(
                                 R.string.voice_note_folder_grant_rejected
                             com.antivocale.app.data.VoiceNoteSource.WHATSAPP_BUSINESS ->
                                 R.string.voice_note_business_folder_grant_rejected
+                            com.antivocale.app.data.VoiceNoteSource.WATCHED_FOLDER ->
+                                R.string.voice_note_watched_folder_grant_rejected
                         },
                         Toast.LENGTH_LONG)
                 is com.antivocale.app.data.VoiceNoteTreeGrant.GrantOutcome.Saved -> {}
@@ -2265,6 +2372,8 @@ private fun VoiceNoteDetectionSection(
                         R.string.voice_note_detection_description
                     com.antivocale.app.data.VoiceNoteSource.WHATSAPP_BUSINESS ->
                         R.string.voice_note_business_detection_description
+                    com.antivocale.app.data.VoiceNoteSource.WATCHED_FOLDER ->
+                        R.string.voice_note_watched_detection_description
                 }),
             checked = voiceNoteDetectionEnabled,
             onCheckedChange = { enabled ->
@@ -3669,12 +3778,13 @@ internal enum class SettingsSearchId {
     // Appearance
     THEME, APP_ICON, APP_LANGUAGE, SWIPE_ACTION, CONVERSATION_GROUPING,
     COMPACT_RESULT_ACTIONS, TECHNICAL_DETAILS, LANGUAGE_CHIP, RETRANSCRIBE, ADVANCED_SHARE_FORMATS,
+    WORD_TAP_SEEK,
     // Advanced
     BATTERY_EXEMPTION, HUGGINGFACE_AUTH, PERFORMANCE_HUB,
     SHARE_TARGETS, SUBTITLE_TIMEOUT, AUTOMATION_HUB, VOICE_NOTE_HUB, PER_APP_SETTINGS,
     SHARE_SHORTCUT_ICONS, BACKUP_HUB,
     // Feedback
-    FEEDBACK,
+    FEEDBACK, WHATS_NEW,
 }
 
 /**
@@ -3722,6 +3832,8 @@ internal data class SettingsSearchState(
     val batteryExemptionOffered: Boolean,
     /** TASK-740.1: the two-pass is on AND can run; the refine-model card renders. */
     val refinementOn: Boolean,
+    /** TASK-937: which description variant the two-pass card renders. */
+    val refinementAvailable: Boolean,
     /** The TASK-670 privacy switch: the speaker-identities card exists. */
     val speakerIdEnabled: Boolean,
     /** The one hint line the transcription-language card renders, if any. */
@@ -3837,7 +3949,19 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     // refinement card.
     SettingsSearchCard(
         SettingsSearchId.REFINEMENT, SettingsSearchSection.TRANSCRIPTION,
-        listOf(R.string.refinement_title, R.string.refinement_description),
+        // TASK-937: state-dependent like MODEL_STATUS: the tree renders ONE
+        // description variant, and the vocabulary must not match text the
+        // tree does not show (the ghost-match class the registry bans).
+        res = { state ->
+            listOf(
+                R.string.refinement_title,
+                if (state.refinementAvailable) {
+                    R.string.refinement_description_dynamic
+                } else {
+                    R.string.refinement_description
+                },
+            )
+        },
         group = SettingsSearchGroup.DECODING,
     ),
     SettingsSearchCard(
@@ -3959,7 +4083,13 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     ),
     SettingsSearchCard(
         SettingsSearchId.APP_ICON, SettingsSearchSection.APPEARANCE,
-        listOf(R.string.app_icon_title),
+        // TASK-918: the picker's two notes ride the hub vocabulary so
+        // "launcher", "notifications" and "share" queries land on the
+        // owning card (the TASK-689 text-size lesson).
+        listOf(
+            R.string.app_icon_title, R.string.app_icon_note,
+            R.string.app_icon_scope_note,
+        ),
         group = SettingsSearchGroup.LOOK_AND_FEEL,
     ),
     SettingsSearchCard(
@@ -3995,6 +4125,11 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     SettingsSearchCard(
         SettingsSearchId.RETRANSCRIBE, SettingsSearchSection.APPEARANCE,
         listOf(R.string.retranscribe_setting_title, R.string.retranscribe_setting_description),
+        group = SettingsSearchGroup.HISTORY,
+    ),
+    SettingsSearchCard(
+        SettingsSearchId.WORD_TAP_SEEK, SettingsSearchSection.APPEARANCE,
+        listOf(R.string.word_tap_seek_title, R.string.word_tap_seek_description),
         group = SettingsSearchGroup.HISTORY,
     ),
     SettingsSearchCard(
@@ -4069,7 +4204,8 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     // TASK-835 (the N>=2 subpage rule): the voice-note hub, whose page
     // hosts the three entries. Static union vocabulary: the hub's strings
     // plus all three children's (sender recognition, detection, folder),
-    // the detection and folder ones for both WhatsApp clients.
+    // the detection and folder ones for every detection source (the two
+    // WhatsApp clients and the TASK-966 watched-folder source).
     SettingsSearchCard(
         SettingsSearchId.VOICE_NOTE_HUB, SettingsSearchSection.ADVANCED,
         listOf(
@@ -4080,7 +4216,10 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
             R.string.voice_note_folder_card_title, R.string.voice_note_folder_card_desc,
             R.string.voice_note_source_whatsapp_business,
             R.string.voice_note_business_detection_description,
-            R.string.voice_note_business_folder_card_desc),
+            R.string.voice_note_business_folder_card_desc,
+            R.string.voice_note_source_watched_folder,
+            R.string.voice_note_watched_detection_description,
+            R.string.voice_note_watched_folder_card_desc),
         group = SettingsSearchGroup.INTEGRATIONS,
     ),
     SettingsSearchCard(
@@ -4106,6 +4245,12 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
             R.string.faq_card_results_title, R.string.faq_card_trouble_title,
             R.string.faq_full_link,
         ),
+    ),
+    // TASK-929: the What's-New hub card, beside the Feedback card it
+    // belongs with. Ungrouped, like its neighbor.
+    SettingsSearchCard(
+        SettingsSearchId.WHATS_NEW, SettingsSearchSection.FEEDBACK,
+        listOf(R.string.whats_new_title, R.string.whats_new_summary),
     ),
 )
 
@@ -4390,6 +4535,7 @@ private fun transcriptExportFormatLabel(format: SubtitleFormatter.Format): Strin
     SubtitleFormatter.Format.TXT -> stringResource(R.string.transcript_export_format_txt)
     SubtitleFormatter.Format.TXT_TIMED -> stringResource(R.string.transcript_export_format_txt_timed)
     SubtitleFormatter.Format.SRT -> stringResource(R.string.transcript_export_format_srt)
+    SubtitleFormatter.Format.SRT_WORD -> stringResource(R.string.transcript_export_format_srt_word)
     SubtitleFormatter.Format.VTT -> stringResource(R.string.transcript_export_format_vtt)
 }
 

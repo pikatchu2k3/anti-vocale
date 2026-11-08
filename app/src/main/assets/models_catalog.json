@@ -37,7 +37,6 @@
         "ro",
         "ru",
         "sv",
-        "tr",
         "uk",
         "cs",
         "bg",
@@ -46,11 +45,12 @@
         "fi",
         "el",
         "hu",
-        "no",
         "sk",
         "sl",
         "et",
-        "lv"
+        "lv",
+        "lt",
+        "mt"
       ],
       "variants": [
         {
@@ -59,7 +59,9 @@
             "resourceKey": "parakeet_smoothquant_title"
           },
           "description": {
-            "resourceKey": "parakeet_smoothquant_description"
+            "resourceKey": "parakeet_smoothquant_description",
+            "sizePlaceholder": true,
+            "countPlaceholder": true
           },
           "dirName": "parakeet-tdt-0.6b-v3-smoothquant",
           "estimatedSizeMB": 862,
@@ -92,7 +94,9 @@
             "resourceKey": "parakeet_stock_title"
           },
           "description": {
-            "resourceKey": "parakeet_stock_description"
+            "resourceKey": "parakeet_stock_description",
+            "sizePlaceholder": true,
+            "countPlaceholder": true
           },
           "dirName": "parakeet-tdt-0.6b-v3-int8",
           "estimatedSizeMB": 640,
@@ -150,10 +154,11 @@
             "resourceKey": "whisper_turbo_title"
           },
           "description": {
-            "resourceKey": "whisper_turbo_description"
+            "resourceKey": "whisper_turbo_description",
+            "sizePlaceholder": true
           },
           "dirName": "sherpa-onnx-whisper-turbo",
-          "estimatedSizeMB": 988,
+          "estimatedSizeMB": 1037,
           "languages": [
             "af",
             "am",
@@ -174,7 +179,6 @@
             "de",
             "el",
             "en",
-            "eo",
             "es",
             "et",
             "eu",
@@ -248,7 +252,6 @@
             "tl",
             "tr",
             "tt",
-            "ug",
             "uk",
             "ur",
             "uz",
@@ -263,12 +266,12 @@
           },
           "files": [
             {
-              "name": "turbo-encoder.int8.onnx",
-              "sha256": "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b"
+              "name": "turbo-encoder-attn.int8.onnx",
+              "sha256": "91721641a9b3046dd8313f2c004e92fd0d84b6adf249f51621b355d2bf172909"
             },
             {
-              "name": "turbo-decoder.int8.onnx",
-              "sha256": "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547"
+              "name": "turbo-decoder-attn.int8.onnx",
+              "sha256": "ec505229df826f5c44606d492f4cf7f2b6e547257d0bbb4885592a59f2c985db"
             },
             {
               "name": "turbo-tokens.txt",
@@ -282,10 +285,11 @@
             "resourceKey": "whisper_medium_title"
           },
           "description": {
-            "resourceKey": "whisper_medium_description"
+            "resourceKey": "whisper_medium_description",
+            "sizePlaceholder": true
           },
           "dirName": "sherpa-onnx-whisper-medium",
-          "estimatedSizeMB": 903,
+          "estimatedSizeMB": 949,
           "languages": [
             "af",
             "am",
@@ -306,7 +310,6 @@
             "de",
             "el",
             "en",
-            "eo",
             "es",
             "et",
             "eu",
@@ -380,7 +383,6 @@
             "tl",
             "tr",
             "tt",
-            "ug",
             "uk",
             "ur",
             "uz",
@@ -395,12 +397,12 @@
           },
           "files": [
             {
-              "name": "medium-encoder.int8.onnx",
-              "sha256": "1c54582b4d829de0089f6cb63bbbdb3bf7555398bacaf855fbecf1a84dfd193e"
+              "name": "medium-encoder-attn.int8.onnx",
+              "sha256": "948cae8d7737e890284f49066c7862a8b953fce747fb3b0655b4061b12114567"
             },
             {
-              "name": "medium-decoder.int8.onnx",
-              "sha256": "595d00a338a365a7bfa0ca7f296cabc639583bef770ab6130df90f49a6412747"
+              "name": "medium-decoder-attn.int8.onnx",
+              "sha256": "d5f2d75269aa63c8d604e39d24e440d541091ccda3b2100aef7b06c85bef597c"
             },
             {
               "name": "medium-tokens.txt",
@@ -414,10 +416,11 @@
             "resourceKey": "whisper_small_title"
           },
           "description": {
-            "resourceKey": "whisper_small_description"
+            "resourceKey": "whisper_small_description",
+            "sizePlaceholder": true
           },
           "dirName": "sherpa-onnx-whisper-small",
-          "estimatedSizeMB": 358,
+          "estimatedSizeMB": 378,
           "languages": [
             "af",
             "am",
@@ -438,7 +441,6 @@
             "de",
             "el",
             "en",
-            "eo",
             "es",
             "et",
             "eu",
@@ -512,7 +514,6 @@
             "tl",
             "tr",
             "tt",
-            "ug",
             "uk",
             "ur",
             "uz",
@@ -527,12 +528,12 @@
           },
           "files": [
             {
-              "name": "small-encoder.int8.onnx",
-              "sha256": "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9"
+              "name": "small-encoder-attn.int8.onnx",
+              "sha256": "5475fce1b3152f6f5c2e3bcef3c87ccf99e2618f3550dc64cab254d82dad80a0"
             },
             {
-              "name": "small-decoder.int8.onnx",
-              "sha256": "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee"
+              "name": "small-decoder-attn.int8.onnx",
+              "sha256": "63233cc33d6c11ae514467a69132de87cc61e6b28d3dab40cdf8b0e3060a3439"
             },
             {
               "name": "small-tokens.txt",
@@ -546,11 +547,12 @@
             "resourceKey": "whisper_distil_large_v3_title"
           },
           "description": {
-            "resourceKey": "whisper_distil_large_v3_description"
+            "resourceKey": "whisper_distil_large_v3_description",
+            "sizePlaceholder": true
           },
           "badgeKey": "best_italian_badge",
           "dirName": "sherpa-onnx-whisper-distil-large-v3-it",
-          "estimatedSizeMB": 938,
+          "estimatedSizeMB": 984,
           "languages": [
             "it"
           ],
@@ -560,12 +562,12 @@
           },
           "files": [
             {
-              "name": "distil-large-v3-it-encoder.int8.onnx",
-              "sha256": "f049fb181a314ae40bdd27f8ec8b04d8c87414b43d932533bc0832319bac51b9"
+              "name": "distil-large-v3-it-encoder-attn.int8.onnx",
+              "sha256": "4b8475b5987acbf5c787927c1e516c9e0e0b051a332c6f2810338a6853be7895"
             },
             {
-              "name": "distil-large-v3-it-decoder.int8.onnx",
-              "sha256": "0b6d5e44fb9f65d274e635e4ae7fba3b2b41710a51424af71ee3978976d8d9a1"
+              "name": "distil-large-v3-it-decoder-attn.int8.onnx",
+              "sha256": "a507a8afe20ae96a5ce33fc0b122eca8de3a428222a7ae44084041e31018ea2a"
             },
             {
               "name": "distil-large-v3-it-tokens.txt",
@@ -667,6 +669,7 @@
           },
           "description": {
             "resourceKey": "qwen3_asr_0_6b_description",
+            "sizePlaceholder": true,
             "countPlaceholder": true
           },
           "dirName": "sherpa-onnx-qwen3-asr-0.6b-int8",
@@ -713,7 +716,8 @@
         "resourceKey": "nemotron_name"
       },
       "description": {
-        "resourceKey": "nemotron_description"
+        "resourceKey": "nemotron_description",
+        "sizePlaceholder": true
       },
       "shareAlias": "com.antivocale.app.ShareNemotron",
       "storageDir": "nemotron",
@@ -813,7 +817,8 @@
         "resourceKey": "gigaam_name"
       },
       "description": {
-        "resourceKey": "gigaam_description"
+        "resourceKey": "gigaam_description",
+        "sizePlaceholder": true
       },
       "noteKey": "model_info_best_for_gigaam",
       "shareAlias": "com.antivocale.app.ShareGigaam",
@@ -870,10 +875,13 @@
       "modelType": "",
       "family": "",
       "display": {
-        "resourceKey": "whistle_name"
+        "resourceKey": "whistle_name",
+        "sizePlaceholder": true
       },
       "description": {
-        "resourceKey": "whistle_description"
+        "resourceKey": "whistle_description",
+        "sizePlaceholder": true,
+        "countPlaceholder": true
       },
       "storageDir": "whistle",
       "flags": {
@@ -893,7 +901,8 @@
         {
           "name": "v1",
           "title": {
-            "resourceKey": "whistle_name"
+            "resourceKey": "whistle_name",
+            "sizePlaceholder": true
           },
           "dirName": "whistle-v1",
           "estimatedSizeMB": 17,

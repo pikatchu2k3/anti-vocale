@@ -151,21 +151,21 @@
     <string name="parakeet_download_confirm_title">Parakeet TDT downloaden?</string>
     <string name="parakeet_download_confirm_message">Dit downloadt ~%1$dMB. Parakeet is sneller maar minder nauwkeurig dan Gemma voor transcriptie.</string>
     <string name="parakeet_smoothquant_title">Parakeet TDT (SmoothQuant)</string>
-    <string name="parakeet_smoothquant_description">~862MB • 25 talen • Alternatief voor de standaard</string>
+    <string name="parakeet_smoothquant_description">~%1$dMB • %2$d talen • Alternatief voor de standaard</string>
     <string name="parakeet_stock_title">Parakeet TDT (Stock int8)</string>
-    <string name="parakeet_stock_description">~640MB • 25 talen • De standaard: beste gemeten kwaliteit op het apparaat</string>
+    <string name="parakeet_stock_description">~%1$dMB • %2$d talen • De standaard: snelste meertalige optie</string>
 
     <!-- Whisper model -->
     <string name="whisper_title">Whisper</string>
     <string name="whisper_description">Meertalige spraakherkenning</string>
     <string name="whisper_small_title">Whisper Small</string>
-    <string name="whisper_small_description">~358MB • Lagere nauwkeurigheid, vooral bij rumoerige audio • Onbetrouwbare automatische taaldetectie (valt terug op je app-taal) • Alleen voor eenvoudige apparaten</string>
+    <string name="whisper_small_description">~%1$dMB • Lagere nauwkeurigheid, vooral bij rumoerige audio • Onbetrouwbare automatische taaldetectie (valt terug op je app-taal) • Alleen voor eenvoudige apparaten</string>
     <string name="whisper_turbo_title">Whisper Turbo</string>
-    <string name="whisper_turbo_description">~988MB • Kwaliteit bijna op large-v3-niveau • Gebalanceerd meertalig</string>
+    <string name="whisper_turbo_description">~%1$dMB • Kwaliteit bijna op large-v3-niveau • Gebalanceerd meertalig</string>
     <string name="whisper_medium_title">Whisper Medium</string>
-    <string name="whisper_medium_description">~903MB • Goede nauwkeurigheid • Meertalig</string>
+    <string name="whisper_medium_description">~%1$dMB • Goede nauwkeurigheid • Meertalig</string>
     <string name="whisper_distil_large_v3_title">Distil Italian</string>
-    <string name="whisper_distil_large_v3_description">~939MB • 2 decoderlagen • Snelst • Geoptimaliseerd voor Italiaans</string>
+    <string name="whisper_distil_large_v3_description">~%1$dMB • 2 decoderlagen • Snelst • Geoptimaliseerd voor Italiaans</string>
     <string name="whisper_download">Whisper downloaden</string>
     <string name="whisper_download_confirm_title">%1$s downloaden?</string>
     <string name="whisper_download_confirm_message">Dit downloadt ~%1$dMB. Whisper biedt uitstekende meertalige ondersteuning met juiste interpunctie.</string>
@@ -176,7 +176,7 @@
     <string name="qwen3_asr_title">Qwen3-ASR (%1$d talen)</string>
     <string name="qwen3_asr_description">%1$d talen</string>
     <string name="qwen3_asr_0_6b_title">Qwen3-ASR 0.6B</string>
-    <string name="qwen3_asr_0_6b_description">~938MB • %1$d talen</string>
+    <string name="qwen3_asr_0_6b_description">~%1$dMB • %2$d talen</string>
     <string name="qwen3_asr_download_confirm_title">%1$s downloaden?</string>
     <string name="qwen3_asr_download">Qwen3-ASR downloaden</string>
     <string name="qwen3_asr_delete_message">Qwen3-ASR-model verwijderen?</string>
@@ -186,7 +186,7 @@
     <!-- Nemotron 3.5 streaming model -->
     <string name="nemotron_name">Nemotron 3.5</string>
     <string name="nemotron_title">Nemotron 3.5 (streaming)</string>
-    <string name="nemotron_description">~640MB • Streaming • Kwaliteit boven snelheid</string>
+    <string name="nemotron_description">~%1$dMB • Streaming • Kwaliteit boven snelheid</string>
     <string name="nemotron_download_confirm_title">%1$s downloaden?</string>
     <string name="nemotron_download_confirm_message">Dit downloadt ~%1$dMB. Nemotron 3.5 is een streaming meertalig ASR-model.</string>
     <string name="nemotron_download">Nemotron downloaden</string>
@@ -196,12 +196,12 @@
 
     <!-- GigaAM v3 model -->
     <string name="gigaam_title">GigaAM v3</string>
-    <string name="gigaam_description">~326MB • Snel • Russische ASR met interpunctie</string>
+    <string name="gigaam_description">~%1$dMB • Snel • Russische ASR met interpunctie</string>
     <string name="gigaam_name">GigaAM v3</string>
-    <string name="whistle_name">Whistle (17 MB)</string>
-    <string name="whistle_description">~17MB • Zeer snel • 7 talen, automatisch gedetecteerd</string>
+    <string name="whistle_name">Whistle (%1$d MB)</string>
+    <string name="whistle_description">~%1$dMB • Zeer snel • %2$d talen, automatisch gedetecteerd</string>
     <string name="benchmark_unsupported_engine">Benchmarken wordt voor deze engine niet ondersteund</string>
-    <string name="model_info_best_for_whistle">Snelste start op het apparaat: 17 MB, 7 talen, direct eerste tekst</string>
+    <string name="model_info_best_for_whistle">Snelste start op het apparaat: %1$d MB, %2$d talen, direct eerste tekst</string>
     <string name="model_info_notes_whistle">Minder nauwkeurig dan Parakeet in het Italiaans; muziek kan als tekst verschijnen (geen muziekfilter)</string>
     <string name="gigaam_download_confirm_title">GigaAM v3 downloaden?</string>
     <string name="gigaam_download_confirm_message">Dit downloadt ~%1$dMB. GigaAM v3 is een uitsluitend Russisch ASR-model van Sber met sterke Russische nauwkeurigheid.</string>
@@ -375,6 +375,7 @@
     <string name="processing_segment_progress">Segment %1$d van %2$d…</string>
     <string name="progressive_initial">Tekst wordt voorbereid; het eindresultaat volgt na afronding</string>
     <string name="added_to_queue">Aan wachtrij toegevoegd…</string>
+    <string name="batch_enqueued">%1$d bestanden geselecteerd voor transcriptie</string>
     <string name="processing_chunk">Chunk %1$d/%2$d verwerken…</string>
     <string name="processing_audio">Audio verwerken…</string>
     <string name="processing_request">%1$s-verzoek verwerken…</string>
@@ -614,8 +615,11 @@
     <string name="share_format_txt">Platte tekst</string>
     <string name="share_format_timed">Tekst met tijdstempels</string>
     <string name="share_format_srt">Ondertitels (.srt)</string>
+    <string name="share_format_srt_word">Ondertitels met wordtijden (.srt)</string>
     <string name="share_format_vtt">WebVTT (.vtt)</string>
     <string name="share_format_no_cues">Dit item heeft geen opgeslagen tijdstempels; de tijdstempelopties delen platte tekst.</string>
+    <string name="share_format_txt_file_audio_name">Tekstbestand met de naam van het audiobestand (%1$s)</string>
+    <string name="share_format_txt_file_audio_name_date">Tekstbestand met de naam van het audiobestand, met datum (%1$s)</string>
 
     <!-- Settings Tab - Default Prompt -->
     <string name="default_prompt_title">Standaardprompt</string>
@@ -666,6 +670,7 @@
     <!-- Settings Tab - App icon (TASK-392) -->
     <string name="app_icon_title">App-pictogram</string>
     <string name="app_icon_note">Wisselen kan het pictogram op sommige launchers kort verbergen; de storevermelding houdt het standaardpictogram.</string>
+    <string name="app_icon_scope_note">De variant geldt alleen voor het launcher-pictogram; meldingen en het deelmenu behouden het standaardpictogram van de app.</string>
     <string name="app_icon_variant_default">Standaard</string>
     <string name="app_icon_variant_wavecut">Onderbroken golfvorm</string>
     <string name="app_icon_variant_crossed">Doorgestrepen golfvorm</string>
@@ -772,37 +777,29 @@
     <string name="speed_comparison_header_speed">Snelheid</string>
     <string name="speed_comparison_header_quality">Italiaanse kwaliteit</string>
     <string name="speed_comparison_small_name">Whisper Small</string>
-    <string name="speed_comparison_small_size">~358MB</string>
     <string name="speed_comparison_small_speed">1.0x</string>
     <string name="speed_comparison_small_quality">Redelijk</string>
     <string name="speed_comparison_turbo_name">Whisper Turbo</string>
-    <string name="speed_comparison_turbo_size">~988MB</string>
     <string name="speed_comparison_turbo_speed">1.3x</string>
     <string name="speed_comparison_turbo_quality">Goed</string>
     <string name="speed_comparison_medium_name">Whisper Medium</string>
-    <string name="speed_comparison_medium_size">~903MB</string>
     <string name="speed_comparison_medium_speed">0.5x</string>
     <string name="speed_comparison_medium_quality">Goed</string>
     <string name="speed_comparison_distil_it_name">Distil Italian</string>
-    <string name="speed_comparison_distil_it_size">~939MB</string>
     <string name="speed_comparison_distil_it_speed">~1.8x</string>
     <string name="speed_comparison_distil_it_quality">Beste Italiaans</string>
     <string name="speed_comparison_distil_it_note">Beste Italiaans</string>
     <string name="speed_comparison_parakeet_name">Parakeet TDT</string>
-    <string name="speed_comparison_parakeet_size">~640MB</string>
     <string name="speed_comparison_parakeet_speed">~17x</string>
     <string name="speed_comparison_parakeet_quality">Zeer goed</string>
     <string name="speed_comparison_parakeet_note">Aanbevolen</string>
     <string name="speed_comparison_qwen3_name">Qwen3-ASR</string>
-    <string name="speed_comparison_qwen3_size">~938MB</string>
     <string name="speed_comparison_qwen3_speed">~2x</string>
     <string name="speed_comparison_qwen3_quality">%1$d talen, wisselend</string>
     <string name="speed_comparison_gigaam_name">GigaAM v3</string>
-    <string name="speed_comparison_gigaam_size">~326MB</string>
     <string name="speed_comparison_gigaam_speed">Snel</string>
     <string name="speed_comparison_gigaam_quality">Alleen Russisch</string>
     <string name="speed_comparison_nemotron_name">Nemotron 3.5</string>
-    <string name="speed_comparison_nemotron_size">~600MB</string>
     <string name="speed_comparison_nemotron_speed">Streaming</string>
     <string name="speed_comparison_nemotron_quality">Experimenteel</string>
     <string name="fastest_badge">Snelste</string>
@@ -975,11 +972,11 @@
     <string name="model_info_notes_whisper_turbo">Kwaliteit bijna op large-v3-niveau bij gematigde snelheid. Goed voor meertalige gebruikers.</string>
     <string name="model_info_best_for_whisper_medium">Meertalig model van middelgrote klasse</string>
     <string name="model_info_notes_whisper_medium">Goede balans tussen nauwkeurigheid en verbruik.</string>
-    <string name="model_info_best_for_distil_it">Beste Italiaanse nauwkeurigheid (4,3%% WER)</string>
+    <string name="model_info_best_for_distil_it">Beste Italiaanse nauwkeurigheid (3,5%% WER)</string>
     <string name="model_info_notes_distil_it">Alleen Italiaans. Hoogste nauwkeurigheid voor Italiaanse spraakberichten. Kies voor nauwkeurigheid boven snelheid.</string>
-    <string name="model_info_best_for_qwen3">Autodetectie in 59 talen</string>
+    <string name="model_info_best_for_qwen3">Autodetectie in %1$d talen</string>
     <string name="model_info_notes_qwen3">Breedste talendekking. Let op: audio langer dan 30 seconden wordt afgekapt. Alleen ARM64-apparaten.</string>
-    <string name="model_info_best_for_parakeet">Snelste transcriptie (17,6x sneller dan Whisper, 5,4%% WER)</string>
+    <string name="model_info_best_for_parakeet">Snelste transcriptie (4,0%% WER in het Italiaans)</string>
     <string name="model_info_notes_parakeet">Geen limiet op audiolengte. VAD niet nodig. Het beste voor wie snelheid vooropstelt.</string>
 <string name="model_info_best_for_gigaam">Beste Russische nauwkeurigheid op het apparaat</string>
 <string name="model_info_notes_gigaam">Alleen Russisch. Eigen interpunctie en hoofdletters.</string>
@@ -988,6 +985,11 @@
     <string name="model_info_best_for_gemma">Multimodaal LLM voor tekst- en audiotaken</string>
     <string name="model_info_notes_gemma">Niet geoptimaliseerd voor pure ASR. Gebruik het voor geavanceerde functies zoals audiobegrip gecombineerd met tekstgeneratie.</string>
     <string name="model_info_benchmark_wer">Woordfoutpercentage (Italiaans): %.1f%%</string>
+    <string name="benchmark_busy">Er wordt een transcriptie uitgevoerd op %1$s; voer de benchmark opnieuw uit wanneer deze inactief is</string>
+    <string name="benchmark_init_failed">Initialiseren van %1$s mislukt</string>
+    <string name="benchmark_unknown_backend">Onbekende backend: %1$s</string>
+    <string name="benchmark_model_folder_missing">Modelmap ontbreekt voor %1$s</string>
+    <string name="benchmark_failed">Benchmark mislukt</string>
     <string name="model_info_relative_speed">Snelheid: %s</string>
     <string name="model_info_close">Sluiten</string>
 
@@ -1023,6 +1025,9 @@
     <string name="external_importing_file">%1$s importeren (%2$d van %3$d)…</string>
     <string name="external_import_failed">Importeren mislukt: %1$s</string>
     <string name="external_imported">%1$s geïmporteerd</string>
+    <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
+    <string name="bundle_restored_builtin">%1$s hersteld</string>
+    <string name="bundle_restore_unsupported">Het model van deze bundel komt uit een nieuwere app-versie en kan niet worden hersteld op dit apparaat.</string>
     <string name="external_delete_confirm">Extern model %1$s verwijderen?</string>
     <string name="external_deleted">%1$s verwijderd</string>
         <string name="external_catalog_all">Alle talen</string>
@@ -1090,6 +1095,8 @@
     <string name="retranscribe_active_badge">Actief</string>
     <string name="retranscribe_setting_title">Knop Opnieuw transcriberen</string>
     <string name="retranscribe_setting_description">Toon op audiotranscripties een knop om het met een ander model opnieuw te proberen.</string>
+    <string name="word_tap_seek_title">Woorden tikken om te springen</string>
+    <string name="word_tap_seek_description">In een uitgeklapt transcript verplaatst een tik op een woord het afspelen naar het moment van dat woord. Standaard uit.</string>
     <string name="advanced_share_formats_title">Delen als…</string>
     <string name="advanced_share_formats_description">Voegt een tweede Delen…-knop toe aan resultaten die ondertitel- en tijdstempelformaten aanbiedt, naast de gebruikelijke tekstshare.</string>
 
@@ -1133,6 +1140,8 @@
     <string name="error_oom_transcription_protected">Niet genoeg geheugen om deze audio te transcriberen, zelfs niet met geheugenbescherming aan. Probeer een korter bestand, een kleiner model, of sluit andere apps.</string>
     <string name="external_family_detected">Gedetecteerd: %1$s</string>
     <string name="external_family_pick_title">Tot welke familie behoort dit model?</string>
+    <string name="external_bundles_pick_title">Meerdere bundels gevonden</string>
+    <string name="external_bundles_pick_subtitle">Kies er een om te importeren</string>
     <string name="subtitle_timeout_title">Time-out van automatische keuze</string>
     <string name="subtitle_timeout_description">Hoe lang de keuzemelding voor een video met ondertitels wacht voordat de transcriptie uit zichzelf begint.</string>
     <string name="transcript_export_format_title">Bestandsformaat voor automatisch opslaan</string>
@@ -1140,6 +1149,7 @@
     <string name="transcript_export_format_txt">Platte tekst</string>
     <string name="transcript_export_format_txt_timed">Tekst met tijdstempels (experimenteel)</string>
     <string name="transcript_export_format_srt">SRT-ondertitels (experimenteel)</string>
+    <string name="transcript_export_format_srt_word">SRT-ondertitels met wordtijden (experimenteel)</string>
     <string name="transcript_export_format_vtt">WebVTT-ondertitels (experimenteel)</string>
 
     <string name="partial_transcript_label">Gedeeltelijke transcriptie</string>
@@ -1202,6 +1212,8 @@
     <string name="refinement_model_description">Het model van de tweede ronde. Laat op Overnemen staan om je actieve model te gebruiken.</string>
     <string name="refinement_model_inherit">Actief model overnemen</string>
     <string name="refinement_description">Stream een directe voorbeeldweergave met het snelle model en verfijn die daarna op de achtergrond met het gekozen model</string>
+    <string name="refinement_description_dynamic">Stream een directe voorbeeldweergave met %1$s en verfijn die daarna op de achtergrond met %2$s</string>
+    <string name="refinement_locked_reason">Download een tweede model om tweerondetranscriptie in te schakelen</string>
     <string name="language_chip_setting_note">Alleen de modellen Whisper en SenseVoice kunnen de taal detecteren.</string>
     <string name="technical_details_title">Technische details tonen</string>
     <string name="technical_details_description">Toon de technische verwerkingsregel (decodepad, chunks, VAD, geheugen) onder elk transcriptie-item. Standaard uit; de details zitten altijd in feedbackrapporten.</string>
@@ -1259,8 +1271,8 @@
 
     <!-- TASK-271 trial branch: EN stopgaps until the translation pass -->
     <string name="voice_note_settings_title">Voice notes</string>
-    <string name="voice_note_settings_summary_on">Automatic WhatsApp voice-note transcription · on</string>
-    <string name="voice_note_settings_summary_off">Automatic WhatsApp voice-note transcription · off</string>
+    <string name="voice_note_settings_summary_on">Automatische transcriptie van spraakberichten · aan</string>
+    <string name="voice_note_settings_summary_off">Automatische transcriptie van spraakberichten · uit</string>
     <string name="voice_note_settings_summary_limited">Sender recognition for voice notes</string>
     <string name="voice_note_identity_title">Voice note sender recognition</string>
     <string name="voice_note_identity_description">Labels transcribed voice notes with the sender\'s name, shared here or automatic. WhatsApp only for now. The name appears only when the note\'s notification arrived while this was on and its length matches (no guessed names); the waiting list lives in memory only. Requires notification access.</string>
@@ -1286,6 +1298,12 @@
     <string name="voice_note_business_folder_grant_rejected">Dit is niet de map met WhatsApp Business-spraakberichten. Kies de map met de naam WhatsApp Business Voice Notes en probeer het opnieuw.</string>
     <string name="voice_note_business_folder_card_desc">Om de berichten te lezen, verleen één keer toegang tot de map waar WhatsApp Business ze opslaat:</string>
     <string name="voice_note_business_folder_sheet_step3">Tik met de map WhatsApp Business Voice Notes geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
+    <string name="voice_note_source_watched_folder">Bewaakte map</string>
+    <string name="voice_note_watched_detection_description">Voor elke app die spraakberichten opslaat in een map die je in je bestandsbeheerder ziet (bijvoorbeeld Signal, dat opslaat in Music/Signal): zet het eenmalig aan en kies die map, daarna worden nieuwe audiobestanden daar bij aankomst getranscribeerd. Elk bestand wordt alleen gelezen om het te transcriberen, en alleen op dit apparaat; met de functie uit wordt er niets gelezen. Audiotoegang vereist.</string>
+    <string name="voice_note_watched_folder_grant_rejected">Deze map kan niet bewaakt worden. Kies een map op de opslag van dit apparaat (niet de volledige opslagroot en niet de WhatsApp-mappen, die hebben hun eigen sectie).</string>
+    <string name="voice_note_watched_folder_card_desc">Om de berichten te lezen, verleen eenmalig toegang tot de map waar je andere app ze opslaat (elke map op de opslag van dit apparaat):</string>
+    <string name="voice_note_watched_folder_sheet_step2">Open de map waar je andere app spraakberichten opslaat (bijvoorbeeld Music › Signal):</string>
+    <string name="voice_note_watched_folder_sheet_step3">Tik met die map geselecteerd (niet openen) op DEZE MAP GEBRUIKEN en daarna op TOESTAAN.</string>
 
     <!-- Back-up en overdracht (TASK-843/844, GH #158) -->
 
@@ -1329,4 +1347,10 @@
         <item quantity="other">%1$d spraakberichten die binnenkwamen terwijl de app afwezig was, worden nu getranscribeerd. De resultaten verschijnen in de geschiedenis.</item>
     </plurals>
     <string name="history_db_recovered_unpreserved">De geschiedenisdatabase was beschadigd en is opnieuw ingesteld. De beschadigde bestanden konden niet worden bewaard.</string>
+    <string name="bundle_restore_download_active">Een download van dit model is nog bezig. Wacht tot die klaar is of annuleer hem en importeer het pakket opnieuw.</string>
+    <string name="model_download_restore_active">Een herstel van dit model is bezig. Wacht tot dat klaar is en download het daarna opnieuw.</string>
+
+    <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
+    <string name="whats_new_title">Wat is er nieuw</string>
+    <string name="whats_new_summary">Wat is er nieuw in deze versie</string>
 </resources>

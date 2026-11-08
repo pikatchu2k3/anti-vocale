@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "name": "Canary 1B v2 Dutch int8",
+      "languages": [
+        "nl"
+      ],
+      "family": "CANARY",
+      "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/dutch.json"
+    },
+    {
       "name": "Canary Flash 180M (English)",
       "languages": [
         "en"
@@ -65,6 +73,14 @@
       ],
       "family": "DOLPHIN",
       "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/dolphin-small.json"
+    },
+    {
+      "name": "Fritter English int8 (Parakeet TDT v2 fine-tune, CC-BY-NC)",
+      "languages": [
+        "en"
+      ],
+      "family": "TRANSDUCER",
+      "entryUrl": "https://models.carrotcakeai.com/asr/fritter/latest/manifest.json"
     },
     {
       "name": "IndicConformer Bengali int8 (2.4% CER)",
@@ -204,6 +220,15 @@
       "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/parakeet-110m-english.json"
     },
     {
+      "name": "Sabich English-Hebrew int8 (Hebrish transducer, non-commercial)",
+      "languages": [
+        "en",
+        "he"
+      ],
+      "family": "TRANSDUCER",
+      "entryUrl": "https://cdn.hebrish.app/models/sabich/latest.json"
+    },
+    {
       "name": "SenseVoice Small multilingual int8 (zh/en/yue/ja/ko)",
       "languages": [
         "zh",
@@ -249,6 +274,30 @@
       ],
       "family": "TRANSDUCER",
       "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/transcribepsy-eu.json"
+    },
+    {
+      "name": "Whisper Large v3 Finnish int8 (sherpa, Finnish-NLP fine-tune)",
+      "languages": [
+        "fi"
+      ],
+      "family": "WHISPER",
+      "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/finnish.json"
+    },
+    {
+      "name": "Whisper Large v3 French Distil int8 (sherpa, bofenghuang distil)",
+      "languages": [
+        "fr"
+      ],
+      "family": "WHISPER",
+      "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/french.json"
+    },
+    {
+      "name": "Whisper Large v3 German (sherpa, primeline fine-tune)",
+      "languages": [
+        "de"
+      ],
+      "family": "WHISPER",
+      "entryUrl": "https://raw.githubusercontent.com/RisorseArtificiali/anti-vocale/main/app/src/main/assets/external-catalog/german-large.json"
     },
     {
       "name": "Whisper Large v3 Turbo Arabic Dialectal (sherpa int8)",

@@ -1,6 +1,7 @@
 package com.antivocale.app.testing
 
 import com.antivocale.app.data.ExternalModelRecord
+import java.io.File
 import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelStore
@@ -17,6 +18,7 @@ import com.antivocale.app.transcription.LlmTranscriptionBackend
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
 import com.antivocale.app.transcription.TranscriptFuzzySearch
+import com.antivocale.app.transcription.variantTitle
 import com.antivocale.app.ui.theme.ThemeMode
 import com.antivocale.app.ui.theme.TextScale
 import com.antivocale.app.ui.theme.ThemeType
@@ -83,13 +85,15 @@ internal class TestSpiOps(
         family: String? = null,
         modelType: String? = null,
         mode: String? = null,
+        licence: String? = null,
+        streaming: String? = null,
     ): String = runCatching {
         when (op) {
             OP_GET -> get()
             OP_SET -> set(key, value, entry)
             OP_RECORDS -> records()
             OP_IDENTITY_CACHE -> identityCache()
-            OP_IMPORT -> importModel(url, family, modelType)
+            OP_IMPORT -> importModel(url, family, modelType, entry, licence, streaming)
             OP_NOTIFY_MEMORY_ERROR -> notifyMemoryError()
             OP_CLIPBOARD -> clipboard()
             OP_NOTIFICATIONS -> notifications()
@@ -97,6 +101,9 @@ internal class TestSpiOps(
             OP_VOICE_NOTE_STATE -> voiceNoteState(value)
             OP_MODEL_DOWNLOAD -> modelDownload(entry, value)
             OP_CLEAR_ORPHANED -> clearOrphaned(entry, value)
+            OP_BUNDLE_EXPORT -> bundleExport(entry, value)
+            OP_BUNDLE_IMPORT -> bundleImport(value)
+            OP_MODEL_PRESENT -> modelPresent(entry, value)
             OP_SEARCH -> search(value, mode)
             OP_LOG -> insertLog(value)
             OP_LOG_READ -> readLog(value)
@@ -161,6 +168,10 @@ internal class TestSpiOps(
             // WhatsApp Business support: the Business client's pair.
             .put("voiceNoteBusinessDetectionEnabled", preferences.voiceNoteBusinessDetectionEnabled.first())
             .put("voiceNoteBusinessTreeUri", preferences.voiceNoteBusinessTreeUri.first() ?: JSONObject.NULL)
+            // TASK-966: the watched-folder source's pair (no watermark
+            // twin: that source has no keyed catch-up).
+            .put("voiceNoteWatchedDetectionEnabled", preferences.voiceNoteWatchedDetectionEnabled.first())
+            .put("voiceNoteWatchedTreeUri", preferences.voiceNoteWatchedTreeUri.first() ?: JSONObject.NULL)
             // TASK-778: the persisted catch-up watermark (read-only diagnostic;
             // the detector owns writes). TASK-891: one per source.
             .put("voiceNoteWatermark", preferences.voiceNoteWatermark.first() ?: JSONObject.NULL)
@@ -184,6 +195,9 @@ internal class TestSpiOps(
             .put("showRetranscribeButton", preferences.showRetranscribeButton.first())
             .put("groupLogsByConversation", preferences.groupLogsByConversation.first())
             .put("showTechnicalDetails", preferences.showTechnicalDetails.first())
+            // TASK-939: the word-tap seek read-along gate (device trials
+            // seed it before expanding a row).
+            .put("wordTapSeek", preferences.wordTapSeek.first())
             .put("vadAdvisoryDismissed", preferences.vadAdvisoryDismissed.first())
             .put("onboardingCompleted", preferences.onboardingCompleted.first())
             // TASK-685: the seeded Models-filter favorite (null = untouched,
@@ -243,6 +257,8 @@ internal class TestSpiOps(
         "interrupted_run_notifications" to preferences::saveInterruptedRunNotifications,
         "summarize" to preferences::saveSummarizeEnabled,
         "refinement_enabled" to preferences::saveRefinementEnabled,
+        // TASK-939: the word-tap seek gate (device trials flip it per row).
+        "word_tap_seek" to preferences::saveWordTapSeek,
         "speaker_labels_enabled" to preferences::saveSpeakerLabelsEnabled,
         // TASK-670: the named-labels privacy gate.
         "speaker_id_enabled" to preferences::saveSpeakerIdEnabled,
@@ -388,18 +404,30 @@ internal class TestSpiOps(
             // positive int is honored downstream, and a timing test may want 3.
             // TASK-515 (reuse review): the third positive-int validator
             // tipped the copy count; one typed table now serves all of them
-            // (the TASK-469 shape: the table IS the dispatch).
-            positiveIntKeys.forEach { (key, unit, save) ->
-                putUnique(key) { value, _ ->
-                    val n = value.toIntOrNull()
-                    if (n == null || n <= 0) {
-                        "$key expects a positive integer ($unit), got '$value'"
-                    } else {
-                        save(n)
-                        null
+            // (the TASK-469 shape: the table IS the dispatch). TASK-929 added
+            // the non-negative sibling below, so the shared loop takes the
+            // lower bound and its adjective as parameters.
+            fun putIntKeys(keys: List<Triple<String, String, suspend (Int) -> Unit>>, min: Int, adjective: String) {
+                keys.forEach { (key, unit, save) ->
+                    putUnique(key) { value, _ ->
+                        val n = value.toIntOrNull()
+                        if (n == null || n < min) {
+                            "$key expects a $adjective integer ($unit), got '$value'"
+                        } else {
+                            save(n)
+                            null
+                        }
                     }
                 }
             }
+            putIntKeys(positiveIntKeys, 1, "positive")
+            // TASK-929 device trial: 0 is the What's-New arm value (the probe
+            // pops only when the stored versionCode differs from the running
+            // one); a negative would never match a real versionCode.
+            putIntKeys(
+                listOf(Triple("whats_new_version", "versionCode", preferences::saveWhatsNewLastShownVersion)),
+                0, "non-negative",
+            )
             putUnique("backend") { value, _ ->
                 if (!isKnownBackend(value)) {
                     "unknown backend '$value' (expected a catalog id, '${LlmTranscriptionBackend.BACKEND_ID}', " +
@@ -550,11 +578,22 @@ internal class TestSpiOps(
 
     /**
      * TASK-550 device pass: the external-model import, driven without UI. The
-     * importer classifies the url (catalog-entry JSON vs HuggingFace repo),
-     * exactly the path the import dialog uses; the response is the imported
-     * record, so a device test can chain set backend=external:<id> on it.
+     * importer classifies the url (catalog-entry JSON, schema-1 CDN manifest,
+     * or HuggingFace repo), exactly the path the import dialog uses; the
+     * response is the imported record, so a device test can chain set
+     * backend=external:<id> on it. The [displayName]/[licence]/[streaming]
+     * extras are the schema-1 index-metadata transport (TASK-912 parity with
+     * the dialog's catalog pick): a manifest URL like the streaming Fritter's
+     * needs streaming=true here, exactly as its catalog entry authors it.
      */
-    private suspend fun importModel(url: String?, family: String?, modelType: String?): String {
+    private suspend fun importModel(
+        url: String?,
+        family: String?,
+        modelType: String?,
+        displayName: String?,
+        licence: String?,
+        streaming: String?,
+    ): String {
         if (url.isNullOrBlank()) {
             throw IllegalArgumentException("missing 'url' extra")
         }
@@ -594,7 +633,25 @@ internal class TestSpiOps(
             throw IllegalArgumentException(
                 "model_type '$modelType' is not valid for family ${parsedFamily.name}")
         }
-        val record = importer.importFromUrl(url, modelType = modelType, family = parsedFamily)
+        // Streaming extra: a strict "true"/"false" (a typo must not silently
+        // mean false, which would trip the bare-manifest rejection below with
+        // no hint why).
+        val streamingFlag = streaming?.let { raw ->
+            when (raw.lowercase()) {
+                "true" -> true
+                "false" -> false
+                else -> throw IllegalArgumentException(
+                    "streaming extra '$raw' is not a boolean (use true or false)")
+            }
+        } ?: false
+        val record = importer.importFromUrlWithMetadata(
+            url,
+            displayName = displayName,
+            licence = licence,
+            modelType = modelType,
+            family = parsedFamily,
+            streaming = streamingFlag,
+        )
         return JSONObject()
             .put("op", OP_IMPORT)
             .put("record", record.toJson().put("backendId", record.backendId))
@@ -911,6 +968,107 @@ internal class TestSpiOps(
     }
 
     /**
+     * TASK-931: exports a present variant's offline bundle to a scriptable
+     * path (the app's external-files dir, pullable over adb without run-as)
+     * through the SAME shared core the UI export uses (ModelBundleTransfer),
+     * so a scripted bundle is byte-identical to a user-exported one. usage:
+     * op=bundle_export entry=<catalog id> value=<variant name>. The reply
+     * carries the absolute path and the byte size.
+     */
+    private fun bundleExport(entry: String?, variant: String?): String {
+        val context = requireContext(OP_BUNDLE_EXPORT)
+        validateCatalogVariant(OP_BUNDLE_EXPORT, entry, variant)?.let { return it }
+        val entryId = entry ?: error("validated")
+        val variantName = variant ?: error("validated")
+        val downloader = com.antivocale.app.transcription.SherpaModelDownloader.of(entryId)
+        val dir = downloader.getModelPath(context, variantName)
+            ?: return JSONObject().put("op", OP_BUNDLE_EXPORT)
+                .put("error", "variant '$entryId/$variantName' is not present (a validator-complete dir)")
+                .toString()
+        val catalogEntry = com.antivocale.app.data.catalog.BundledCatalog.byId(entryId) ?: error("validated")
+        val uiVariant = com.antivocale.app.transcription.CatalogVariantUi.forEntry(entryId)
+            .firstOrNull { it.variantName == variantName }
+        val displayName = uiVariant?.let {
+            context.variantTitle(it)
+        } ?: variantName
+        val out = File(context.getExternalFilesDir(null), "bundle-$entryId-$variantName.zip")
+        java.io.FileOutputStream(out).use { stream ->
+            com.antivocale.app.data.ModelBundleTransfer.export(
+                File(dir), catalogEntry, variantName,
+                displayName = displayName,
+                variantDirName = uiVariant?.dirName,
+                appVersion = context.packageManager
+                    .getPackageInfo(context.packageName, 0).versionName ?: "spi",
+                out = stream)
+        }
+        return JSONObject().put("op", OP_BUNDLE_EXPORT)
+            .put("entry", entryId).put("variant", variantName)
+            .put("path", out.absolutePath)
+            .put("bytes", out.length())
+            .toString()
+    }
+
+    /**
+     * TASK-931: imports a bundle from a file path (absolute, or a name
+     * resolved under the app's external-files dir where bundle_export
+     * writes) through the SAME shared core the UI import uses. The reply
+     * names the arm that ran: outcome=restored (built-in dir, no record)
+     * or outcome=imported (external record). The download-active guard is
+     * a no-op here: a scripted trial controls both the download and the
+     * import, so the caller sequences them.
+     */
+    private suspend fun bundleImport(value: String?): String {
+        val context = requireContext(OP_BUNDLE_IMPORT)
+        if (value.isNullOrBlank()) {
+            return JSONObject().put("op", OP_BUNDLE_IMPORT)
+                .put("error", "usage: op=bundle_import value=<absolute path or external-files name>")
+                .toString()
+        }
+        val file = File(value).takeIf { it.isAbsolute }
+            ?: File(context.getExternalFilesDir(null), value)
+        if (!file.isFile) {
+            return JSONObject().put("op", OP_BUNDLE_IMPORT)
+                .put("error", "no bundle at '${file.absolutePath}'")
+                .toString()
+        }
+        val outcome = com.antivocale.app.data.ModelBundleTransfer.importBundle(
+            context, file.inputStream().buffered(), importer,
+            claimRestoreVariant = { _, _ -> AutoCloseable { } },
+            noFamilyError = "bundle model has no external import slot and matches no catalog variant",
+        )
+        return when (outcome) {
+            is com.antivocale.app.data.ModelBundleTransfer.Outcome.Restored ->
+                JSONObject().put("op", OP_BUNDLE_IMPORT)
+                    .put("outcome", "restored").put("displayName", outcome.displayName)
+                    .toString()
+            is com.antivocale.app.data.ModelBundleTransfer.Outcome.Imported ->
+                JSONObject().put("op", OP_BUNDLE_IMPORT)
+                    .put("outcome", "imported").put("backendId", outcome.record.backendId)
+                    .put("displayName", outcome.record.displayName)
+                    .toString()
+        }
+    }
+
+    /**
+     * TASK-931: the read-side presence the Models card derives (the
+     * downloader's validator-complete predicate), so a trial asserts the
+     * restore landed without run-as ls. usage:
+     * op=model_present entry=<catalog id> value=<variant name>.
+     */
+    private fun modelPresent(entry: String?, variant: String?): String {
+        val context = requireContext(OP_MODEL_PRESENT)
+        validateCatalogVariant(OP_MODEL_PRESENT, entry, variant)?.let { return it }
+        val entryId = entry ?: error("validated")
+        val variantName = variant ?: error("validated")
+        val downloader = com.antivocale.app.transcription.SherpaModelDownloader.of(entryId)
+        return JSONObject().put("op", OP_MODEL_PRESENT)
+            .put("entry", entryId).put("variant", variantName)
+            .put("present", downloader.isModelDownloaded(context, variantName))
+            .put("dir", downloader.getModelPath(context, variantName) ?: JSONObject.NULL)
+            .toString()
+    }
+
+    /**
      * TASK-625 trial tool: posts the production memory-failure error
      * notification (the exact ResultNotificationFactory builder both error
      * surfaces use) so the Open-setting action can be exercised on device
@@ -1115,6 +1273,12 @@ internal class TestSpiOps(
          *  input cannot reach on the Compose button). Mirrors model_download's
          *  arg shape: entry=<catalog id> value=<variant name>. */
         const val OP_CLEAR_ORPHANED = "clear_orphaned"
+        /** TASK-931: the bundle round trip without SAF (see bundleExport). */
+        const val OP_BUNDLE_EXPORT = "bundle_export"
+        /** TASK-931: bundle import from a file path (see bundleImport). */
+        const val OP_BUNDLE_IMPORT = "bundle_import"
+        /** TASK-931: read-side variant presence (see modelPresent). */
+        const val OP_MODEL_PRESENT = "model_present"
         const val OP_VOICE_NOTE_STATE = "voice_note_state"
         /** TASK-911: value=<query> mode=literal|similar, the History search
          *  without UI (similar is the TranscriptFuzzySearch arm). */
@@ -1161,7 +1325,7 @@ internal class TestSpiOps(
          * both are intercepted receiver-side before handle() runs, so they
          * live in the receiver's own table.
          */
-        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_SEARCH, OP_LOG, OP_LOG_READ, OP_LOG_DELETE, OP_VOICE_NOTE_WATERMARK_RESET, OP_VOICE_NOTE_SIMULATE, OP_NOTIFY_TEXT, OP_HELP)
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_BUNDLE_EXPORT, OP_BUNDLE_IMPORT, OP_MODEL_PRESENT, OP_SEARCH, OP_LOG, OP_LOG_READ, OP_LOG_DELETE, OP_VOICE_NOTE_WATERMARK_RESET, OP_VOICE_NOTE_SIMULATE, OP_NOTIFY_TEXT, OP_HELP)
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024

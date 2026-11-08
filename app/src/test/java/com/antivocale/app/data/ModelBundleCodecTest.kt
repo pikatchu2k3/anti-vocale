@@ -1,6 +1,7 @@
 package com.antivocale.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -32,7 +33,11 @@ class ModelBundleCodecTest {
 
     private fun modelDir(vararg files: Pair<String, String>): File {
         val dir = tmp.newFolder()
-        files.forEach { (name, content) -> File(dir, name).writeText(content) }
+        files.forEach { (name, content) ->
+            val file = File(dir, name)
+            file.parentFile?.mkdirs()
+            file.writeText(content)
+        }
         return dir
     }
 
@@ -47,7 +52,7 @@ class ModelBundleCodecTest {
 
         assertEquals("My Model", manifest.getString("name"))
         assertEquals("WHISPER", manifest.getString("family"))
-        assertEquals(1, manifest.getInt("formatVersion"))
+        assertEquals(2, manifest.getInt("formatVersion"))
         assertEquals("he", manifest.getJSONArray("languages").getString(0))
         assertEquals("enc-bytes", File(target, "encoder.int8.onnx").readText())
         assertEquals("a\nb\nc", File(target, "tokens.txt").readText())
@@ -120,9 +125,31 @@ class ModelBundleCodecTest {
         val params = ModelBundleCodec.recordParams(manifest)
 
         assertEquals("Nemotron 3.5", params.displayName)
-        assertEquals("WHISPER", params.family.name)
+        assertEquals(ModelFamily.WHISPER, params.family)
         assertEquals(listOf("he"), params.languages)
         assertEquals("he", params.options["whisper.language"])
+    }
+
+    @Test
+    fun `licence round-trips through the manifest and reads null when absent`() {
+        // R3b: the optional licence key. A metadata block carrying one
+        // exports it and reads back; the default metadata (no licence)
+        // exports no key and reads null, which is also what pre-schema-1
+        // bundles answer.
+        val dir = modelDir("m.onnx" to "x")
+        val withLicence = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, withLicence, metadata(name = "Fritter").copy(licence = "CC-BY-NC-4.0"))
+        val manifest = ModelBundleCodec.import(
+            ByteArrayInputStream(withLicence.toByteArray()), File(tmp.newFolder(), "imported"))
+        assertEquals("CC-BY-NC-4.0", ModelBundleCodec.recordParams(manifest).licence)
+        // Absent exporter licence: the key is omitted entirely (old readers
+        // never see it) and the read side answers null.
+        val without = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, without, metadata(name = "Plain"))
+        val reimported = ModelBundleCodec.import(
+            ByteArrayInputStream(without.toByteArray()), File(tmp.newFolder(), "imported2"))
+        assertFalse(reimported.has("licence"))
+        assertEquals(null, ModelBundleCodec.recordParams(reimported).licence)
     }
 
     @Test
@@ -200,13 +227,115 @@ class ModelBundleCodecTest {
     }
 
     @Test
+    fun `a model dir with a subdirectory round-trips`() {
+        // TASK-924: the qwen3 layout (files + a tokenizer/ tree) must survive
+        // the transfer; the flat walk silently dropped the subdirectory.
+        val dir = modelDir(
+            "encoder.int8.onnx" to "enc",
+            "tokenizer/vocab.json" to "{\"t\":1}",
+            "tokenizer/merges.txt" to "merge lines",
+        )
+        val out = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, out, metadata())
+
+        val target = File(tmp.newFolder(), "imported")
+        val manifest = ModelBundleCodec.import(ByteArrayInputStream(out.toByteArray()), target)
+
+        assertEquals("enc", File(target, "encoder.int8.onnx").readText())
+        assertEquals("{\"t\":1}", File(target, "tokenizer/vocab.json").readText())
+        assertEquals("merge lines", File(target, "tokenizer/merges.txt").readText())
+        // The pins key on the catalog's relative-path names.
+        val pins = manifest.getJSONObject("files")
+        assertEquals(3, pins.length())
+        assertEquals(
+            ModelBundleCodec.sha256Of(File(target, "tokenizer/merges.txt")),
+            pins.getString("tokenizer/merges.txt"))
+    }
+
+    @Test
+    fun `download sidecar files are not exported`() {
+        val dir = modelDir("encoder.int8.onnx" to "enc")
+        // The sidecar a completed download leaves beside its file.
+        File(dir, "encoder.int8.onnx.size").writeText("3")
+        val out = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, out, metadata())
+
+        val target = File(tmp.newFolder(), "imported")
+        val manifest = ModelBundleCodec.import(ByteArrayInputStream(out.toByteArray()), target)
+        assertEquals(1, manifest.getJSONObject("files").length())
+        assertTrue(!File(target, "encoder.int8.onnx.size").exists())
+    }
+
+    @Test
+    fun `a traversal entry is rejected and cleans the target`() {
+        val dir = modelDir("m.onnx" to "x")
+        val out = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, out, metadata())
+        // A hand-made bundle whose entry escapes the target dir: the path is
+        // refused at the boundary, nothing lands on disk.
+        val hostile = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(hostile).use { zip ->
+            java.util.zip.ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { src ->
+                var e = src.nextEntry
+                while (e != null) {
+                    zip.putNextEntry(java.util.zip.ZipEntry(e.name))
+                    src.copyTo(zip)
+                    zip.closeEntry()
+                    e = src.nextEntry
+                }
+            }
+            zip.putNextEntry(java.util.zip.ZipEntry("files/../evil.txt"))
+            zip.write("evil".toByteArray())
+            zip.closeEntry()
+        }
+        val target = File(tmp.newFolder(), "imported")
+        try {
+            ModelBundleCodec.import(ByteArrayInputStream(hostile.toByteArray()), target)
+            fail("traversal entry must throw")
+        } catch (e: Exception) {
+            assertTrue(!target.exists())
+            assertTrue(!File(target.parentFile, "evil.txt").exists())
+        }
+    }
+
+    @Test
+    fun `a builtin-origin bundle may omit the family`() {
+        // TASK-924: qwen3/streaming/LLM have no import family; the manifest
+        // carries the catalog identity and NO family key (JSONObject.put
+        // drops null), and the restore routing decides on the receiver.
+        val dir = modelDir("m.onnx" to "x")
+        val out = ByteArrayOutputStream()
+        ModelBundleCodec.export(dir, out, metadata().copy(
+            family = null, modelType = "qwen3_asr",
+            catalogEntryId = "qwen3-asr", catalogVariantDir = "sherpa-onnx-qwen3-asr-0.6b-int8"))
+        val target = File(tmp.newFolder(), "imported")
+        val manifest = ModelBundleCodec.import(ByteArrayInputStream(out.toByteArray()), target)
+
+        assertTrue(!manifest.has("family"))
+        val params = ModelBundleCodec.recordParams(manifest)
+        assertEquals(null, params.family)
+        assertEquals("qwen3-asr", params.catalogEntryId)
+        assertEquals("qwen3_asr", params.modelType)
+    }
+
+    @Test
+    fun `an old-style bundle without a family still defaults to transducer`() {
+        // Bundles WITHOUT a catalog identity keep the pre-924 blank-family
+        // default (the hand-made manifest precedent): no behavior change.
+        val manifest = org.json.JSONObject()
+            .put("modelType", "nemo_transducer")
+            .put("files", org.json.JSONObject())
+        assertEquals(ModelFamily.TRANSDUCER, ModelBundleCodec.recordParams(manifest).family)
+    }
+
+    @Test
     fun `a newer format version is rejected without side effects`() {
         val dir = modelDir("m.onnx" to "x")
         val out = ByteArrayOutputStream()
         ModelBundleCodec.export(dir, out, metadata())
         // patch formatVersion to a future value
         val patched = String(out.toByteArray(), Charsets.ISO_8859_1)
-            .replace("\"formatVersion\":1", "\"formatVersion\":99")
+            .replace("\"formatVersion\":2", "\"formatVersion\":99")
             .toByteArray(Charsets.ISO_8859_1)
         val target = File(tmp.newFolder(), "imported")
         try {

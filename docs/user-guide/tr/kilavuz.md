@@ -39,11 +39,11 @@ Modeller boyut, hız, dil kapsamı ve doğruluk bakımından farklıdır. Model 
 | Model | Boyut | Diller | Notlar |
 |---|---|---|---|
 | Parakeet TDT stock int8 | 640 MB | 25 Avrupa | Hızlı ve hafif; varsayılan öneri |
-| Parakeet TDT SmoothQuant | 862 MB | 25 Avrupa | Daha doğru ama daha ağır; daha çok RAM ister |
-| Whisper Turbo | 988 MB | 101 | Whisper ailesindeki en iyi denge |
-| Whisper Medium | 903 MB | 101 | Turbo'dan yavaş, çoğu ses için daha iyi değil |
-| Whisper Small | 358 MB | 101 | En hafif Whisper; makul kalite |
-| Whisper Distil Italian | 938 MB | Yalnızca İtalyanca | Yerleşik kümedeki en iyi İtalyanca doğruluğu |
+| Parakeet TDT SmoothQuant | 862 MB | 25 Avrupa | Varsayilandan daha ağır; daha çok RAM ister |
+| Whisper Turbo | 1037 MB | 99 | Whisper ailesindeki en iyi denge |
+| Whisper Medium | 949 MB | 99 | Turbo'dan yavaş, çoğu ses için daha iyi değil |
+| Whisper Small | 378 MB | 99 | En hafif Whisper; makul kalite |
+| Whisper Distil Italian | 984 MB | Yalnızca İtalyanca | Yerleşik kümedeki en iyi İtalyanca doğruluğu |
 | Qwen3-ASR | 938 MB | Çok dilli | Alternatif mimari |
 | Nemotron streaming | 640 MB | Çok dilli | Siz konuşurken metni gösterir (streaming) |
 | GigaAM v3 | 326 MB | Rusça | Rusça uzmanı |
@@ -96,7 +96,7 @@ Bir uyarıyı açıkça belirtelim: agresif pil yöneticileri olan telefonlarda,
 
 ## Topluluk modelleri ve içe aktarma
 
-Yerleşik katalog her dili kapsamaz. Anti-Vocale, iki dokunuşla içe aktarabileceğiniz ek modellerden oluşan bir topluluk kataloğuyla gelir: Model sekmesi, Advanced, ONNX Sherpa, Import from catalog, dilinize göre süzün, modele dokunun, onaylayın. Katalog sürekli büyür ve bugün 30'dan fazla doğrulanmış kayıt barındırır: Arapça (lehçe ağırlıklı, tam boy ve hafif), Almanca (streaming ve bir Whisper ince ayarı), İspanyolca (streaming ve hafif Moonshine), İsviçre Almancası, İbranice, Farsça, Rusça, Vietnamca, Korece, Ukraynaca, altı Hint dili (Bengalce, Guceratça, Hintçe, Marathi, Tamil, Telugu), İngilizce ve Fransızca için Canary Flash, SenseVoice, Dolphin, Orukeet (İtalyanca dahil 24 dili kapsayan bir Parakeet ince ayarı) ve düşük RAM'li çok dilli bir Whisper Tiny. Diliniz katalogda yoksa bir issue açın: kayıtlar böyle eklenir.
+Yerleşik katalog her dili kapsamaz. Anti-Vocale, iki dokunuşla içe aktarabileceğiniz ek modellerden oluşan bir topluluk kataloğuyla gelir: Model sekmesi, Advanced, ONNX Sherpa, Import from catalog, dilinize göre süzün, modele dokunun, onaylayın. Katalog sürekli büyür ve bugün 30'dan fazla doğrulanmış kayıt barındırır: Arapça (lehçe ağırlıklı, tam boy ve hafif), Almanca (streaming ve iki Whisper ince ayarı, turbo ve tam boy), İspanyolca (streaming ve hafif Moonshine), İsviçre Almancası, İbranice, Farsça, Rusça, Vietnamca (streaming ve hafif Moonshine), Ukraynaca, altı Hint dili (Bengalce, Guceratça, Hintçe, Marathi, Tamil, Telugu), Türkçe (bir Whisper small ince ayarı), Fince (bir Whisper large v3 ince ayarı), Fransızca (bir Whisper large v3 damıtması), Brezilya Portekizcesi (bir Distil Whisper large v3), İngilizce, Fransızca, Almanca ve İspanyolca için Canary Flash, Hollandaca için tam bir Canary, İngilizce için bir Parakeet TDT-CTC 110M, SenseVoice, Dolphin, Orukeet (İtalyanca dahil 24 dili kapsayan bir Parakeet ince ayarı), TranscribePsy (20 Avrupa dilini kapsayan bir Parakeet damıtması), Omnilingual ASR 300M (çok dilli, deneysel) ve düşük RAM'li çok dilli bir Whisper Tiny. Diliniz katalogda yoksa bir issue açın: kayıtlar böyle eklenir.
 
 İleri düzey kullanıcılar ayrıca şunları yapabilir:
 - bir modeli bir Hugging Face deposu URL'sinden veya katalog kaydı bağlantısından içe aktarmak (aynı iletişim kutusundaki ileri düzey dal);

@@ -107,7 +107,77 @@ class SpeakerResplitTest {
         assertNull(outcome.tier)
         // Unsplit, tokens consumed; no fallbackSpeaker passed, so the id
         // waits for the caller's label (same geometry, honest labeling).
-        assertEquals(listOf(cue.copy(tokens = emptyList(), speaker = null)), outcome.cues)
+        // TASK-928: the shipped cue keeps its real word timing even when it
+        // was never straddling (the tokens are about to drop).
+        assertEquals(
+            listOf(cue.copy(
+                tokens = emptyList(),
+                speaker = null,
+                words = listOf(
+                    com.antivocale.app.transcription.TimedWord(0, 800),
+                    com.antivocale.app.transcription.TimedWord(1000, 1800),
+                    com.antivocale.app.transcription.TimedWord(2000, 2800),
+                    com.antivocale.app.transcription.TimedWord(3000, 4000),
+                ),
+            )),
+            outcome.cues,
+        )
+    }
+
+    @Test
+    fun `word-boundary halves slice the exact token spans`() {
+        val outcome = SpeakerResplit.resplit(cue, fourWordTokens(), straddle)
+        val (first, second) = outcome.cues
+        // TASK-928: each half carries ITS OWN words, sliced from the input
+        // spans (alpha 0..800; beta+gamma+delta 1000..4000).
+        assertEquals(listOf(com.antivocale.app.transcription.TimedWord(0, 800)), first.words)
+        assertEquals(
+            listOf(
+                com.antivocale.app.transcription.TimedWord(1000, 1800),
+                com.antivocale.app.transcription.TimedWord(2000, 2800),
+                com.antivocale.app.transcription.TimedWord(3000, 4000),
+            ),
+            second.words,
+        )
+    }
+
+    @Test
+    fun `proportional tier-two halves never persist word timing`() {
+        val outcome = SpeakerResplit.resplit(cue, emptyList(), straddle)
+        // TASK-928: a proportional estimate is not honest word timing.
+        assertTrue(outcome.cues.all { it.words.isEmpty() })
+    }
+
+    @Test
+    fun `a marker-less stream ships the flagged cue-envelope estimate`() {
+        // Parakeet's BPE: tokens exist but carry no word-start marker, so
+        // measured grouping fails; the unsplit cue leaves with flagged
+        // estimated timing (timing only, the split decision untouched) and
+        // no transient tokens.
+        val subword = listOf(
+            TimedToken("al", 0, 400),
+            TimedToken("pha", 400, 800),
+            TimedToken("bet", 800, 1400),
+            TimedToken("a", 1400, 1800),
+        )
+        val jitter = listOf(
+            DiarizedSegment(0f, 3.8f, 0, 0.9f),
+            DiarizedSegment(3.8f, 4.0f, 1, 0.9f),
+        )
+        val outcome = SpeakerResplit.resplit(cue, subword, jitter)
+        assertNull(outcome.tier)
+        val shipped = outcome.cues.single()
+        assertEquals(emptyList<TimedToken>(), shipped.tokens)
+        assertTrue(shipped.wordsEstimated)
+        assertEquals(
+            listOf(
+                com.antivocale.app.transcription.TimedWord(0, 1000),
+                com.antivocale.app.transcription.TimedWord(1000, 2000),
+                com.antivocale.app.transcription.TimedWord(2000, 3000),
+                com.antivocale.app.transcription.TimedWord(3000, 4000),
+            ),
+            shipped.words,
+        )
     }
 
     @Test

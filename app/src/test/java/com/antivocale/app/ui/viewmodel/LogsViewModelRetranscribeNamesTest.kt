@@ -10,7 +10,10 @@ import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.staticRegistry
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -32,19 +35,22 @@ import org.robolectric.annotation.Config
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
-class LogsViewModelRetranscribeNamesTest {
+class LogsViewModelRetranscribeNamesTest : ViewModelTeardownTest() {
 
     private lateinit var manager: TranscriptionBackendManager
     private lateinit var preferences: PreferencesManager
     private lateinit var viewModel: LogsViewModel
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    // A field (not the constructor default) so the harness cancels it.
+    private val appScope = register(CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
     @Before
     fun setUp() {
         manager = mockk(relaxed = true)
         preferences = stubPreferencesManager()
         every { preferences.sherpaModelPath(any()) } returns flowOf("/data/models/saved")
-        viewModel = LogsViewModel(manager, mockk<LogDao>(relaxed = true), preferences, staticRegistry(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), orchestrator = io.mockk.mockk(relaxed = true), duplicateGuard = io.mockk.mockk(relaxed = true))
+        viewModel = register(LogsViewModel(manager, mockk<LogDao>(relaxed = true), preferences, staticRegistry(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), orchestrator = mockk(relaxed = true), duplicateGuard = mockk(relaxed = true), appScope = appScope))
     }
 
     @Test

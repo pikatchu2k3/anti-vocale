@@ -68,9 +68,9 @@ import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.CatalogVariantUi
-import com.antivocale.app.transcription.titleCountArg
-import com.antivocale.app.transcription.descriptionCountArg
-import com.antivocale.app.transcription.titleFormatArg
+import com.antivocale.app.transcription.titleFormatArgs
+import com.antivocale.app.transcription.descriptionFormatArgs
+import com.antivocale.app.transcription.resourceTitlePair
 import com.antivocale.app.transcription.Language
 import androidx.compose.ui.graphics.Color
 import com.antivocale.app.util.DeviceCompatibility
@@ -100,8 +100,9 @@ import com.antivocale.app.ui.components.ModelInfoOverlay
 import com.antivocale.app.benchmark.BenchmarkState
 import com.antivocale.app.ui.viewmodel.BenchmarkViewModel
 import com.antivocale.app.ui.viewmodel.ModelViewModel
-import com.antivocale.app.ui.components.countAwareString
-import com.antivocale.app.ui.components.countAwareStringResource
+import com.antivocale.app.transcription.variantTitle
+import com.antivocale.app.ui.components.titleRes
+import com.antivocale.app.ui.components.placeholderAwareStringResource
 import com.antivocale.app.util.FeedbackHelper
 
 /**
@@ -170,6 +171,7 @@ fun ModelTab(
     val externalImportScope = rememberCoroutineScope()
     var detectedExternalFamily by remember { mutableStateOf<ModelFamily?>(null) }
     var ambiguousPick by remember { mutableStateOf<AmbiguousFamilyPick?>(null) }
+    var bundlePick by remember { mutableStateOf<List<BundleZipPick>?>(null) }
     var detectJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun importFolder(picked: Uri, family: ModelFamily, ctcSubtype: String? = null) {
         // A chooser subtype is written back so the section dropdown (and a
@@ -183,6 +185,15 @@ fun ModelTab(
             options = externalImport.options(),
             languages = externalImport.languageCodes(),
         )
+    }
+    // TASK-925: the one-zip and chosen-zip branches share this entry (the
+    // chooser tap runs it too, after the dialog state clears).
+    fun importBundle(tree: Uri, bundle: Uri) {
+        // TASK-761 hygiene (review F5): the folder picker persisted a read
+        // grant; the import reads through the transient one, so release the
+        // persisted slot before importing.
+        com.antivocale.app.util.TreeUris.releasePersistableReadGrant(context, tree)
+        viewModel.importExternalFromBundle(context, bundle)
     }
     fun routeDetection(picked: Uri, family: ModelFamily) {
         // The chip shows the detected family in every branch: for CTC it is
@@ -243,6 +254,7 @@ fun ModelTab(
             com.antivocale.app.util.TreeUris.takePersistableReadGrant(context, picked)
             detectedExternalFamily = null
             ambiguousPick = null
+            bundlePick = null
             // A rapid re-pick must not race the previous detect probe; the
             // import phase itself is not cancellable (viewModelScope).
             detectJob?.cancel()
@@ -272,26 +284,26 @@ fun ModelTab(
                     }
                     ModelFamilyDetector.Result.Unknown -> {
                         // TASK-796 round 3 (maintainer): one import path,
-                        // no user-facing choice. A folder that is not
-                        // itself a model dir may be where a bundle lives
-                        // (Downloads, say): EXACTLY one .zip child imports
-                        // as the bundle (several zips is not our call to
-                        // make; the folder import then reports what is
-                        // missing). The scan runs in the VM on IO
-                        // (review F1/F2); a broken grant must not escape
-                        // this scope either.
-                        val bundleChild = runCatching {
-                            viewModel.singleBundleChild(context, picked)
-                        }.getOrElse { null }
-                        if (bundleChild != null) {
-                            // TASK-761 hygiene (review F5): the folder
-                            // picker persisted a read grant; the import
-                            // reads through the transient one, so release
-                            // the persisted slot before importing.
-                            com.antivocale.app.util.TreeUris.releasePersistableReadGrant(context, picked)
-                            viewModel.importExternalFromBundle(context, bundleChild)
-                        } else {
-                            importFolder(picked, externalImport.family)
+                        // no family choice. A folder that is not itself a
+                        // model dir may be where a bundle lives (Downloads,
+                        // say). TASK-925 (GH #124 reopen 2): exactly one
+                        // .zip child still imports as the bundle, but
+                        // several zips is the user's call after all, as a
+                        // one-tap chooser (the old fall-through to the
+                        // folder import reported a misleading
+                        // missing-files error). The scan runs in the VM on
+                        // IO (review F1/F2); a broken grant must not
+                        // escape this scope either.
+                        val zips = runCatching {
+                            viewModel.zipChildren(context, picked)
+                        }.getOrElse { emptyList() }
+                        when (zips.size) {
+                            0 -> importFolder(picked, externalImport.family)
+                            1 -> importBundle(picked, zips.first())
+                            else -> bundlePick = zips.map { child ->
+                                BundleZipPick(picked, child,
+                                    viewModel.bundleZipDisplayName(context, child))
+                            }
                         }
                     }
                 }
@@ -647,6 +659,7 @@ fun ModelTab(
                 guardedModelSwitch = guardedSwitch,
                 onInfoClick = { modelInfoVariant = it },
                 onBrowseAll = { browseAllModels = true },
+                onExportBundle = ::launchBundleExport,
             )
         }
 
@@ -942,6 +955,44 @@ fun ModelTab(
                         },
                     )
                 }
+
+                if (bundlePick != null) {
+                    // TASK-925 (GH #124 reopen 2): the picked folder holds
+                    // several .zip bundles; a row's tap imports that one,
+                    // dismiss cancels with nothing imported.
+                    fun dismissBundleChooser() {
+                        // TASK-933: the non-consuming exits give the pick's
+                        // persisted read grant back, the same TASK-761
+                        // hygiene the consuming paths enforce through
+                        // importBundle. Every row shares the one picked
+                        // tree, so its single release covers the chooser.
+                        bundlePick?.firstOrNull()?.let {
+                            com.antivocale.app.util.TreeUris.releasePersistableReadGrant(context, it.treeUri)
+                        }
+                        bundlePick = null
+                    }
+                    AlertDialog(
+                        onDismissRequest = { dismissBundleChooser() },
+                        title = { Text(stringResource(R.string.external_bundles_pick_title)) },
+                        text = {
+                            Column {
+                                Text(stringResource(R.string.external_bundles_pick_subtitle))
+                                bundlePick?.forEach { pick ->
+                                    TextButton(onClick = {
+                                        bundlePick = null
+                                        importBundle(pick.treeUri, pick.zipUri)
+                                    }) { Text(pick.name) }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { dismissBundleChooser() }) {
+                                Text(stringResource(android.R.string.cancel))
+                            }
+                        },
+                    )
+                }
             }
         }
 
@@ -1020,6 +1071,7 @@ private fun CuratedLanguageSection(
     guardedModelSwitch: (() -> Unit) -> Unit,
     onInfoClick: (ModelVariant) -> Unit,
     onBrowseAll: () -> Unit,
+    onExportBundle: ((java.io.File, CatalogEntry, CatalogVariantUi) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // Community references resolve against the BUNDLED index snapshot: static
@@ -1081,6 +1133,11 @@ private fun CuratedLanguageSection(
                             visibleVariants = variants,
                             guardedModelSwitch = guardedModelSwitch,
                             onInfoClick = onInfoClick,
+                            // TASK-924 device trial: the curated section never
+                            // wired the export hook (pre-924 its gate made
+                            // that invisible for transferable types too), so
+                            // a present curated card offered no Export.
+                            onExportBundle = onExportBundle,
                         )
                     }
                 }
@@ -1203,16 +1260,10 @@ private fun CuratedCommunityCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                // NOTE: languages ride the entry JSON itself (importFromEntryJson
-                // reads entry.languages); these params only reach repo imports.
-                onClick = {
-                    // TASK-820 follow-up (GH #128 user finding): the entry's
-                    // languages MUST ride the import, or the record is born
-                    // with an empty list and its card never shows the
-                    // language signal.
-                    viewModel.importExternalFromUrl(
-                        entry.entryUrl, entry.family, languages = entry.languages)
-                },
+                // Catalog pick: the entry's metadata (languages for both
+                // dialects per importExternalFromCatalogEntry, plus the
+                // schema-1 name/licence/streaming transport) rides the import.
+                onClick = { viewModel.importExternalFromCatalogEntry(entry) },
                 enabled = importState !is ModelViewModel.ExternalImportState.Importing,
             ) {
                 Icon(Icons.Default.CloudDownload, contentDescription = null)
@@ -1329,21 +1380,39 @@ private fun CatalogModelSection(
     val isEntryDemoted = entry.id in demotedBackendIds
     var showSpeedComparison by remember(entry.id) { mutableStateOf(false) }
 
-    val entryTitleResId = (entry.display as? CatalogDisplay.Resource)?.key
-        ?.let { CatalogStringKeys.resolve(it) }
-        ?: CatalogVariantUi.of(entry.id).titleResId
+    // TASK-949: the entry title resolves through resourceTitlePair (resId
+    // and args PAIRED, one policy owner). The defensive fallback (an entry
+    // whose display is not a resource, kept defensively though the catalog
+    // contract forbids it) rides the default variant's OWN title AND its
+    // own args, computed only on that branch, so a slot-bearing fallback
+    // title can never reach a bare render with mismatched entry-level args.
+    // The resolve and its fallback land in ONE remembered pair (never split,
+    // per resourceTitlePair's contract): the entry's own resource title with
+    // its args, or the default variant's title with ITS OWN args on the
+    // contract-forbidden non-resource branch.
+    val entryTitleResolved = remember(entry) {
+        entry.resourceTitlePair()
+            ?: CatalogVariantUi.of(entry.id).let { it.titleResId to it.titleFormatArgs }
+    }
+    val entryTitleResId = entryTitleResolved.first
     val entryDescriptionResId = (entry.description as? CatalogDisplay.Resource)?.key?.let { CatalogStringKeys.resolve(it) }
-    // TASK-760: catalog displays may format the entry's language count; the
-    // value DERIVES from the catalog here instead of riding the string as a
-    // hand-pinned literal that drifts on model updates (the 52/53/59 split).
-    // TASK-767: the flag-to-count policy lives in titleCountArg/
-    // descriptionCountArg; the arms resolve through countAwareStringResource.
-    val entryTitleCountArg = remember(entry) { entry.titleCountArg() }
-    val entryDescriptionCountArg = remember(entry) { entry.descriptionCountArg() }
+    // TASK-946: catalog displays may format catalog-derived values (the
+    // language count; a variant's download size) in their declared slot
+    // order (see PlaceholderSlot); the args DERIVE from the catalog here
+    // instead of riding the string as hand-pinned literals that drift on
+    // model updates (the 52/53/59 split).
+    val entryTitleFormatArgs = entryTitleResolved.second
+    // The render site consumes this pair through placeholderAwareStringResource
+    // (titleResId + args in one resolve), never as a bare getString.
+    // TASK-949 note: the sibling DESCRIPTION resolve has no fallback tier on
+    // purpose; the contract-forbidden non-Resource shape is defended where a
+    // slot-bearing title can actually exist (whistle_name), and the
+    // description path renders plain when its resId is null.
+    val entryDescriptionFormatArgs = remember(entry) { entry.descriptionFormatArgs() }
     // TASK-796: the entry title carries FLAG EMOJI for its languages when
     // it is monolingual/few-language (the shared LanguageFlags.titled;
     // multilingual entries render the title unchanged).
-    val entryTitleWithFlags = remember(entry, entryTitleResId, entryTitleCountArg) {
+    val entryTitleWithFlags = remember(entry) {
         LanguageFlags.titled("", entry.variants.flatMap(entry::languagesFor))
     }
 
@@ -1376,13 +1445,15 @@ private fun CatalogModelSection(
                     // and the Active pill.
                     Column {
                         Text(
-                            text = entryTitleWithFlags + countAwareStringResource(entryTitleResId, entryTitleCountArg),
+                            text = entryTitleWithFlags + placeholderAwareStringResource(
+                                entryTitleResId, entryTitleFormatArgs),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         if (entryDescriptionResId != null) {
                             Text(
-                                text = countAwareStringResource(entryDescriptionResId, entryDescriptionCountArg),
+                                text = placeholderAwareStringResource(
+                                    entryDescriptionResId, entryDescriptionFormatArgs),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1493,20 +1564,21 @@ private fun CatalogModelSection(
                             benchmarkViewModel.startBenchmark(
                                 entry.id,
                                 path,
-                                context.countAwareString(variant.titleResId, variant.titleFormatArg())
+                                context.variantTitle(variant)
                             )
                         }
                         }
                     },
-                    // TASK-742: offer the bundle share only for a present dir
-                    onExportClick = onExportBundle?.takeIf {
-                        // Only TRANSFERABLE entries offer the bundle: a
-                        // modelType with no import family (qwen3, the
-                        // online Nemotron, the LLM) cannot land as an
-                        // external import on the receiving device.
-                        com.antivocale.app.data.ModelBundleCodec
-                            .importFamilyForModelType(entry.modelType) != null
-                    }?.let { hook ->
+                    // TASK-742: offer the bundle share only for a present dir.
+                    // TASK-924: the import-family gate is gone. A bundle whose
+                    // bytes match the receiving device's catalog restores onto
+                    // the built-in card directly, so every PRESENT variant
+                    // exports. The dir resolves at COMPOSITION time (review
+                    // R2): the click-time variant left a visible menu entry
+                    // that silently did nothing in the linked-record and
+                    // flat-layout Gemma states, which is worse than the
+                    // per-recomposition stat walk it was avoiding.
+                    onExportClick = onExportBundle?.let { hook ->
                         entryDirFor(context, entry.id, variant.variantName)?.let { dir ->
                             { hook(dir, entry, variant) }
                         }
@@ -1551,8 +1623,8 @@ private fun CatalogModelSection(
     if (state.showDownloadDialog) {
         val selectedName = state.selectedVariant?.let {
             val v = CatalogVariantUi.of(entry.id, it)
-            countAwareStringResource(v.titleResId, v.titleFormatArg())
-        } ?: countAwareStringResource(entryTitleResId, entryTitleCountArg)
+            v.titleRes()
+        } ?: placeholderAwareStringResource(entryTitleResId, entryTitleFormatArgs)
         val isExtract = state.selectedVariant != null && state.variantsNeedingExtraction.contains(state.selectedVariant)
         val sizeMb = state.selectedVariant?.let { CatalogVariantUi.of(entry.id, it).estimatedSizeMB.toInt() } ?: 0
         // TASK-427: advise before the download, from the same budget the
@@ -1584,9 +1656,8 @@ private fun CatalogModelSection(
     // Delete confirmation dialog
     if (state.showDeleteDialog) {
         val variant = state.variantToDelete?.let { CatalogVariantUi.of(entry.id, it) }
-        val variantDisplayName = variant?.let {
-            countAwareStringResource(it.titleResId, it.titleFormatArg())
-        } ?: countAwareStringResource(entryTitleResId, entryTitleCountArg)
+        val variantDisplayName = variant?.let { it.titleRes() }
+            ?: placeholderAwareStringResource(entryTitleResId, entryTitleFormatArgs)
         val isVariantActive = (isEntryActive && variant != null && savedPath?.endsWith(variant.dirName) == true) ||
             (variant != null && activeBackendId == state.linkedVariantBackendIds[variant.dirName])
         DeleteConfirmationDialog(
@@ -1622,6 +1693,10 @@ private fun variantFitHint(
 
 /** TASK-513: an ambiguous family pick waiting on the user's choice. */
 private data class AmbiguousFamilyPick(val uri: Uri, val candidates: List<ModelFamily>)
+
+/** TASK-925: one row of the multi-zip chooser; treeUri releases the
+ *  folder grant at tap time, exactly like the single-zip path. */
+private data class BundleZipPick(val treeUri: Uri, val zipUri: Uri, val name: String)
 
 /** Family label table (TASK-513 hoisted from the section: compile-time
  *  constant, shared by the dropdown, the detected chip, and the chooser). */
@@ -2281,8 +2356,7 @@ private fun ExternalModelsSection(
                         val manual = if (linkMode) linkUrl.trim().isNotBlank() else false
                         urlDialogOpen = false
                         when {
-                            entry != null -> viewModel.importExternalFromUrl(
-                                entry.entryUrl, entry.family, languages = entry.languages)
+                            entry != null -> viewModel.importExternalFromCatalogEntry(entry)
                             manual -> viewModel.importExternalFromUrl(
                                 linkUrl.trim(), selection.family,
                                 ctcModelType = selection.ctcModelType,
@@ -2451,6 +2525,18 @@ private fun ExternalModelCard(
  * Static model speed/quality comparison shown from the Whisper section header.
  * Pure informational content — no model state involved.
  */
+
+/** TASK-942: the table's size column is catalog data, composed per row
+ *  (the old speed_comparison_*_size strings baked one copy per locale). A
+ *  missing pair degrades to a dash instead of crashing composition: the
+ *  dialog is informational, and ModelSpeedRowsTest pins the eight pairs. */
+@Composable
+private fun catalogSpeedSize(entryId: String, variantName: String): String {
+    val size = BundledCatalog.byId(entryId)?.variant(variantName)?.estimatedSizeMB
+        ?: return stringResource(R.string.speed_comparison_size_missing)
+    return stringResource(R.string.speed_comparison_size_format, size)
+}
+
 @Composable
 private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
     AlertDialog(
@@ -2510,21 +2596,21 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                         // Whisper Turbo (best Whisper speed/quality balance)
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_turbo_name),
-                            size = stringResource(R.string.speed_comparison_turbo_size),
+                            size = catalogSpeedSize("whisper", "turbo"),
                             speed = stringResource(R.string.speed_comparison_turbo_speed),
                             quality = stringResource(R.string.speed_comparison_turbo_quality)
                         )
                         // Whisper Medium
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_medium_name),
-                            size = stringResource(R.string.speed_comparison_medium_size),
+                            size = catalogSpeedSize("whisper", "medium"),
                             speed = stringResource(R.string.speed_comparison_medium_speed),
                             quality = stringResource(R.string.speed_comparison_medium_quality)
                         )
                         // Whisper Small
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_small_name),
-                            size = stringResource(R.string.speed_comparison_small_size),
+                            size = catalogSpeedSize("whisper", "small"),
                             speed = stringResource(R.string.speed_comparison_small_speed),
                             quality = stringResource(R.string.speed_comparison_small_quality)
                         )
@@ -2532,7 +2618,7 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                         // Distil Italian (best Italian quality)
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_distil_it_name),
-                            size = stringResource(R.string.speed_comparison_distil_it_size),
+                            size = catalogSpeedSize("whisper", "distil-large-v3-it"),
                             speed = stringResource(R.string.speed_comparison_distil_it_speed),
                             quality = stringResource(R.string.speed_comparison_distil_it_quality),
                             badge = stringResource(R.string.speed_comparison_distil_it_note),
@@ -2541,7 +2627,7 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                         // Parakeet TDT (recommended)
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_parakeet_name),
-                            size = stringResource(R.string.speed_comparison_parakeet_size),
+                            size = catalogSpeedSize("sherpa-onnx", "stock-int8"),
                             speed = stringResource(R.string.speed_comparison_parakeet_speed),
                             quality = stringResource(R.string.speed_comparison_parakeet_quality),
                             badge = stringResource(R.string.speed_comparison_parakeet_note),
@@ -2554,7 +2640,7 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                             ?: error("bundled catalog is missing qwen3-asr")
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_qwen3_name),
-                            size = stringResource(R.string.speed_comparison_qwen3_size),
+                            size = catalogSpeedSize("qwen3-asr", "0.6b-int8"),
                             speed = stringResource(R.string.speed_comparison_qwen3_speed),
                             quality = stringResource(
                                 R.string.speed_comparison_qwen3_quality, qwen3LanguageCount)
@@ -2562,14 +2648,14 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                         // GigaAM v3 (Russian)
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_gigaam_name),
-                            size = stringResource(R.string.speed_comparison_gigaam_size),
+                            size = catalogSpeedSize("gigaam", "v3"),
                             speed = stringResource(R.string.speed_comparison_gigaam_speed),
                             quality = stringResource(R.string.speed_comparison_gigaam_quality)
                         )
                         // Nemotron (streaming, experimental)
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_nemotron_name),
-                            size = stringResource(R.string.speed_comparison_nemotron_size),
+                            size = catalogSpeedSize("nemotron-streaming", "1120ms-int8"),
                             speed = stringResource(R.string.speed_comparison_nemotron_speed),
                             quality = stringResource(R.string.speed_comparison_nemotron_quality)
                         )

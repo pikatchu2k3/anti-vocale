@@ -22,6 +22,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _modelPath = MutableStateFlow<String?>(null)
     val _keepAliveTimeout = MutableStateFlow(5)
     val _subtitleChoiceTimeout = MutableStateFlow(5)
+    val _whatsNewLastShownVersion = MutableStateFlow(PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION)
     val _themePreference = MutableStateFlow("DEFAULT")
     val _themeMode = MutableStateFlow("SYSTEM")
     val _transcriptionBackend = MutableStateFlow(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
@@ -77,6 +78,7 @@ internal class FakePreferencesManager : PreferencesManager {
     val _advancedSharingEnabled = MutableStateFlow(false)
     val _showRetranscribeButton = MutableStateFlow(true)
     val _advancedShareFormats = MutableStateFlow(PreferencesManager.DEFAULT_ADVANCED_SHARE_FORMATS)
+    val _wordTapSeek = MutableStateFlow(PreferencesManager.DEFAULT_WORD_TAP_SEEK)
     val _memoryProtection = MutableStateFlow(false)
     // TASK-274: consent gate for the exported automation receivers.
     val _externalAutomationEnabled = MutableStateFlow(PreferencesManager.DEFAULT_EXTERNAL_AUTOMATION_ENABLED)
@@ -88,6 +90,9 @@ internal class FakePreferencesManager : PreferencesManager {
     val _voiceNoteTreeUri = MutableStateFlow<String?>(null)
     val _voiceNoteBusinessDetectionEnabled = MutableStateFlow(PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED)
     val _voiceNoteBusinessTreeUri = MutableStateFlow<String?>(null)
+    // TASK-966: the watched-folder source's pair, default off like the rest.
+    val _voiceNoteWatchedDetectionEnabled = MutableStateFlow(PreferencesManager.DEFAULT_VOICE_NOTE_DETECTION_ENABLED)
+    val _voiceNoteWatchedTreeUri = MutableStateFlow<String?>(null)
     // TASK-681: the LAN-offload (OmniVoice) gate and its config triple.
     val _remoteOmnivoiceEnabled = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENABLED)
     val _remoteOmnivoiceEndpoint = MutableStateFlow(PreferencesManager.DEFAULT_REMOTE_OMNIVOICE_ENDPOINT)
@@ -107,6 +112,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val modelPath: Flow<String?> get() = _modelPath
     override val keepAliveTimeout: Flow<Int> get() = _keepAliveTimeout
     override val subtitleChoiceTimeoutMinutes: Flow<Int> get() = _subtitleChoiceTimeout
+    override val whatsNewLastShownVersion: Flow<Int> get() = _whatsNewLastShownVersion
     override val themePreference: Flow<String> get() = _themePreference
     override val themeMode: Flow<String> get() = _themeMode
     override val transcriptionBackend: Flow<String> get() = _transcriptionBackend
@@ -153,6 +159,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override val advancedSharingEnabled: Flow<Boolean> get() = _advancedSharingEnabled
     override val showRetranscribeButton: Flow<Boolean> get() = _showRetranscribeButton
     override val advancedShareFormats: Flow<Boolean> get() = _advancedShareFormats
+    override val wordTapSeek: Flow<Boolean> get() = _wordTapSeek
     override val memoryProtection: Flow<Boolean> get() = _memoryProtection
     override val externalAutomationEnabled: Flow<Boolean> get() = _externalAutomationEnabled
     override val openTranscribeEnabled: Flow<Boolean> get() = _openTranscribeEnabled
@@ -161,6 +168,8 @@ internal class FakePreferencesManager : PreferencesManager {
     override val voiceNoteTreeUri: Flow<String?> get() = _voiceNoteTreeUri
     override val voiceNoteBusinessDetectionEnabled: Flow<Boolean> get() = _voiceNoteBusinessDetectionEnabled
     override val voiceNoteBusinessTreeUri: Flow<String?> get() = _voiceNoteBusinessTreeUri
+    override val voiceNoteWatchedDetectionEnabled: Flow<Boolean> get() = _voiceNoteWatchedDetectionEnabled
+    override val voiceNoteWatchedTreeUri: Flow<String?> get() = _voiceNoteWatchedTreeUri
     override val remoteOmnivoiceEnabled: Flow<Boolean> get() = _remoteOmnivoiceEnabled
     override val remoteOmnivoiceEndpoint: Flow<String> get() = _remoteOmnivoiceEndpoint
     override val remoteOmnivoiceApiKey: Flow<String> get() = _remoteOmnivoiceApiKey
@@ -195,6 +204,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun clearModelPath() { _modelPath.value = null }
     override suspend fun saveKeepAliveTimeout(minutes: Int) { _keepAliveTimeout.value = minutes }
     override suspend fun saveSubtitleChoiceTimeoutMinutes(minutes: Int) { _subtitleChoiceTimeout.value = minutes }
+    override suspend fun saveWhatsNewLastShownVersion(versionCode: Int) { _whatsNewLastShownVersion.value = versionCode }
     override suspend fun saveThemePreference(theme: String) { _themePreference.value = theme }
     override suspend fun saveThemeMode(mode: String) { _themeMode.value = mode }
     override suspend fun saveTranscriptionBackend(backendId: String) { _transcriptionBackend.value = backendId }
@@ -229,6 +239,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveAdvancedSharingEnabled(enabled: Boolean) { _advancedSharingEnabled.value = enabled }
     override suspend fun saveShowRetranscribeButton(enabled: Boolean) { _showRetranscribeButton.value = enabled }
     override suspend fun saveAdvancedShareFormats(enabled: Boolean) { _advancedShareFormats.value = enabled }
+    override suspend fun saveWordTapSeek(enabled: Boolean) { _wordTapSeek.value = enabled }
     override suspend fun saveMemoryProtection(enabled: Boolean) { _memoryProtection.value = enabled }
     override suspend fun saveExternalAutomationEnabled(enabled: Boolean) { _externalAutomationEnabled.value = enabled }
     override suspend fun saveOpenTranscribeEnabled(enabled: Boolean) { _openTranscribeEnabled.value = enabled }
@@ -237,6 +248,8 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveVoiceNoteTreeUri(uri: String?) { _voiceNoteTreeUri.value = uri }
     override suspend fun saveVoiceNoteBusinessDetectionEnabled(enabled: Boolean) { _voiceNoteBusinessDetectionEnabled.value = enabled }
     override suspend fun saveVoiceNoteBusinessTreeUri(uri: String?) { _voiceNoteBusinessTreeUri.value = uri }
+    override suspend fun saveVoiceNoteWatchedDetectionEnabled(enabled: Boolean) { _voiceNoteWatchedDetectionEnabled.value = enabled }
+    override suspend fun saveVoiceNoteWatchedTreeUri(uri: String?) { _voiceNoteWatchedTreeUri.value = uri }
     override suspend fun saveCompactResultActions(enabled: Boolean) { _compactResultActions.value = enabled }
     override suspend fun saveLanguageChipEnabled(enabled: Boolean) { _languageChipEnabled.value = enabled }
     override suspend fun saveExternalModelsJson(json: String) { _externalModelsJson.value = json }

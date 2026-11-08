@@ -41,7 +41,7 @@ import com.antivocale.app.service.ExtractionService
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.service.TranscriptionListener
 import com.antivocale.app.ui.viewmodel.LogEntry
-import com.antivocale.app.ui.components.countAwareString
+import com.antivocale.app.transcription.placeholderAwareString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -1843,11 +1843,9 @@ class TranscriptionOrchestrator @Inject constructor(
             entry = entry,
             preference = languagePref,
         )
-        val label = when (val d = entry.display) {
-            is CatalogDisplay.Resource -> context.countAwareString(
-                CatalogStringKeys.resolve(d.key), entry.titleCountArg())
-            is CatalogDisplay.Literal -> d.text
-        }
+        val label = entry.resourceTitlePair()
+            ?.let { (resId, args) -> context.placeholderAwareString(resId, args) }
+            ?: (entry.display as? CatalogDisplay.Literal)?.text.orEmpty()
         suspend fun loadOn(path: String): Result<Unit> = configureSherpaBackend(
             backendId = descriptor.backendId,
             modelPath = path,
@@ -2017,12 +2015,22 @@ class TranscriptionOrchestrator @Inject constructor(
         val refinePin = runCatching {
             preferencesManager.refinementModelBackendId.first()
         }.getOrDefault("").takeIf(String::isNotBlank)
+        // TASK-932 review F2: ONE accurate computation, the same shape the
+        // Settings gate resolves (the pin when set, the selected backend
+        // otherwise). The fast-id resolution excludes it, so the resolved
+        // arm can never equal the refinement target (GH #176); the policy's
+        // degenerate check stays as the final guard. The arm is supplied
+        // LAZY (its resolution walks every candidate's model dir on disk),
+        // so the policy's cheap conditions gate the probe and no copy of
+        // them can drift here (a future condition only ever lands in the
+        // policy).
+        val selectedBackendId = preferencesManager.transcriptionBackend.first()
         val fastId = DualRefinementPolicy.fastBackendFor(
             requestType = requestType,
             backendOverride = backendOverride,
             refinementEnabled = preferencesManager.refinementEnabled.first(),
-            selectedBackendId = preferencesManager.transcriptionBackend.first(),
-            streamingBackendId = installedStreamingBackendId(context),
+            selectedBackendId = selectedBackendId,
+            fastArm = { installedFastBackendId(context, refinePin ?: selectedBackendId) },
             refineOverride = refinePin,
         ) ?: return null
 
@@ -2318,11 +2326,16 @@ class TranscriptionOrchestrator @Inject constructor(
         )
     }
 
-    /** The installed streaming catalog entry id, when one resolves locally.
-     *  TASK-603 F3: delegates to the shared owner (Settings derives the
-     *  toggle's availability from the same probe). */
-    private suspend fun installedStreamingBackendId(context: Context): String? =
-        SherpaModelManager.installedStreamingEntryId(context)
+    /** The fast first-pass backend id (TASK-932: the streaming entry when
+     *  installed, else the smallest installed catalog entry besides
+     *  [excludeBackendId]), or null when no candidate resolves. TASK-603 F3:
+     *  delegates to the shared owner (Settings derives the toggle's
+     *  availability from the same probe). */
+    private suspend fun installedFastBackendId(
+        context: Context,
+        excludeBackendId: String?,
+    ): String? =
+        SherpaModelManager.installedFastEntryId(context, excludeBackendId)
 
     /** GH #43: nests the first pass's context and the skip verdict on the
      *  delivered row's (phase 2) context; a no-op for single-model runs. */

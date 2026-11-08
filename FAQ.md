@@ -67,6 +67,25 @@ To actually lock a language, switch to a model that supports it:
 
 This conclusion is measured, not assumed. The model's vocabulary does contain language control tokens, the exact mechanism other models use for forcing, so we ran the experiments before giving up ([what we tried](docs/research/parakeet-language-forcing.md)): priming the decoder with the control tokens in seven shapes, feeding it French text prompts, and prepending spoken French markers from a single "Bonjour." up to nine seconds of speech. None of it changes the language of what follows; only the acoustics of each segment do. Degrading clean French speech with growing noise, telephone-band filtering and echo never flips the language either: the model keeps transcribing French and only loses content words. If your audio still comes out wrong with a pinned model, sharing the file on the issue lets us test it against this setup directly.
 
+### Can I point the app at my own model catalog?
+
+Yes. The community catalog picker reads its index from a JSON URL, and the "change" action next to the catalog source points the app at any index you or your community host; restoring the official catalog is always one tap away. The index is a small file:
+
+```json
+{
+  "entries": [
+    { "name": "Arabic Whisper", "languages": ["ar"], "family": "WHISPER",
+      "entryUrl": "https://example.com/arabic-whisper.json" }
+  ]
+}
+```
+
+Each `entryUrl` serves a single-model manifest with integrity pins: name, family, languages, options, and a files list where every file carries its url, sha256 and size. The full schemas with worked examples live in [docs/external-models.md](docs/external-models.md) (the import formats and the entry JSON, hostable anywhere from a gist to a personal site) and in [docs/model-integration.md](docs/model-integration.md) (the index wrapper, section 2, and the single-model JSON, section 3).
+
+### Can I add my model to the in-app catalog?
+
+Yes, and the license is not a barrier: the catalog carries model metadata and download links, not the model binaries, so non-commercial licenses are fine (several catalog entries already carry them). What we do check is quality: the model must run on device via sherpa-onnx, transcribe its language measurably better than the multilingual alternatives already in the catalog (or fill a language gap), and carry pinned sha256 hashes so what the user downloads is what was tested. If you have a fine-tune that meets that bar, open an issue with a link to the model and its benchmark numbers; we will test it on a real device and, if it holds up, add the catalog entry and the pinned mirror. The full integration path is documented in [docs/model-integration.md](docs/model-integration.md).
+
 ## Queue and concurrent requests
 
 ### What happens if I share a second audio while one is transcribing?
@@ -150,6 +169,20 @@ This is the manufacturer's background restriction, not a bug in the transcriptio
 1. Open the app once after sharing: the frozen work resumes and the result arrives within seconds.
 2. Make the app exempt from battery optimization (Settings, or the card the app shows on affected devices). On the most aggressive builds this is not always enough.
 3. Turn on Settings, "Background transcription protection" ([#67](https://github.com/RisorseArtificiali/anti-vocale/pull/67)): the app plays an inaudible stream while a transcription runs, which these systems treat as active playback and stop freezing mid-work. It is off by default because it keeps the audio path awake for the duration of each transcription.
+
+### My downloaded model disappeared and the app asks me to download it again. Why?
+
+The app never deletes a downloaded model on its own, on a timer, or while it is idle. Every deletion path in the code is one of: you tapped delete, the app found the files corrupt or missing at load time and re-downloads them (the built-in default model recovers automatically this way), or an app update replaced the model directory with a newer version.
+
+If the model is simply gone (the card offers a fresh download, nothing else changed), the cause is almost always the phone's own storage cleaner. Several manufacturer skins run one in the background, and some of them delete files from apps' private storage, which Android otherwise guarantees to be untouchable except by the app itself. This was reproduced on a Realme (ColorOS) device: multi-gigabyte model files vanished overnight with no app update, no uninstall, and no deletion path ever executed by the app. Samsung's Device care "Storage Booster" is reported to do the same class of thing on some builds.
+
+### How do I stop my phone's cleaner from deleting the models?
+
+On ColorOS (Realme, OnePlus, OPPO), the storage cleaner has a per-app exemption list: open the system **Phone Manager**, go to storage cleanup, then **App cleanup**, and add Anti-Vocale to the apps exempt from cleanup. That list exists for exactly this purpose and needs no special tools. On the same phones, users who want the cleaner gone entirely have also removed the system storage manager (`com.oplus.athena`) via ADB or with an app like Canta plus Shizuku; that is a system-level modification and entirely your choice.
+
+On Samsung, the equivalent ("Storage Booster" under Battery and device care) has no user-visible off switch on the affected builds: keep an eye on the Device care storage settings after a One UI update, and re-download the model from the Models tab when it happens. An upcoming app update will detect the wipe and restore the download automatically.
+
+In all cases the fix for a wiped model is the same: open the Models tab and download it again. Nothing else in the app is affected; transcripts and settings are stored elsewhere and survive.
 
 ## Nightly builds
 

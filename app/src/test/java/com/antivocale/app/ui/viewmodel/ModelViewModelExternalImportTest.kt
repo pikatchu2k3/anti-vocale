@@ -19,11 +19,9 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -31,6 +29,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Unit tests proving the ModelViewModel import wrappers forward family, options and
@@ -47,9 +47,12 @@ import org.robolectric.RobolectricTestRunner
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @org.robolectric.annotation.Config(sdk = [34])
-class ModelViewModelExternalImportTest {
+class ModelViewModelExternalImportTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private lateinit var fakePrefs: FakePreferencesManager
     private lateinit var viewModel: ModelViewModel
     private lateinit var fakeImporter: RecordingImporter
@@ -87,6 +90,7 @@ class ModelViewModelExternalImportTest {
             streaming: Boolean,
             displayName: String?,
             linkedCatalog: com.antivocale.app.data.LinkedCatalogRef?,
+            licence: String?,
         ): ExternalModelRecord = throw UnsupportedOperationException("not used in this test")
 
         override suspend fun importFromTreeUri(
@@ -101,6 +105,13 @@ class ModelViewModelExternalImportTest {
 
         var statesAtCallbacks: List<ModelViewModel.ExternalImportState> = emptyList()
         var onProgressObserved: com.antivocale.app.data.ExternalImportProgress = { _, _, _, _, _ -> }
+
+        /** TASK-925: the canned .zip scan zipChildren forwards (the input
+         *  the Unknown-arm branch decides on). */
+        var nextZipChildren: List<Uri> = emptyList()
+
+        override suspend fun bundleZipChildren(context: Context, treeUri: Uri): List<Uri> =
+            nextZipChildren
 
         override suspend fun importFromUrl(
             url: String, modelType: String?, family: ModelFamily,
@@ -133,7 +144,7 @@ class ModelViewModelExternalImportTest {
             }
         }
         val sharedDemoter = com.antivocale.app.transcription.SilentModelDemoter(fakePrefs)
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = fakePrefs,
             activeModelRepository = ActiveModelRepository(fakePrefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
@@ -148,7 +159,7 @@ class ModelViewModelExternalImportTest {
             externalModelImporter = fakeImporter,
             litertLmUrlImporter = io.mockk.mockk(relaxed = true),
             externalCatalogRepository = io.mockk.mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
+            applicationScope = applicationScope,
             // TASK-675: real demoter over the same preferences.
             silentModelDemoter = sharedDemoter,
             modelActivator = com.antivocale.app.transcription.ModelActivator(
@@ -157,13 +168,22 @@ class ModelViewModelExternalImportTest {
                 externalModelStore = com.antivocale.app.data.ExternalModelStore(fakePrefs),
                 backendRegistry = staticRegistry(),
                 ),
-        )
+        ))
 
     }
 
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+    @Test
+    fun `zipChildren forwards the importer's scan for every list size (TASK-925)`() = runTest {
+        val ctx = mockk<Context>(relaxed = true)
+        val tree = Uri.parse("content://tree/xyz")
+        fakeImporter.nextZipChildren = emptyList()
+        assertEquals(emptyList<Uri>(), viewModel.zipChildren(ctx, tree))
+        val one = listOf(Uri.parse("content://tree/xyz/doc/a.zip"))
+        fakeImporter.nextZipChildren = one
+        assertEquals(one, viewModel.zipChildren(ctx, tree))
+        val two = one + Uri.parse("content://tree/xyz/doc/b.zip")
+        fakeImporter.nextZipChildren = two
+        assertEquals(two, viewModel.zipChildren(ctx, tree))
     }
 
     @Test

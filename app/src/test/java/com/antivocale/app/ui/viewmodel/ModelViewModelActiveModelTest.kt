@@ -14,14 +14,14 @@ import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Unit tests proving that a preference change propagates reactively into
@@ -45,9 +45,12 @@ import org.junit.Test
  * without Robolectric.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class ModelViewModelActiveModelTest {
+class ModelViewModelActiveModelTest : ViewModelTeardownTest() {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    // A field (not inline in setup) so the harness cancels it.
+    private val applicationScope = register(CoroutineScope(SupervisorJob()))
     private lateinit var fakePrefs: FakePreferencesManager
     private lateinit var viewModel: ModelViewModel
 
@@ -83,7 +86,7 @@ class ModelViewModelActiveModelTest {
         every { mockContext.applicationContext } returns mockContext
         com.antivocale.app.data.catalog.BundledCatalog.attach(mockContext)
         val sharedDemoter = com.antivocale.app.transcription.SilentModelDemoter(fakePrefs)
-        viewModel = ModelViewModel(
+        viewModel = register(ModelViewModel(
             preferencesManager = fakePrefs,
             activeModelRepository = ActiveModelRepository(fakePrefs, mockContext, staticRegistry(), FakeExternalRecordsProvider()),
             tokenManager = mockk(relaxed = true),
@@ -101,7 +104,7 @@ class ModelViewModelActiveModelTest {
             ),
             litertLmUrlImporter = io.mockk.mockk(relaxed = true),
             externalCatalogRepository = io.mockk.mockk(relaxed = true),
-            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
+            applicationScope = applicationScope,
             // TASK-675: real demoter over the same preferences.
             silentModelDemoter = sharedDemoter,
             modelActivator = com.antivocale.app.transcription.ModelActivator(
@@ -110,13 +113,11 @@ class ModelViewModelActiveModelTest {
                 externalModelStore = com.antivocale.app.data.ExternalModelStore(fakePrefs),
                 backendRegistry = staticRegistry(),
             ),
-        )
+        ))
 
     }
 
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+    override fun afterTeardown() {
         filesRoot.deleteRecursively()
     }
 

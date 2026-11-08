@@ -35,6 +35,9 @@ class TestSpiOpsTest {
         var lastUrl: String? = null,
         var lastFamily: ModelFamily? = null,
         var lastModelType: String? = null,
+        var lastDisplayName: String? = null,
+        var lastLicence: String? = null,
+        var lastStreaming: Boolean? = null,
         val answer: (String) -> ExternalModelRecord,
     ) : ExternalModelImportOperations {
         override suspend fun importFromDirectory(
@@ -46,6 +49,7 @@ class TestSpiOpsTest {
             streaming: Boolean,
             displayName: String?,
             linkedCatalog: com.antivocale.app.data.LinkedCatalogRef?,
+            licence: String?,
         ): ExternalModelRecord = throw UnsupportedOperationException("not used in this test")
 
         override suspend fun importFromTreeUri(
@@ -68,6 +72,26 @@ class TestSpiOpsTest {
             onProgress: com.antivocale.app.data.ExternalImportProgress,
         ): ExternalModelRecord {
             lastUrl = url
+            lastFamily = family
+            lastModelType = modelType
+            return answer("fromurl")
+        }
+
+        override suspend fun importFromUrlWithMetadata(
+            url: String,
+            displayName: String?,
+            licence: String?,
+            modelType: String?,
+            options: Map<String, String>,
+            family: ModelFamily,
+            languages: List<String>,
+            streaming: Boolean,
+            onProgress: com.antivocale.app.data.ExternalImportProgress,
+        ): ExternalModelRecord {
+            lastUrl = url
+            lastDisplayName = displayName
+            lastLicence = licence
+            lastStreaming = streaming
             lastFamily = family
             lastModelType = modelType
             return answer("fromurl")
@@ -243,6 +267,26 @@ class TestSpiOpsTest {
     }
 
     @Test
+    fun `set whats_new_version arms the popup and rejects negative values`() = runTest {
+        // TASK-929 device trial: the What's-New probe pops only when the
+        // stored versionCode differs from the running one; 0 is the arm
+        // value on purpose (the never-shown sentinel), unlike the strictly
+        // positive keys above.
+        JSONObject(ops.handle(TestSpiOps.OP_SET, key = "whats_new_version", value = "0"))
+        assertEquals(0, fake._whatsNewLastShownVersion.value)
+
+        JSONObject(ops.handle(TestSpiOps.OP_SET, key = "whats_new_version", value = "11500"))
+        assertEquals(11500, fake._whatsNewLastShownVersion.value)
+
+        for (bad in listOf("soon", "-1")) {
+            assertTrue(
+                JSONObject(ops.handle(TestSpiOps.OP_SET, key = "whats_new_version", value = bad))
+                    .getString("error").contains("whats_new_version"))
+        }
+        assertEquals("a rejected value must not overwrite the saved preference", 11500, fake._whatsNewLastShownVersion.value)
+    }
+
+    @Test
     fun `set provider writes through and rejects values the app would silently map to cpu`() = runTest {
         ops.handle(TestSpiOps.OP_SET, key = "provider", value = "nnapi")
         assertEquals("nnapi", fake._inferenceProvider.value)
@@ -405,6 +449,7 @@ class TestSpiOpsTest {
             "default_prompt" to "d",
             "summary_prompt" to "s", "external_catalog_url" to "https://x",
             "output_folder" to "", "keep_alive" to "5", "subtitle_timeout" to "5", "threads" to "4",
+            "whats_new_version" to "0",
             "backend" to "llm", "refinement_model" to "llm", "language" to "auto", "model_path" to "/m",
             "model_filter_language" to "it",
             "sherpa_path" to "/m", "transcript_export_format" to "SRT",
@@ -452,7 +497,7 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "unload", "voice_note_state", "model_download", "clear_orphaned", "search", "log", "log_read", "log_delete", "voice_note_watermark_reset", "voice_note_simulate", "notify_text", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "unload", "voice_note_state", "model_download", "clear_orphaned", "bundle_export", "bundle_import", "model_present", "search", "log", "log_read", "log_delete", "voice_note_watermark_reset", "voice_note_simulate", "notify_text", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
@@ -662,6 +707,63 @@ class TestSpiOpsTest {
         // would still be silently dropped by the entry.
         val json = JSONObject(ops.handle("import", url = "http://x/entry.json", family = "TRANSDUCER"))
         assertTrue(json.getString("error").contains("entry JSON"))
+    }
+
+    @Test
+    fun `import op forwards the schema-1 index metadata extras`() = runTest {
+        // TASK-912 parity: the entry/licence/streaming extras are the
+        // headless twin of the dialog's catalog pick (the streaming Fritter
+        // manifest NEEDS streaming=true here, exactly as its index entry
+        // authors it).
+        ops.handle(
+            "import",
+            url = "https://models.carrotcakeai.com/asr/fritter-streaming/latest/manifest.json",
+            entry = "Fritter Streaming English int8 (Nemotron 0.6B, CC-BY-NC)",
+            licence = "CC-BY-NC-4.0",
+            streaming = "true")
+        assertEquals("https://models.carrotcakeai.com/asr/fritter-streaming/latest/manifest.json",
+            fakeImporter.lastUrl)
+        assertEquals("Fritter Streaming English int8 (Nemotron 0.6B, CC-BY-NC)",
+            fakeImporter.lastDisplayName)
+        assertEquals("CC-BY-NC-4.0", fakeImporter.lastLicence)
+        assertEquals(true, fakeImporter.lastStreaming)
+        // Absent extras stay null/false: a plain url import is untouched.
+        ops.handle("import", url = "http://x/repo")
+        assertEquals(null, fakeImporter.lastDisplayName)
+        assertEquals(null, fakeImporter.lastLicence)
+        assertEquals(false, fakeImporter.lastStreaming)
+    }
+
+    @Test
+    fun `import op rejects a non-boolean streaming extra`() = runTest {
+        val json = JSONObject(ops.handle("import", url = "http://x/repo", streaming = "yes"))
+        assertTrue(json.getString("error").contains("streaming"))
+        assertNull(fakeImporter.lastUrl)
+    }
+
+    @Test
+    fun `import op without the streaming extra rejects a streaming manifest through the real importer`() = runTest {
+        // The REAL importer's bare gate (a streaming-named schema-1 manifest
+        // must come from a catalog entry authoring the flag) reachable
+        // headlessly: this is the SPI arm of the ExternalModelImporterTest
+        // pin, over a localhost server standing in for the CDN.
+        com.antivocale.app.data.LocalModelServer().use { server ->
+            val manifestUrl = server.serveSchema1Manifest(model = "fritter-streaming")
+            val realStore = ExternalModelStore(fake)
+            val realImporter = com.antivocale.app.data.ExternalModelImporter(
+                store = realStore,
+                filesRoot = { java.io.File("/tmp/av-spi-test-${System.currentTimeMillis()}") })
+            val realOps = TestSpiOps(fake, realStore, realImporter)
+            val bare = JSONObject(realOps.handle("import", url = manifestUrl))
+            assertTrue(bare.getString("error").contains("catalog entry"))
+            assertEquals(0, realStore.records().size)
+            // With the extra, the same op imports and the record carries the flag.
+            val json = JSONObject(realOps.handle(
+                "import", url = manifestUrl, streaming = "true",
+                entry = "Fritter Streaming English int8 (Nemotron 0.6B, CC-BY-NC)"))
+            assertFalse(json.has("error"))
+            assertEquals(true, json.getJSONObject("record").getBoolean("streaming"))
+        }
     }
 
     @Test

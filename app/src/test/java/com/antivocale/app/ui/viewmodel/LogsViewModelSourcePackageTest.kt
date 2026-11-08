@@ -5,14 +5,14 @@ import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.transcription.staticRegistry
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Before
 import org.junit.Test
 
@@ -21,22 +21,20 @@ import org.junit.Test
  * the sourcePackageName parameter through to the LogDao insert call.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class LogsViewModelSourcePackageTest {
+class LogsViewModelSourcePackageTest : ViewModelTeardownTest() {
 
     private lateinit var logDao: LogDao
     private lateinit var viewModel: LogsViewModel
     private val testDispatcher = StandardTestDispatcher()
 
+    // A field (not the constructor default) so the harness cancels it.
+    private val appScope = register(CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         logDao = mockk(relaxed = true)
-        viewModel = LogsViewModel(mockk(relaxed = true), logDao, stubPreferencesManager(), staticRegistry(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), orchestrator = io.mockk.mockk(relaxed = true), duplicateGuard = io.mockk.mockk(relaxed = true))
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
+        viewModel = register(LogsViewModel(mockk(relaxed = true), logDao, stubPreferencesManager(), staticRegistry(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), orchestrator = mockk(relaxed = true), duplicateGuard = mockk(relaxed = true), appScope = appScope))
     }
 
     @Test

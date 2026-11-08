@@ -128,4 +128,20 @@ class PreferencesManagerTest {
             PreferencesManager.defaultThreadCount(Runtime.getRuntime().availableProcessors()),
             PreferencesManager.DEFAULT_THREAD_COUNT)
     }
+
+    // TASK-939: the word-tap seek read-along gate ships off; users opt in.
+    @Test
+    fun `DEFAULT_WORD_TAP_SEEK is false`() {
+        assertFalse(PreferencesManager.DEFAULT_WORD_TAP_SEEK)
+    }
+
+    @Test
+    fun `the fake round-trips the word-tap seek gate`() = kotlinx.coroutines.test.runTest {
+        val fake = FakePreferencesManager()
+        assertFalse(fake.wordTapSeek.first())
+        fake.saveWordTapSeek(true)
+        assertTrue(fake.wordTapSeek.first())
+        fake.saveWordTapSeek(false)
+        assertFalse(fake.wordTapSeek.first())
+    }
 }

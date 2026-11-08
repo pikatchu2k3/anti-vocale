@@ -3,9 +3,12 @@ package com.antivocale.app.benchmark
 import android.content.Context
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BackendConfig
+import com.antivocale.app.transcription.BackendDescriptor
+import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.transcription.TranscriptionBackend
 import com.antivocale.app.transcription.TranscriptionResult
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.coVerifyOrder
 import kotlinx.coroutines.test.runTest
@@ -24,6 +27,14 @@ class BenchmarkManagerResidencyTest {
 
     private val context = mockk<Context>(relaxed = true)
     private val preferencesManager = mockk<PreferencesManager>(relaxed = true)
+    // A SPY of a real registry: name resolution runs the REAL
+    // resolveDisplayName derivation (byBackendId defaults to null ->
+    // raw displayName fallback, the pre-TASK-955 behavior the residency
+    // tests pin), while the busy-message test stubs one lookup.
+    private val backendRegistry = io.mockk.spyk(
+        BackendRegistry(mockk(relaxed = true), mockk(relaxed = true))) {
+        every { byBackendId(any()) } returns null
+    }
 
     private fun backend(ready: Boolean, busy: Boolean = false): TranscriptionBackend = mockk(relaxed = true) {
         io.mockk.every { id } returns "whisper"
@@ -40,7 +51,7 @@ class BenchmarkManagerResidencyTest {
         coEvery { backend.transcribeAudio(any(), any(), any()) } returns
             Result.success(TranscriptionResult(text = ""))
 
-        val manager = BenchmarkManager(context, preferencesManager)
+        val manager = BenchmarkManager(context, preferencesManager, backendRegistry)
         val result = manager.runBenchmark(backend, config)
 
         assertTrue(result.isSuccess)
@@ -61,7 +72,7 @@ class BenchmarkManagerResidencyTest {
         coEvery { backend.transcribeAudio(any(), any(), any()) } returns
             Result.success(TranscriptionResult(text = ""))
 
-        val manager = BenchmarkManager(context, preferencesManager)
+        val manager = BenchmarkManager(context, preferencesManager, backendRegistry)
         val result = manager.runBenchmark(backend, config)
 
         assertTrue(result.isSuccess)
@@ -79,7 +90,7 @@ class BenchmarkManagerResidencyTest {
         val config = BackendConfig.SherpaOnnxConfig(
             modelDir = "/models/whisper-b", modelType = "whisper", numThreads = 4)
 
-        val manager = BenchmarkManager(context, preferencesManager)
+        val manager = BenchmarkManager(context, preferencesManager, backendRegistry)
         val result = manager.runBenchmark(backend, config)
 
         assertTrue(result.isFailure)
@@ -87,5 +98,45 @@ class BenchmarkManagerResidencyTest {
         // recognizer stays untouched under the in-flight decode.
         io.mockk.verify(exactly = 0) { backend.unload() }
         coVerifyOrder(inverse = true) { backend.initialize(any(), any()) }
+    }
+
+    /**
+     * TASK-955: the busy-state message names the backend through the
+     * registry resolve, not the raw displayName literal. The registry's
+     * OTHER methods are stubbed but [BackendRegistry.resolveDisplayName]
+     * itself runs REAL (a descriptor whose name derives from the saved
+     * path, no Context resources involved), so the wiring the message
+     * depends on - lookup, path read, variantAwareDisplayName - is
+     * exercised, per the TASK-957 review's tautology note.
+     */
+    @Test
+    fun `busy message names the backend through the registry`() = runTest {
+        val descriptor = BackendDescriptor(
+            backendId = "sherpa-onnx",
+            shareAlias = "",
+            modelPathFlow = { kotlinx.coroutines.flow.flowOf("/models/whisper-b") },
+            saveModelPath = { _, _ -> },
+            clearModelPath = { _ -> },
+        )
+        coEvery { backendRegistry.byBackendId("whisper") } returns descriptor
+
+        val backend = backend(ready = true, busy = true)
+        val config = BackendConfig.SherpaOnnxConfig(
+            modelDir = "/models/whisper-b", modelType = "whisper", numThreads = 4)
+
+        // deriveDisplayName's default is the path's file name: the message
+        // must carry the DERIVED name as the resource ARG, proving the
+        // whole resolve ran (the English copy itself lives in the string
+        // resource now, TASK-958; the mock context hands it back verbatim).
+        io.mockk.every {
+            context.getString(com.antivocale.app.R.string.benchmark_busy, "whisper-b")
+        } returns "busy on whisper-b"
+        val manager = BenchmarkManager(context, preferencesManager, backendRegistry)
+        val result = manager.runBenchmark(backend, config)
+
+        assertTrue(result.isFailure)
+        assertEquals(
+            "busy on whisper-b",
+            result.exceptionOrNull()?.message)
     }
 }

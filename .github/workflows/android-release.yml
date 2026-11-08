@@ -87,6 +87,12 @@ jobs:
       - name: Check sherpa version sync (issue #38)
         run: ./scripts/check-sherpa-sync.sh
 
+      - name: Check model size claims match the catalog (TASK-923)
+        run: ./scripts/check-model-sizes.sh
+
+      - name: Check translation package freshness (TASK-950)
+        run: ./scripts/check-translation-package.sh
+
       - name: Fetch sherpa-onnx AAR
         run: ./scripts/fetch-sherpa-aar.sh
 
@@ -336,22 +342,36 @@ jobs:
           done
           ls test-apks/
 
-      # Test-sign ONLY the staged copies. A fresh debug keystore is generated
-      # on the fly: a test-signed build needs AN installable signature, not a
-      # stable identity, so per-run keys are fine. SIGNATURE CAVEAT (issue #32):
-      # these APKs are signed with a throwaway debug key, different from both
-      # the Play Store build and the F-Droid build. They will NOT install as an
-      # update over either; they install alongside (or require uninstalling the
-      # store version first). The "testsigned" asset name encodes this.
-      - name: Test-sign staged fdroid APKs with a fresh debug keystore
+      # Test-sign ONLY the staged copies. TASK-926 (GH #124 reopen): the
+      # keystore is now STABLE, pinned as the CI_TEST_KEYSTORE_BASE64 secret,
+      # so test-signed builds update in place over previous test-signed builds
+      # (the reporter's clean-install-every-release pain). SIGNATURE CAVEAT
+      # (issue #32): these APKs remain signed with a debug key, different
+      # from both the Play Store build and the F-Droid build. They will NOT
+      # install as an update over either store version; they install
+      # alongside (or require uninstalling the store version first). The
+      # "testsigned" asset name encodes this. When the secret is absent
+      # (first run, or a fork), the step falls back to a fresh key and the
+      # release notes carry the old caveat.
+      - name: Test-sign staged fdroid APKs with the stable CI debug keystore
         if: >-
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && (github.event.inputs.tag != '' || github.event.inputs.commit != ''))
+        env:
+          # Env mapping, never interpolated into the script text: the secret's
+          # bytes must not be able to break the step's shell quoting.
+          CI_TEST_KEYSTORE_BASE64: ${{ secrets.CI_TEST_KEYSTORE_BASE64 }}
         run: |
           set -eu
-          keytool -genkeypair -keystore debug.keystore -alias androiddebugkey \
-            -storepass android -keypass android -keyalg RSA -keysize 2048 \
-            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ -n "$CI_TEST_KEYSTORE_BASE64" ]; then
+            echo "Using the pinned CI test keystore (stable identity)"
+            printf '%s' "$CI_TEST_KEYSTORE_BASE64" | base64 -d > debug.keystore
+          else
+            echo "CI_TEST_KEYSTORE_BASE64 not set; falling back to a fresh key (this build will NOT update in place)"
+            keytool -genkeypair -keystore debug.keystore -alias androiddebugkey \
+              -storepass android -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
           # apksigner ships with the runner's Android SDK build-tools.
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           for ABI in armeabi-v7a arm64-v8a x86_64; do

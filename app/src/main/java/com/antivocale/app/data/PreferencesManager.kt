@@ -12,6 +12,15 @@ interface PreferencesManager {
     /** TASK-515: minutes the subtitles-or-transcribe choice waits before the
      *  timed WorkManager fallback transcribes automatically. */
     val subtitleChoiceTimeoutMinutes: Flow<Int>
+
+    /**
+     * TASK-929: the last versionCode the What's-New popup was shown (or
+     * acknowledged) for; 0 = never shown. The startup probe compares it to
+     * the running versionCode, and a fresh install records the running
+     * version, so only an UPDATE ever pops.
+     */
+    val whatsNewLastShownVersion: Flow<Int>
+    suspend fun saveWhatsNewLastShownVersion(versionCode: Int)
     val themePreference: Flow<String>
     /** TASK-576: app text-size step (TextScale name); SYSTEM = no extra scaling. */
     val textScalePreference: Flow<String>
@@ -162,6 +171,12 @@ interface PreferencesManager {
     val showRetranscribeButton: Flow<Boolean>
     /** TASK-800: show the Share… (format picker) button on result rows. */
     val advancedShareFormats: Flow<Boolean>
+    /**
+     * TASK-939: the word-tap seek read-along surface on expanded History
+     * rows. Off by default; while off the transcript stays plain text and
+     * taps only collapse, exactly as before TASK-928.
+     */
+    val wordTapSeek: Flow<Boolean>
     val memoryProtection: Flow<Boolean>
 
     /** TASK-274: consent gate for the exported automation receivers (Tasker surface). */
@@ -191,6 +206,19 @@ interface PreferencesManager {
      * Callers that work per source go through [VoiceNoteSource]'s accessors.
      */
     val voiceNoteBusinessDetectionEnabled: Flow<Boolean>
+
+    /**
+     * TASK-966: the same gate for the generic watched-folder source
+     * (a user-picked folder; Signal's Music/Signal among others),
+     * independent of the two WhatsApp gates. Off by default. Callers that
+     * work per source go through [VoiceNoteSource]'s accessors.
+     */
+    val voiceNoteWatchedDetectionEnabled: Flow<Boolean>
+    suspend fun saveVoiceNoteWatchedDetectionEnabled(enabled: Boolean)
+
+    /** TASK-966: the watched-folder source's SAF tree grant URI. */
+    val voiceNoteWatchedTreeUri: Flow<String?>
+    suspend fun saveVoiceNoteWatchedTreeUri(uri: String?)
 
     /**
      * TASK-681: the LAN-offload consent gate. Off by default; while off the
@@ -317,6 +345,9 @@ interface PreferencesManager {
     suspend fun saveAdvancedSharingEnabled(enabled: Boolean)
     suspend fun saveShowRetranscribeButton(enabled: Boolean)
     suspend fun saveAdvancedShareFormats(enabled: Boolean)
+
+    /** TASK-939: see [wordTapSeek]. */
+    suspend fun saveWordTapSeek(enabled: Boolean)
     suspend fun saveMemoryProtection(enabled: Boolean)
 
     /** TASK-274: see [externalAutomationEnabled]. */
@@ -425,6 +456,9 @@ interface PreferencesManager {
         /** TASK-515: the stored default; the dropdown's offered set is
          *  presentation data and lives on SettingsViewModel. */
         const val DEFAULT_SUBTITLE_CHOICE_TIMEOUT_MINUTES = 5
+
+        /** TASK-929: 0 = the What's-New popup has never fired. */
+        const val DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION = 0
         // TASK-102 (device-measured 2026-09-30, RMX3853, parakeet
         // smoothquant, 90s clip - ONE backend, ONE phone): 4 threads was
         // fastest (164 ms/s audio) vs 6 (170, the old cores-2 default on
@@ -496,6 +530,8 @@ interface PreferencesManager {
         const val DEFAULT_SHOW_TECHNICAL_DETAILS = false
         const val DEFAULT_ADVANCED_SHARING_ENABLED = false
         const val DEFAULT_SHOW_RETRANSCRIBE_BUTTON = true
+        /** TASK-939: the word-tap seek surface ships off; users opt in. */
+        const val DEFAULT_WORD_TAP_SEEK = false
         /** TASK-800 (GH #128 pt 3): the advanced Share… format picker on
          *  the result row; default OFF (the plain one-tap share is the
          *  reasonable default, the maintainer's UX direction). */

@@ -1,6 +1,7 @@
 package com.antivocale.app.data
 
 import android.util.Log
+import com.antivocale.app.data.download.ResumeDownloadHelper
 import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
@@ -18,11 +19,12 @@ import java.util.zip.ZipOutputStream
  * the existing validator, not a new trust mechanism.
  *
  * FORMAT (stable, versioned):
- *   manifest.json          { formatVersion, appVersion, name, family,
+ *   manifest.json          { formatVersion, appVersion, name, family?,
  *                            modelType, languages, files: {name: sha256},
  *                            streaming, options, catalogEntryId?,
  *                            catalogVariantDir? }
- *   files/<original name>  the model's files verbatim
+ *   files/<relative path>  the model's files verbatim (subdirectories
+ *                          preserved since TASK-924: qwen3's tokenizer/ tree)
  *
  * WHAT IT DOES NOT DO (deliberate):
  *  - no compression beyond zip STORE (the models are int8 ONNX, already
@@ -33,15 +35,21 @@ import java.util.zip.ZipOutputStream
 object ModelBundleCodec {
 
     private const val TAG = "ModelBundleCodec"
-    private const val FORMAT_VERSION = 1
+    // TASK-924 review R5: 2 = relative-path file entries (subdirectory
+    // trees) and the optional family. Older receivers accept only 1 and
+    // would mangle a v2 bundle's paths into flat names (a corruption
+    // error, not a version error); the range guard below is what hands
+    // them the honest message instead.
+    private const val FORMAT_VERSION = 2
     const val MANIFEST_ENTRY = "manifest.json"
     private const val FILES_PREFIX = "files/"
     private const val COPY_BUFFER = 128 * 1024
 
     /** Writes the bundle for [modelDir] to [out]; the caller owns closing. */
     fun export(modelDir: File, out: OutputStream, metadata: BundleMetadata) {
-        val files = modelDir.listFiles()?.sortedBy { it.name }
-            ?: throw IllegalArgumentException("empty model dir: $modelDir")
+        // The walk owns the readability contract for the whole tree; an
+        // empty dir produces a manifest-only bundle, as before.
+        val files = buildList { collectModelFiles(modelDir, "", this) }
         ZipOutputStream(out).use { zip ->
             // NO_COMPRESSION deflate: zip STORED would need size+crc up
             // front (a full extra pass over up-to-640MB files), while
@@ -49,9 +57,9 @@ object ModelBundleCodec {
             // cost as STORE - the models are dense int8 ONNX anyway.
             zip.setLevel(java.util.zip.Deflater.NO_COMPRESSION)
             val pins = JSONObject()
-            files.filter { it.isFile }.forEach { file ->
+            files.forEach { (file, relPath) ->
                 val digest = MessageDigest.getInstance("SHA-256")
-                zip.putNextEntry(ZipEntry(FILES_PREFIX + file.name))
+                zip.putNextEntry(ZipEntry(FILES_PREFIX + relPath))
                 file.inputStream().use { input ->
                     val buffer = ByteArray(COPY_BUFFER)
                     while (true) {
@@ -62,7 +70,7 @@ object ModelBundleCodec {
                     }
                 }
                 zip.closeEntry()
-                pins.put(file.name, digest.digest().joinToString("") { "%02x".format(it) })
+                pins.put(relPath, digest.digest().joinToString("") { "%02x".format(it) })
             }
             val manifest = JSONObject()
                 .put("formatVersion", FORMAT_VERSION)
@@ -80,9 +88,38 @@ object ModelBundleCodec {
             // catalog's).
             metadata.catalogEntryId?.let { manifest.put("catalogEntryId", it) }
             metadata.catalogVariantDir?.let { manifest.put("catalogVariantDir", it) }
+            // Optional licence (schema-1 era, 2026-11-07): omitted when the
+            // exporter carries none, so old readers never see a null key and
+            // old bundles simply read licence null.
+            metadata.licence?.let { manifest.put("licence", it) }
             zip.putNextEntry(ZipEntry(MANIFEST_ENTRY))
             zip.write(manifest.toString().toByteArray())
             zip.closeEntry()
+        }
+    }
+
+    /**
+     * TASK-924: depth-first walk preserving relative paths (qwen3 ships a
+     * tokenizer/ tree the old flat walk silently dropped). Sorted per level
+     * for stable bundles. The .size sidecars a completed download leaves
+     * beside its files are excluded: they are download bookkeeping
+     * ([ResumeDownloadHelper.SIZE_SIDECAR_SUFFIX]) the catalog never names,
+     * so a bundle carrying one could never match the catalog pins on the
+     * restore path.
+     */
+    private fun collectModelFiles(dir: File, prefix: String, out: MutableList<Pair<File, String>>) {
+        // One contract for the whole tree: an unreadable dir anywhere
+        // throws, because a bundle that silently skipped it would pin a
+        // partial file set and degrade the restore identity downstream.
+        val children = dir.listFiles()
+            ?: throw IllegalArgumentException("unreadable model dir: $dir")
+        for (child in children.sortedBy { it.name }) {
+            val relPath = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+            when {
+                child.isDirectory -> collectModelFiles(child, relPath, out)
+                child.name.endsWith(ResumeDownloadHelper.SIZE_SIDECAR_SUFFIX) -> {}
+                else -> out += child to relPath
+            }
         }
     }
 
@@ -108,10 +145,12 @@ object ModelBundleCodec {
                             manifest = zip.readBytes().toString(Charsets.UTF_8).let(::JSONObject)
                         }
                         entry.name.startsWith(FILES_PREFIX) && !entry.isDirectory -> {
-                            val name = entry.name.removePrefix(FILES_PREFIX)
-                                .replace("..", "").replace('/', '_')
+                            val name = validRelPath(entry.name.removePrefix(FILES_PREFIX))
                             val target = File(targetDir, name)
-                            File(target.parentFile, name).outputStream().use { out ->
+                            // Subdirectory entries recreate the tree (the
+                            // qwen3 tokenizer/ layout).
+                            target.parentFile?.mkdirs()
+                            target.outputStream().use { out ->
                                 val buffer = ByteArray(COPY_BUFFER)
                                 while (true) {
                                     val read = zip.read(buffer)
@@ -164,6 +203,20 @@ object ModelBundleCodec {
     }
 
     /**
+     * TASK-924: bundle entry names are filesystem paths now (they recreate
+     * the model tree), so the traversal forms are rejected outright at the
+     * boundary instead of the old flat-name mangling. Old bundles carry
+     * flat names only, so nothing legal changes.
+     */
+    private fun validRelPath(name: String): String {
+        require(name.isNotEmpty() && !name.startsWith('/')) { "unsafe bundle path: '$name'" }
+        require(name.split('/').none { it.isEmpty() || it == "." || it == ".." }) {
+            "unsafe bundle path: '$name'"
+        }
+        return name
+    }
+
+    /**
      * TASK-742 review F2: the import-side record params, parsed HERE (one
      * owner of the manifest vocabulary; the VM stays a 4-liner like its
      * sibling import entries). An unknown family fails LOUDLY at parse
@@ -183,9 +236,9 @@ object ModelBundleCodec {
      * The IMPORT family for a catalog modelType, or null when the type has
      * NO slot in the external-import taxonomy (qwen3_asr, the online
      * Nemotron's "", and the LLM are catalog/online-only architectures
-     * whose sherpa configs the ExternalSherpaBackend cannot build). The
-     * export button hides those; a hand-made bundle of one fails loudly
-     * here instead of dying at a misleading CTC subtype error.
+     * whose sherpa configs the ExternalSherpaBackend cannot build). TASK-924:
+     * such a bundle no longer stops at export; it rides the restore path and
+     * only the external fallback fails loudly here when nothing can land it.
      */
     fun importFamilyForModelType(modelType: String): ModelFamily? = when (modelType) {
         "whisper" -> ModelFamily.WHISPER
@@ -199,18 +252,29 @@ object ModelBundleCodec {
     }
 
     fun recordParams(manifest: JSONObject): RecordParams {
-        val familyName = manifest.optString("family").ifBlank { ModelFamily.TRANSDUCER.name }
-        val family = ModelFamily.entries.firstOrNull { it.name == familyName }
-            // Pre-fix bundles carry the catalog ARCHITECTURE vocabulary
-            // ("ENCODER_ONLY_CTC" etc); ONLY those known strings bridge by
-            // modelType (the round-trip device trial caught this) - a
-            // genuinely foreign family still fails loudly.
-            ?: if (familyName in ARCHITECTURE_FAMILIES) {
-                importFamilyForModelType(manifest.optString("modelType"))
-                    ?: throw IllegalArgumentException(
-                        "model type '${manifest.optString("modelType")}' has no import family; " +
-                            "this model cannot be transferred as an external import")
-            } else throw IllegalArgumentException("unknown model family '$familyName' in bundle")
+        val familyName = manifest.optString("family")
+        val family: ModelFamily? = when {
+            // TASK-924: a builtin-origin bundle may omit the family (the
+            // qwen3/streaming/LLM modelTypes have no import slot); the
+            // restore routing decides, the external fallback re-derives one
+            // from the modelType. Bundles WITHOUT a catalogEntryId keep the
+            // old blank->TRANSDUCER default (the hand-made manifest
+            // precedent).
+            familyName.isBlank() ->
+                if (manifest.optString("catalogEntryId").isBlank()) ModelFamily.TRANSDUCER
+                else null
+            else -> ModelFamily.entries.firstOrNull { it.name == familyName }
+                // Pre-fix bundles carry the catalog ARCHITECTURE vocabulary
+                // ("ENCODER_ONLY_CTC" etc); ONLY those known strings bridge by
+                // modelType (the round-trip device trial caught this) - a
+                // genuinely foreign family still fails loudly.
+                ?: if (familyName in ARCHITECTURE_FAMILIES) {
+                    importFamilyForModelType(manifest.optString("modelType"))
+                        ?: throw IllegalArgumentException(
+                            "model type '${manifest.optString("modelType")}' has no import family; " +
+                                "this model cannot be transferred as an external import")
+                } else throw IllegalArgumentException("unknown model family '$familyName' in bundle")
+        }
         val optionsJson = manifest.optJSONObject("options")
         val languagesJson = manifest.optJSONArray("languages")
         return RecordParams(
@@ -230,13 +294,17 @@ object ModelBundleCodec {
             languages = languagesJson?.let { a -> (0 until a.length()).map { a.getString(it) } }
                 ?: emptyList(),
             streaming = manifest.optBoolean("streaming", false),
+            licence = manifest.optString("licence").takeIf { it.isNotBlank() },
         )
     }
 
     data class RecordParams(
         val displayName: String?,
         val modelType: String?,
-        val family: ModelFamily,
+        /** Null only for a builtin-origin manifest that omits the family
+         *  (TASK-924): the restore arm needs none; the external fallback
+         *  re-derives one from the modelType or fails. */
+        val family: ModelFamily?,
         /** TASK-797: the built-in entry the bundle came from, when any. */
         val catalogEntryId: String? = null,
         /** TASK-801: the exporting variant's catalog dirName, when any
@@ -247,12 +315,18 @@ object ModelBundleCodec {
         val options: Map<String, String>,
         val languages: List<String>,
         val streaming: Boolean,
+        /** Optional licence carried by the bundle manifest (absent in
+         *  pre-schema-1 bundles: reads null). */
+        val licence: String? = null,
     )
 
     /** The export-side metadata, from the registry descriptor or record. */
     data class BundleMetadata(
         val displayName: String,
-        val family: String,
+        /** The IMPORT family when the modelType has an external slot; null
+         *  (omitted from the manifest) for a builtin origin whose type has
+         *  none (TASK-924): the receiving restore arm needs no family. */
+        val family: String?,
         val modelType: String,
         val languages: List<String>,
         val streaming: Boolean,
@@ -265,5 +339,8 @@ object ModelBundleCodec {
         val catalogEntryId: String? = null,
         /** The exported variant's catalog dirName; sibling of [catalogEntryId]. */
         val catalogVariantDir: String? = null,
+        /** Optional licence (schema-1 era): null (key omitted) for builtin
+         *  exports and any exporter that carries none. */
+        val licence: String? = null,
     )
 }

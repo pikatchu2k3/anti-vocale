@@ -3,8 +3,10 @@ package com.antivocale.app.benchmark
 import android.content.Context
 import android.os.Debug
 import android.util.Log
+import com.antivocale.app.R
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.transcription.BackendConfig
+import com.antivocale.app.transcription.BackendRegistry
 import com.antivocale.app.transcription.TranscriptionBackend
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -81,7 +83,8 @@ sealed class BenchmarkState {
 @Singleton
 class BenchmarkManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val preferencesManager: PreferencesManager
+    private val preferencesManager: PreferencesManager,
+    private val backendRegistry: BackendRegistry
 ) {
     companion object {
         private const val TAG = "BenchmarkManager"
@@ -116,7 +119,8 @@ class BenchmarkManager @Inject constructor(
             // matching-config case reuse the warm engine safely).
             if (backend.isBusy()) {
                 return Result.failure(IllegalStateException(
-                    "A transcription is running on ${backend.displayName}; benchmark it again when idle"))
+                    context.getString(
+                        R.string.benchmark_busy, displayNameFor(backend))))
             }
             if (backend.isReady()) {
                 Log.i(TAG, "Displacing warm backend ${backend.id} for an exact-config benchmark")
@@ -128,7 +132,8 @@ class BenchmarkManager @Inject constructor(
                 val initResult = backend.initialize(context, config)
                 if (initResult.isFailure) {
                     return Result.failure(initResult.exceptionOrNull()
-                        ?: Exception("Failed to initialize ${backend.displayName}"))
+                        ?: Exception(context.getString(
+                            R.string.benchmark_init_failed, displayNameFor(backend))))
                 }
 
                 onProgress(0.3f)
@@ -205,6 +210,19 @@ class BenchmarkManager @Inject constructor(
     suspend fun clearAllCachedResults() {
         preferencesManager.clearAllBenchmarkResults()
     }
+
+    /**
+     * User-visible backend name for the failure messages, resolved through
+     * the registry's ONE display-name resolve
+     * ([BackendRegistry.resolveDisplayName]) like every other surface
+     * (TASK-955): whistle and the fixed-label families get the localized,
+     * slotted name instead of the non-localized [TranscriptionBackend.displayName]
+     * literal. An unregistered id or a blank derivation keeps the raw
+     * displayName fallback.
+     */
+    private suspend fun displayNameFor(backend: TranscriptionBackend): String =
+        backendRegistry.resolveDisplayName(context, preferencesManager, backend.id)
+            .ifBlank { backend.displayName }
 
     private suspend fun saveResult(result: BenchmarkResult) {
         preferencesManager.saveBenchmarkResult(result.modelId, result.toJson())
