@@ -19,6 +19,7 @@
     <string name="advanced_sharing_toggle">ダウンロード済みのモデルを表示</string>
     <string name="app_icon">%1$s アイコン</string>
     <string name="app_icon_note">切り替えると、一部のランチャーでアイコンが一時的に非表示になる場合があります。ストアの掲載情報は既定のアイコンのままです。</string>
+    <string name="app_icon_scope_note">バリアントはランチャーアイコンにのみ適用されます。通知と共有シートには既定のアプリアイコンが引き続き使われます。</string>
     <string name="app_icon_title">アプリアイコン</string>
     <string name="app_icon_variant_capsule">壊れたボイスメモ</string>
     <string name="app_icon_variant_crossed">交差する波形</string>
@@ -50,17 +51,22 @@
     <string name="back">戻る</string>
     <string name="backend_model_not_found">%1$s モデルが見つかりません</string>
     <string name="backend_model_ready">%1$s 準備完了</string>
+    <string name="batch_enqueued">%1$d 件のファイルを文字起こし対象に選択しました</string>
     <string name="battery_exemption_action">設定を開く</string>
     <string name="battery_exemption_description">アプリがバックグラウンドにある間にシステムが認識を停止しました。認識が中断されないよう、Anti-Vocale がバックグラウンドで動作することを許可してください。</string>
     <string name="battery_exemption_title">バックグラウンド動作を許可</string>
+    <string name="benchmark_busy">%1$s で文字起こしを実行中です。待機中になってから、もう一度ベンチマークを実行してください</string>
     <string name="benchmark_button">ベンチマーク</string>
     <string name="benchmark_cached_result">前回のベンチマーク: %1$s</string>
     <string name="benchmark_cancel">キャンセル</string>
     <string name="benchmark_disclaimer">結果は端末の負荷や温度によって変わる場合があります。</string>
     <string name="benchmark_duration_label">サンプル時間</string>
     <string name="benchmark_duration_value">%1$.0f 秒</string>
+    <string name="benchmark_failed">ベンチマークに失敗しました</string>
+    <string name="benchmark_init_failed">%1$s の初期化に失敗しました</string>
     <string name="benchmark_memory_label">ピークメモリ</string>
     <string name="benchmark_memory_value">%1$.0f MB</string>
+    <string name="benchmark_model_folder_missing">%1$s のモデルフォルダが見つかりません</string>
     <string name="benchmark_preparing">ベンチマークを準備中…</string>
     <string name="benchmark_progress">%1$d%% 完了</string>
     <string name="benchmark_provider_label">プロバイダ</string>
@@ -79,7 +85,11 @@
     <string name="benchmark_title">%1$s のベンチマーク</string>
     <string name="best_italian_badge">イタリア語で最高</string>
     <string name="browse_audio_content_description">文字起こしする音声ファイルを選択</string>
+    <string name="benchmark_unknown_backend">不明なバックエンド: %1$s</string>
     <string name="builtin_default_prompt">この音声を文字起こししてください: (内蔵の既定値)</string>
+    <string name="bundle_restore_download_active">このモデルのダウンロードが進行中です。完了するかキャンセルするまで待ってから、もう一度バンドルをインポートしてください。</string>
+    <string name="bundle_restore_unsupported">このバンドルのモデルは、より新しいバージョンのアプリで作成されたため、この端末では復元できません。</string>
+    <string name="bundle_restored_builtin">%1$s を復元しました</string>
     <string name="cancel_download">ダウンロードをキャンセル</string>
     <string name="cancel_extract">展開をキャンセル</string>
     <string name="cannot_unload_during_transcription">アンロードできません: モデルは文字起こし中です</string>
@@ -227,6 +237,8 @@
     <string name="external_automation_description">他のアプリ (Tasker など) が自動化APIで文字起こしを開始できるようにします。初期状態はオフです。</string>
     <string name="external_automation_disabled">外部自動化は無効です。設定 &gt; 詳細設定 &gt; 外部自動化で有効にしてください。</string>
     <string name="external_automation_title">外部自動化 (Tasker)</string>
+    <string name="external_bundles_pick_subtitle">インポートするものを選択してください</string>
+    <string name="external_bundles_pick_title">複数のバンドルが見つかりました</string>
     <string name="external_catalog_all">すべての言語</string>
     <string name="external_catalog_apply">適用</string>
     <string name="external_catalog_change">変更</string>
@@ -387,6 +399,7 @@
     <string name="logs_original_label">元のテキスト（句読点付与前）：</string>
     <string name="logs_prompt_label">プロンプト：</string>
     <string name="logs_result_label">結果：</string>
+    <string name="logs_search_mode_similar">類似する語を含める</string>
     <string name="logs_search_no_results">一致する項目がありません</string>
     <string name="logs_search_no_results_hint">別の検索語を試してください</string>
     <string name="logs_search_placeholder">項目を検索…</string>
@@ -432,6 +445,7 @@
     <string name="model_desc_gemma_3n_e4b">4.2GB - マルチモーダル（テキスト＋音声）、高品質</string>
     <string name="model_desc_gemma_4_e2b">2.6GB - マルチモーダル（テキスト＋音声）、最新世代、ほとんどの端末に最適</string>
     <string name="model_desc_gemma_4_e4b">3.7GB - マルチモーダル（テキスト＋音声）、最新世代、高品質</string>
+    <string name="model_download_restore_active">このモデルの復元が進行中です。完了するまで待ってから、もう一度ダウンロードしてください。</string>
     <string name="model_externally_loaded">モデル準備完了（外部から読み込み）</string>
     <string name="model_file_not_found">モデルファイルが見つかりません：%1$s</string>
     <string name="model_fit_no_fit">このモデルはこの端末では動作しない可能性が高いです：空きRAMがモデルの必要量を下回っています。</string>
@@ -663,6 +677,8 @@
     <string name="qwen3_asr_title">Qwen3-ASR（%1$d言語）</string>
     <string name="recommended">おすすめ</string>
     <string name="refinement_description">高速モデルで即時プレビューを表示し、選択したモデルでバックグラウンドで精度を高めます</string>
+    <string name="refinement_description_dynamic">%1$s で即時プレビューを表示し、バックグラウンドで %2$s により精度を高めます</string>
+    <string name="refinement_locked_reason">2段階の文字起こしを有効にするには、2つ目のモデルをダウンロードしてください</string>
     <string name="refinement_title">2段階の文字起こし</string>
     <string name="refining_status">%1$sで精度を高め中…</string>
     <string name="remote_offload_description">長時間または負荷の大きい文字起こしを、Wi-Fiネットワーク上の自前のOmniVoiceサーバーに委任します。有効にしたら、モデルタブで選択してください。</string>
@@ -918,6 +934,7 @@
     <string name="transcript_capped_autosave_saved">全文をフォルダに自動保存しました</string>
     <string name="transcript_export_format_description">自動保存フォルダに保存されるファイルの形式です。タイムスタンプ付き形式は、文字起こしでタイミング情報が生成された場合にのみ書き出されます。</string>
     <string name="transcript_export_format_srt">SRT 字幕(実験的)</string>
+    <string name="transcript_export_format_srt_word">単語タイミング付き SRT 字幕(実験的)</string>
     <string name="transcript_export_format_title">自動保存ファイルの形式</string>
     <string name="transcript_export_format_txt">プレーンテキスト</string>
     <string name="transcript_export_format_txt_timed">タイムスタンプ付きテキスト(実験的)</string>
@@ -962,6 +979,8 @@
     <string name="voice_note_identity_title">音声メモの送信者認識</string>
     <string name="warn_reset_stats_during_transcription">認識処理中です。統計は保持されますが、時間データが不完全になる場合があります。</string>
     <string name="warning_repetition_suspected">この文字起こしに繰り返しループの可能性があります。テキストを確認してください。</string>
+    <string name="whats_new_summary">このバージョンのリリースノート</string>
+    <string name="whats_new_title">新機能</string>
     <string name="whisper_deleted">%1$s を削除しました</string>
     <string name="whisper_description">多言語音声認識</string>
     <string name="whisper_distil_large_v3_description">約 %1$dMB • デコーダ2層 • 最速 • イタリア語に最適化</string>
@@ -979,6 +998,8 @@
     <string name="whisper_title">Whisper</string>
     <string name="whisper_turbo_description">約 %1$dMB • large-v3 に近い品質 • バランスの取れた多言語対応</string>
     <string name="whisper_turbo_title">Whisper Turbo</string>
+    <string name="word_tap_seek_description">展開した文字起こしで単語をタップすると、音声の再生位置がその単語に移動します。既定ではオフです。</string>
+    <string name="word_tap_seek_title">単語をタップして移動</string>
     <string name="yesterday">%1$s の昨日</string>
     <string name="yesterday_label">昨日</string>
     <plurals name="conversation_group_count">
@@ -1062,9 +1083,12 @@
     <string name="settings_advanced_reveal">詳細オプション（%1$d）</string>
     <string name="share_format_no_cues">この項目にはタイムスタンプが保存されていないため、タイムスタンプ付きの形式を選んでもプレーンテキストで共有されます。</string>
     <string name="share_format_srt">字幕（.srt）</string>
+    <string name="share_format_srt_word">単語タイミング付き字幕（.srt）</string>
     <string name="share_format_timed">タイムスタンプ付きテキスト</string>
     <string name="share_format_title">共有形式</string>
     <string name="share_format_txt">プレーンテキスト</string>
+    <string name="share_format_txt_file_audio_name">音声ファイル名と同じ名前のテキストファイル（%1$s）</string>
+    <string name="share_format_txt_file_audio_name_date">音声ファイル名に日付を付けたテキストファイル（%1$s）</string>
     <string name="share_format_vtt">WebVTT（.vtt）</string>
     <string name="share_transcription_more">共有…</string>
     <string name="variant_more_actions">その他の操作</string>
@@ -1089,6 +1113,12 @@
     <string name="voice_note_settings_summary_off">WhatsAppボイスメッセージの自動文字起こし · オフ</string>
     <string name="voice_note_settings_summary_on">WhatsAppボイスメッセージの自動文字起こし · オン</string>
     <string name="voice_note_settings_title">ボイスメッセージ</string>
+    <string name="voice_note_source_watched_folder">監視フォルダ</string>
+    <string name="voice_note_watched_detection_description">ファイルマネージャーで表示できるフォルダに音声メモを保存するアプリ（たとえば Music/Signal に保存する Signal など）向けの機能です。オンにしてそのフォルダを一度選択すると、そこに追加された新しい音声ファイルが届いた順に文字起こしされます。各ファイルは文字起こしのためにのみ、この端末上で読み取られます。機能をオフにしている間は何も読み取られません。音声へのアクセス権限が必要です。</string>
+    <string name="voice_note_watched_folder_card_desc">音声メモを読み取るには、他のアプリが保存先にしているフォルダ（この端末のストレージ内の任意のフォルダ）へのアクセスを一度だけ許可してください:</string>
+    <string name="voice_note_watched_folder_grant_rejected">このフォルダは監視できません。この端末のストレージ内のフォルダを選択してください（ストレージのルートと、専用の設定がある WhatsApp のフォルダは選べません）。</string>
+    <string name="voice_note_watched_folder_sheet_step2">他のアプリが音声メモを保存するフォルダ（例: Music › Signal）を開いてください:</string>
+    <string name="voice_note_watched_folder_sheet_step3">そのフォルダを選択した状態で（開かずに）、「このフォルダを使用」をタップし、続けて「許可」をタップします。</string>
     <plurals name="folder_watch_period_value">
         <item quantity="other">%1$d 時間ごと</item>
     </plurals>
@@ -1134,6 +1164,7 @@
     <string name="error_model_missing_sibling">一部のモデルファイルが見つからなかったため、そのバリアントを削除し、端末にある既存のコピーに切り替えました。ダウンロードは不要です。</string>
     <string name="history_db_recovered">履歴データベースが破損したためリセットされました。以前の文字起こしはバックアップファイルに保存されています。</string>
     <string name="history_db_recovered_unpreserved">履歴データベースが破損したためリセットされました。破損したファイルは保存できませんでした。</string>
+    <string name="history_variant_switched">インストール済みの別のコピーに切り替えました（選択したコピーが破損していました）</string>
     <string name="voice_note_business_detection_description">新しいWhatsApp Businessのボイスメモが届くと、アプリの実行中に自動で文字起こしします。Androidがバックグラウンド起動をブロックした場合は、通知を1回タップすると開始します。メモは文字起こしのためだけにこの端末上で読み取られ、オフの間は何も読み取りません。音声へのアクセス権が必要です。</string>
     <string name="voice_note_business_folder_card_desc">メモを読み取るには、WhatsApp Businessがメモを保存しているフォルダへのアクセスを一度許可してください。</string>
     <string name="voice_note_business_folder_grant_rejected">これはWhatsApp Businessのボイスメモフォルダではありません。「WhatsApp Business Voice Notes」という名前のフォルダを選んで、もう一度お試しください。</string>

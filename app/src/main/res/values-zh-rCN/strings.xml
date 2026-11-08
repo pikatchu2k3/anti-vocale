@@ -35,6 +35,7 @@
     <string name="device_incompatible_ram">此设备的内存可能不足以运行设备端 AI 模型。</string>
     <string name="model_unloaded">模型已卸载</string>
     <string name="model_auto_unloaded">模型因长时间未使用已自动卸载</string>
+    <string name="model_download_restore_active">此模型正在恢复中。请等待完成后再重新下载。</string>
     <string name="model_externally_loaded">模型已就绪（由外部加载）</string>
     <string name="model_deleted_status">模型已删除</string>
     <string name="downloaded_model_selected">已选择下载的模型</string>
@@ -82,6 +83,7 @@
     <string name="logs_model_label">模型：%1$s</string>
     <string name="logs_transcription_cancelled">转写已取消</string>
     <string name="logs_search_placeholder">搜索记录…</string>
+    <string name="logs_search_mode_similar">包含相近词</string>
     <string name="logs_search_no_results">没有匹配的记录</string>
     <string name="logs_search_no_results_hint">请尝试其他搜索词</string>
     <string name="browse_audio_content_description">选择要转写的音频文件</string>
@@ -110,6 +112,8 @@
     <string name="error_folder_not_writable">此文件夹无法接收文件。请选择设备存储中的文件夹（而不是“下载”的近期视图）。</string>
     <string name="language_phone_option">手机语言（%1$s）</string>
     <string name="today">今天</string>
+    <string name="word_tap_seek_description">在展开的转写文本中，点按某个词会将音频播放跳转到该词。默认关闭。</string>
+    <string name="word_tap_seek_title">点按词语跳转</string>
     <string name="yesterday">昨天，%1$s</string>
     <string name="yesterday_label">昨天</string>
     <string name="time_seconds_ago">%1$d 秒前</string>
@@ -319,6 +323,9 @@
     <string name="best_italian_badge">意大利语最佳</string>
     <string name="downloading">正在下载…</string>
     <string name="connecting_to_huggingface">正在连接 HuggingFace…</string>
+    <string name="bundle_restore_download_active">此模型仍在下载中。请等待完成或取消下载，然后再次导入该模型包。</string>
+    <string name="bundle_restore_unsupported">此模型包来自更新版本的应用，无法在此设备上恢复。</string>
+    <string name="bundle_restored_builtin">已恢复 %1$s</string>
     <string name="cancel_download">取消下载</string>
     <string name="cancel_extract">取消解压</string>
     <string name="extract_model">解压</string>
@@ -524,6 +531,7 @@
     <string name="theme_telegram">Telegram</string>
     <string name="app_icon_title">应用图标</string>
     <string name="app_icon_note">在某些启动器上切换可能短暂隐藏图标；商店列表保留默认图标。</string>
+    <string name="app_icon_scope_note">变体仅应用于启动器图标；通知和分享面板保留默认应用图标。</string>
     <string name="app_icon_variant_default">默认</string>
     <string name="app_icon_variant_wavecut">中断的波形</string>
     <string name="app_icon_variant_crossed">交叉波形</string>
@@ -600,6 +608,8 @@
     <string name="parakeet_downloaded">Parakeet 模型下载成功</string>
     <string name="whisper_downloaded">%1$s 下载成功</string>
     <string name="parakeet_deleted">Parakeet 模型已删除</string>
+    <string name="whats_new_summary">此版本的发行说明</string>
+    <string name="whats_new_title">新功能</string>
     <string name="whisper_deleted">%1$s 已删除</string>
     <string name="speed_comparison_title">速度对比</string>
     <string name="speed_comparison_subtitle">典型语音消息上的相对性能（CPU）</string>
@@ -725,6 +735,11 @@
     <string name="benchmark_rating_moderate">中等</string>
     <string name="benchmark_rating_slow">慢</string>
     <string name="benchmark_disclaimer">结果可能因设备负载和温度而异。</string>
+    <string name="benchmark_busy">%1$s 正在转写；请在空闲时再次运行基准测试</string>
+    <string name="benchmark_failed">基准测试失败</string>
+    <string name="benchmark_init_failed">初始化 %1$s 失败</string>
+    <string name="benchmark_model_folder_missing">缺少 %1$s 的模型文件夹</string>
+    <string name="benchmark_unknown_backend">未知后端：%1$s</string>
     <string name="benchmark_button">基准测试</string>
     <string name="benchmark_cached_result">上次基准测试：%1$s</string>
     <string name="benchmark_provider_label">提供程序</string>
@@ -796,6 +811,8 @@
     <string name="external_imported">已导入 %1$s</string>
     <string name="external_delete_confirm">删除外部模型 %1$s？</string>
     <string name="external_deleted">%1$s 已删除</string>
+    <string name="external_bundles_pick_subtitle">选择要导入的一项</string>
+    <string name="external_bundles_pick_title">找到多个模型包</string>
     <string name="external_catalog_all">所有语言</string>
     <string name="external_catalog_dialog_title">从目录导入</string>
     <string name="external_catalog_loading">正在加载目录…</string>
@@ -864,6 +881,7 @@
     <string name="logs_subtitle_sourced">来自字幕（未转写）</string>
     <string name="battery_exemption_title">允许后台运行</string>
     <string name="battery_exemption_description">应用在后台时系统停止了识别。允许 Anti-Vocale 忽略电池优化以防再次发生。</string>
+    <string name="batch_enqueued">已选择 %1$d 个文件进行转写</string>
     <string name="battery_exemption_action">打开设置</string>
     <string name="suspension_notification_title">转写已暂停</string>
     <string name="suspension_notification_text">系统在转写期间暂停了应用 %1$s，因此未能完成。</string>
@@ -894,6 +912,7 @@
     <string name="transcript_export_format_txt">纯文本</string>
     <string name="transcript_export_format_txt_timed">带时间戳的文本（实验性）</string>
     <string name="transcript_export_format_srt">SRT 字幕（实验性）</string>
+    <string name="transcript_export_format_srt_word">逐词时间 SRT 字幕（实验性）</string>
     <string name="transcript_export_format_vtt">WebVTT 字幕（实验性）</string>
     <string name="partial_transcript_label">部分转写</string>
     <string name="decoded_of_total">已解码 %1$s / %2$s</string>
@@ -945,6 +964,8 @@
     <string name="speaker_id_error_model">说话人模型下载失败。请检查网络后重试。</string>
     <string name="transcription_not_refined">未精修（即时预览）</string>
     <string name="transcription_refined_from">精修自 %1$s</string>
+    <string name="refinement_description_dynamic">先用 %1$s 流式输出即时预览，再在后台用 %2$s 精修</string>
+    <string name="refinement_locked_reason">下载第二个模型以启用两遍转写</string>
     <string name="refinement_title">两遍转写</string>
     <string name="refinement_description">用快速模型流式输出即时预览，然后用所选模型精修。</string>
     <string name="language_chip_setting_note">只有 Whisper 和 SenseVoice 模型能检测语言。</string>
@@ -1062,9 +1083,12 @@
     <string name="settings_advanced_reveal">高级选项（%1$d）</string>
     <string name="share_format_no_cues">此条目没有存储时间戳；带时间戳的选项将以纯文本分享。</string>
     <string name="share_format_srt">字幕 (.srt)</string>
+    <string name="share_format_srt_word">逐词时间字幕 (.srt)</string>
     <string name="share_format_timed">带时间戳的文本</string>
     <string name="share_format_title">分享为</string>
     <string name="share_format_txt">纯文本</string>
+    <string name="share_format_txt_file_audio_name">以音频命名的文本文件（%1$s）</string>
+    <string name="share_format_txt_file_audio_name_date">以音频命名并带日期的文本文件（%1$s）</string>
     <string name="share_format_vtt">WebVTT (.vtt)</string>
     <string name="share_transcription_more">分享…</string>
     <string name="variant_more_actions">更多操作</string>
@@ -1089,6 +1113,12 @@
     <string name="voice_note_settings_summary_off">自动转录 WhatsApp 语音消息 · 关闭</string>
     <string name="voice_note_settings_summary_on">自动转录 WhatsApp 语音消息 · 开启</string>
     <string name="voice_note_settings_title">语音消息</string>
+    <string name="voice_note_source_watched_folder">监视的文件夹</string>
+    <string name="voice_note_watched_detection_description">适用于任何把语音笔记保存到文件管理器中可见文件夹的应用（例如 Signal，它保存到 Music/Signal）：开启后一次性选择该文件夹，新放入的音频文件会在到达时被转写。每个文件仅为转写而读取，且只在本设备上进行；功能关闭时不会读取任何内容。需要音频访问权限。</string>
+    <string name="voice_note_watched_folder_card_desc">要读取这些笔记，请一次性授予对其他应用保存语音笔记所在文件夹（本设备存储中的任意文件夹）的访问权限：</string>
+    <string name="voice_note_watched_folder_grant_rejected">无法监视该文件夹。请选择本设备存储中的文件夹（不能是存储根目录，也不能是 WhatsApp 文件夹，它们有各自的设置部分）。</string>
+    <string name="voice_note_watched_folder_sheet_step2">打开其他应用保存语音笔记的文件夹（例如 Music › Signal）：</string>
+    <string name="voice_note_watched_folder_sheet_step3">选中该文件夹后（不要打开），点按“使用此文件夹”，然后点按“允许”。</string>
     <plurals name="folder_watch_period_value">
         <item quantity="other">每 %1$d 小时</item>
     </plurals>
@@ -1134,6 +1164,7 @@
     <string name="error_model_missing_sibling">部分模型文件缺失，因此应用已移除该变体并切换到设备上已有的副本。无需下载。</string>
     <string name="history_db_recovered">历史记录数据库已损坏并被重置。之前的转写内容已保存在备份文件中。</string>
     <string name="history_db_recovered_unpreserved">历史记录数据库已损坏并被重置。损坏的文件无法保留。</string>
+    <string name="history_variant_switched">已切换到另一个已安装的副本（所选副本已损坏）</string>
     <string name="voice_note_business_detection_description">当新的 WhatsApp Business 语音消息到达时，应用会在运行期间自动转写。如果 Android 阻止后台启动，点一下通知即可开始。语音消息仅在本设备上为转写而读取；关闭时不会读取任何内容。需要音频访问权限。</string>
     <string name="voice_note_business_folder_card_desc">要读取语音消息，请先授予 WhatsApp Business 保存语音消息的文件夹的访问权限：</string>
     <string name="voice_note_business_folder_grant_rejected">这不是 WhatsApp Business 语音消息文件夹。请选择名为 WhatsApp Business Voice Notes 的文件夹并重试。</string>
