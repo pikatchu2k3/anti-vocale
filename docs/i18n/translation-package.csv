@@ -1072,8 +1072,8 @@ model_switched_title,Model switched,plain,
 model_switched_message,Active model: %1$s,formatted,keep verbatim: ['%1$s']
 model_switch_failed,Could not switch: the model is not on the device,plain,
 model_shortcut_switch_label,Switch to %1$s,formatted,keep verbatim: ['%1$s']
-folder_watch_title,Scheduled folder watch,plain,
-folder_watch_description,"Watches folders you choose and transcribes new audio files automatically. Scans run on a schedule the system allows; aggressive battery savers may delay them, and the manual scan always works.",plain,
+folder_watch_title,Folder watch,plain,
+folder_watch_description,"Watches folders you choose and transcribes audio files saved there right away: the system wakes the app only when a new audio file is saved, nothing runs in the background meanwhile. Files already in a folder when you add it are skipped. The scheduled scan is a safety net, and the manual scan always works.",plain,
 folder_watch_add,Watch a folder,plain,
 folder_watch_empty,No folders watched yet.,plain,
 folder_watch_scan_now,Scan now,plain,
