@@ -18,6 +18,11 @@ class BackupSettingsKeysTest {
     /** Keys deliberately excluded from the backup, with the reason class. */
     private val excluded = mapOf(
         "output_folder_uri" to "device-bound (per-install SAF grant)",
+            // TASK-994 knob: the archive codec carries no Float tag and a
+            // String restore under the same key name poisons the float
+            // reader (DataStore keys match by name); re-setting the slider
+            // is one gesture, a launch-crash loop is not worth it.
+            "biasing_score" to "float-typed pref; the backup codec has no Float tag",
         "voice_note_tree_uri" to "device-bound (per-install SAF grant)",
         "voice_note_business_tree_uri" to "device-bound (per-install SAF grant)",
         "voice_note_watched_tree_uri" to "device-bound (per-install SAF grant)",
@@ -43,6 +48,9 @@ class BackupSettingsKeysTest {
         "partial_transcription_text" to "transient",
         "partial_transcription_timestamp" to "transient",
         "pending_backend_load" to "transient",
+        "wiped_repair_captured_active" to "transient (TASK-963 in-flight repair snapshot)",
+        "wiped_repair_captured_pin" to "transient (TASK-963 in-flight repair snapshot)",
+        "wiped_repair_dead_sources" to "transient (TASK-973 dead-source marker, recomputed by the next repair)",
         "keep_alive_timeout" to "legacy (v2 superseded it)",
         "\$SHERPA_MODEL_PATH_PREFIX\$entryId" to "template pattern (per-entry derived key)",
         "remote_omnivoice_endpoint" to "secret-adjacent config",

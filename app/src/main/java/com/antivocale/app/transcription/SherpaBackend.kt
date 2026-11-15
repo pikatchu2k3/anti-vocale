@@ -7,6 +7,7 @@ import com.antivocale.app.data.catalog.BundledCatalog
 import com.antivocale.app.data.catalog.CatalogEntry
 import com.antivocale.app.data.catalog.CatalogVariant
 import com.antivocale.app.data.download.CatalogModelValidator
+import com.antivocale.app.data.download.PinHeals
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineQwen3AsrModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
@@ -25,6 +26,7 @@ import com.antivocale.app.util.NativeKeepAlive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -46,9 +48,28 @@ import java.io.File
  */
 class SherpaBackend(
     val entryId: String,
+    /** TASK-994: the personal dictionary feeds the per-family biasing
+     *  surfaces (Qwen3's stream hotwords first; request-time reads, the
+     *  whistle TASK-858 pattern). */
+    private val preferences: PreferencesManager,
 ) : TranscriptionBackend {
 
     companion object {
+        /**
+         * TASK-994: the hotwords head's share of qwen3's maxTotalLen=1024
+         * token budget. ~80 chars is roughly 20 tokens: enough for a handful
+         * of names, small enough that the audio side never pays for the
+         * dictionary (the impl silently shrinks audio on overflow).
+         */
+        const val QWEN3_HOTWORDS_MAX_CHARS = 80
+
+
+        /**
+         * TASK-994 phase 3: the streaming Nemotron vocab file name (its
+         * tokenizer differs from the offline NeMo exports; extracted from
+         * the streaming .nemo on the nvidia repo, sha 0139960759...).
+         */
+        const val STREAMING_VOCAB_FILE = com.antivocale.app.data.BIASING_VOCAB_FILE
         /**
          * TASK-874: the streaming decode method. The desktop A/B (TASK-530,
          * 2026-10-24, 11-clip Italian set) showed modified_beam_search beats
@@ -111,7 +132,10 @@ class SherpaBackend(
             // zipformer entries at import time. The wrong-family guard for
             // "" is the file-shape plan (encoder/decoder/joiner roles), not
             // metadata; the streaming-vs-offline flag mismatch is caught by
-            // [zipformerGraphIsStreaming] at import and load (TASK-720).
+            // [TransducerSupport.streamingFlagMismatch] at import and load
+            // (TASK-720), routed by export shape: [zipformerGraphIsStreaming]
+            // for k2 zipformer exports, chunk_shift presence for NeMo
+            // EncDec exports.
             else -> emptyList()
         }
 
@@ -445,6 +469,11 @@ class SherpaBackend(
     @Volatile private var offlineRecognizer: OfflineRecognizer? = null
     @Volatile private var onlineRecognizer: OnlineRecognizer? = null
     private var modelDir: String? = null
+    /** TASK-994 review: the construction-time streaming-biasing arming. The
+     *  per-request hotwords gate reads THIS, never a fresh file stat: the
+     *  supplement pass can land the vocab mid-session onto a recognizer
+     *  built without it, and hotwords there is a native exit-255 abort. */
+    @Volatile private var streamingBiasingArmed = false
     private var isInitialized = false
     private var language: String = "auto"
 
@@ -578,8 +607,22 @@ class SherpaBackend(
             // TASK-482 review: a READ failure is not a corruption verdict -
             // typing it CorruptModelFiles would let the heal delete a healthy
             // dir over a transient IO error. Only real content failures heal.
+            // TASK-986: pins healed through the pin-override channel REPLACE the
+            // catalog pins here, so a model accepted at download time keeps loading
+            // with no network (the load-time pass re-hashes against the catalog pin
+            // and would otherwise re-open the GH #187 verdict on a healed dir).
+            // PinHeals.init is idempotent.
+            PinHeals.init(context.filesDir)
+            val pinnedFiles =
+                if (variantMatchesDir) {
+                    variant.files.filter { it.sha256 != null }.associate { it.name to it.sha256!! }
+                } else {
+                    emptyMap()
+                }
+            val pins = PinHeals.overlay(variant.dirName, pinnedFiles)
             val gateVerdict = ModelDirIntegrity.split(
-                ModelDirIntegrity.verify(dir, variant, verifyPins = variantMatchesDir))
+                ModelDirIntegrity.verify(dir, pins))
+
             if (gateVerdict.unreadable.isNotEmpty()) {
                 val unreadable = gateVerdict.unreadable
                 Log.e(TAG, "Model files unreadable in $modelDirectory: " +
@@ -653,7 +696,11 @@ class SherpaBackend(
                 if (entry.isStreaming) {
                     initOnline(dir, sherpaConfig, entry, variant, roles)
                 } else {
-                    initOffline(dir, sherpaConfig, entry, variant, roles)
+                    initOffline(dir, sherpaConfig, entry, variant, roles,
+                        hotwordsCsv = PersonalDictionary.promptTerms(
+                            preferences.keywordBiasing.first()),
+                        biasingScore = preferences.biasingScore.first(),
+                        hotwordsTarget = File(context.cacheDir, "hotwords-${entry.id}.txt"))
                 }
                 modelDir = modelDirectory
                 language = sherpaConfig.language.ifBlank { "auto" }
@@ -679,7 +726,33 @@ class SherpaBackend(
         entry: CatalogEntry,
         variant: CatalogVariant,
         roles: Roles,
+        /** TASK-994: the dictionary terms joined for the hotwords file, or null
+         *  when the dictionary is empty (no biasing, greedy as today). */
+        hotwordsCsv: String?,
+        /** TASK-994 knob: the user's biasing strength (1.5 default). */
+        biasingScore: Float,
+        /** Writes the hotwords file OUTSIDE the model dir (the integrity
+         *  validator flags short .txt files inside it as corruption). */
+        hotwordsTarget: File,
     ) {
+        // TASK-994: ONE biasing predicate for the whole function. A desync
+        // between the model config's bpeVocab/modelingUnit and the
+        // recognizer config's decodingMethod/hotwords would arm one without
+        // the other and hotwords would be silently ignored.
+        val transducerBiasing = entry.modelType == "nemo_transducer" &&
+            hotwordsCsv != null && File(dir, com.antivocale.app.data.BIASING_VOCAB_FILE).isFile
+        if (transducerBiasing) {
+            // OUTSIDE the model dir: the integrity validator flags short
+            // .txt files inside it as corruption and the heal wipes the
+            // whole directory. Written at construction (the recognizer is
+            // resident), re-written on the next model load when the
+            // dictionary changes.
+            hotwordsTarget.parentFile?.mkdirs()
+            hotwordsTarget.writeText(
+                PersonalDictionary.toHotwordsFileLines(hotwordsCsv!!))
+            Log.i(TAG, "Transducer biasing ON (${entry.id}): " +
+                "${hotwordsCsv.split(", ").size} terms, beam search")
+        }
         val modelConfig = when (entry.modelType) {
             "nemo_transducer" -> OfflineModelConfig(
                 transducer = OfflineTransducerModelConfig(
@@ -688,12 +761,13 @@ class SherpaBackend(
                     joiner = File(dir, requireNotNull(roles.joiner)).absolutePath,
                 ),
                 tokens = File(dir, requireNotNull(roles.tokens)).absolutePath,
+                bpeVocab = if (transducerBiasing) File(dir, com.antivocale.app.data.BIASING_VOCAB_FILE).absolutePath else "",
+                modelingUnit = if (transducerBiasing) "bpe" else "",
                 modelType = entry.modelType,
                 numThreads = sherpaConfig.numThreads,
                 debug = false,
                 provider = sherpaConfig.provider,
             )
-
             "whisper" -> OfflineModelConfig(
                 whisper = OfflineWhisperModelConfig(
                     encoder = File(dir, roles.encoder).absolutePath,
@@ -742,7 +816,10 @@ class SherpaBackend(
                 sampleRate = 16000,
                 featureDim = 80,
             ),
-            decodingMethod = "greedy_search",
+            decodingMethod = if (transducerBiasing) "modified_beam_search" else "greedy_search",
+            maxActivePaths = if (transducerBiasing) 4 else 1,
+            hotwordsFile = if (transducerBiasing) hotwordsTarget.absolutePath else "",
+            hotwordsScore = if (transducerBiasing) biasingScore else 0f,
             blankPenalty = entry.flags.blankPenalty.toFloat(),
         )
         offlineRecognizer = OfflineRecognizer(config = recognizerConfig)
@@ -756,6 +833,16 @@ class SherpaBackend(
         variant: CatalogVariant,
         roles: Roles,
     ) {
+        // TASK-994 phase 3: the streaming vocab file gates biasing (same
+        // shape as the offline transducer's bpe.vocab check; the streaming
+        // tokenizer differs from the offline NeMo exports).
+        val streamingVocab = File(dir, STREAMING_VOCAB_FILE)
+        val streamingBiasing = streamingVocab.isFile
+        streamingBiasingArmed = streamingBiasing
+        if (streamingBiasing) {
+            Log.i(TAG, "Streaming biasing armed (${entry.id}): vocab=${streamingVocab.name}")
+        }
+
         val transducerConfig = OnlineTransducerModelConfig(
             encoder = File(dir, roles.encoder).absolutePath,
             decoder = File(dir, roles.decoder).absolutePath,
@@ -764,6 +851,8 @@ class SherpaBackend(
         val modelConfig = OnlineModelConfig(
             transducer = transducerConfig,
             tokens = File(dir, requireNotNull(roles.tokens)).absolutePath,
+            bpeVocab = if (streamingBiasing) streamingVocab.absolutePath else "",
+            modelingUnit = if (streamingBiasing) "bpe" else "",
             numThreads = sherpaConfig.numThreads,
             debug = false,
             provider = sherpaConfig.provider,
@@ -818,6 +907,21 @@ class SherpaBackend(
                 Log.d(TAG, "Transcribing audio: ${samples.size} samples at ${sampleRate}Hz")
 
                 stream = rec.createStream()
+                // TASK-994: Qwen3 biasing is per-stream (hotwords ride the
+                // chat-template system prompt; the impl reads the stream
+                // option at decode, overriding the construct-time config).
+                // Same request-time shape as the whistle engine: a dictionary
+                // edit applies to the next decode, no reload.
+                // CAPPED: the prompt head shares qwen3's maxTotalLen=1024
+                // token budget with the audio, and the native impl silently
+                // TRUNCATES AUDIO on overflow (verified in the pinned
+                // source); a fat dictionary would degrade every decode with
+                // no signal. The cap keeps the head a small fraction.
+                if (entry.modelType == "qwen3_asr") {
+                    PersonalDictionary.promptTerms(
+                        preferences.keywordBiasing.first(), maxChars = QWEN3_HOTWORDS_MAX_CHARS)
+                        ?.let { stream.setOption("hotwords", it) }
+                }
                 stream.acceptWaveform(samples, sampleRate)
                 // Append `tailPadSeconds` (catalog flag) of silence. The pad's
                 // WER effect on parakeet is VARIANT-DEPENDENT (TASK-715 + the
@@ -919,9 +1023,20 @@ class SherpaBackend(
             try {
                 Log.d(TAG, "Transcribing audio: ${samples.size} samples at ${sampleRate}Hz")
 
-                // createStream(String) arg is HOTWORDS/contextual biasing, NOT language — passing a
-                // non-empty value triggers contextual biasing, which sherpa aborts on (exit 255).
-                stream = rec.createStream("")
+                // createStream(String) arg is HOTWORDS/contextual biasing, NOT
+                // language. TASK-994 phase 3: the personal dictionary rides
+                // the streaming context graph per request (the AAR's
+                // createStream(String) IS the hotwords param; desktop flip
+                // probe: "Boncompagni" flipped to "Boncompani" with the
+                // extracted vocab). GATED ON THE CONSTRUCTION-TIME arming
+                // flag, NOT a fresh file stat: the supplement pass can land
+                // bpe.vocab mid-session (the dictionary collector), and
+                // hotwords on a recognizer built WITHOUT bpeVocab is the
+                // native exit-255 abort this file documents elsewhere.
+                val streamingHotwords = if (streamingBiasingArmed) {
+                    PersonalDictionary.promptTerms(preferences.keywordBiasing.first())
+                } else null
+                stream = rec.createStream(streamingHotwords ?: "")
                 // AC #3: condition the multilingual model on the user's language ("auto" = auto-detect).
                 stream.setOption("language", lang)
                 // Tail padding: a second acceptWaveform of one shared zero buffer so the

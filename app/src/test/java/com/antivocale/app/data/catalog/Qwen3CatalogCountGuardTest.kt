@@ -26,7 +26,6 @@ import java.util.Locale
  * the catalog's count yields exactly that count.
  */
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [34])
 class Qwen3CatalogCountGuardTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
@@ -35,8 +34,8 @@ class Qwen3CatalogCountGuardTest {
             ?: error("bundled catalog is missing qwen3-asr")
 
     private fun sizeOf060b(): Long =
-        BundledCatalog.byId(BuiltInBackendIds.QWEN3_ASR)?.variant("0.6b-int8")?.estimatedSizeMB
-            ?: error("bundled catalog is missing qwen3-asr/0.6b-int8")
+        BundledCatalog.byId(BuiltInBackendIds.QWEN3_ASR)?.variant("0.6b-int4")?.estimatedSizeMB
+            ?: error("bundled catalog is missing qwen3-asr/0.6b-int4")
 
     private fun shippedLocales(): List<String> = ShippedLocales.tags()
 

@@ -77,6 +77,7 @@ import com.antivocale.app.data.ReleaseNotes
 import com.antivocale.app.transcription.BuiltInBackendIds
 import com.antivocale.app.transcription.PunctuationPolicy
 import com.antivocale.app.transcription.RemoteOmnivoiceBackend
+import com.antivocale.app.transcription.SummaryPreset
 import com.antivocale.app.transcription.TranscriptionLanguagePolicy
 import com.antivocale.app.transcription.diarization.SpeakerEnrollError
 import com.antivocale.app.data.HuggingFaceTokenManager
@@ -115,6 +116,7 @@ import com.antivocale.app.util.ToastCompat
 import java.io.File
 import com.antivocale.app.service.InferenceService
 import com.antivocale.app.ui.components.EditablePromptCard
+import com.antivocale.app.ui.components.EditablePromptField
 import com.antivocale.app.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -182,6 +184,9 @@ fun SettingsTab(
     var showAutomationSettings by rememberSaveable("showAutomationSettings") { mutableStateOf(false) }
     var showVoiceNoteSettings by rememberSaveable("showVoiceNoteSettings") { mutableStateOf(false) }
     var showBackupTransfer by rememberSaveable("showBackupTransfer") { mutableStateOf(false) }
+    // TASK-994.2: the personal-dictionary page (maintainer trial 2026-11-14:
+    // the card-in-tree was obscure; the surface is a subpage now).
+    var showDictionarySettings by rememberSaveable("showDictionarySettings") { mutableStateOf(false) }
     // TASK-929: the What's-New notes hold a List<String>, which is not
     // saveable; the dialog is transient view state and drops on rotation
     // like every other content dialog.
@@ -200,6 +205,7 @@ fun SettingsTab(
         showAutomationSettings = false
         showVoiceNoteSettings = false
         showBackupTransfer = false
+        showDictionarySettings = false
     }
 
     // 2026-09-30 regroup: system back on ANY subpage must return to the
@@ -208,7 +214,7 @@ fun SettingsTab(
     androidx.activity.compose.BackHandler(enabled = showIconSettings || showExportSettings ||
         showPromptSettings || showPerAppSettings || showSpeakerSettings ||
         showPerformanceSettings || showAutomationSettings || showVoiceNoteSettings ||
-        showBackupTransfer) {
+        showBackupTransfer || showDictionarySettings) {
         closeSubPages()
     }
     // TASK-625 deep-link carrier: the memory-failure notification action
@@ -254,6 +260,7 @@ fun SettingsTab(
                     "automation" -> showAutomationSettings = true
                     "voice_notes" -> showVoiceNoteSettings = true
                     "backup" -> showBackupTransfer = true
+                    "dictionary" -> showDictionarySettings = true
                 }
             }
             is AppNavigation.Destination.SettingsRow -> {
@@ -326,7 +333,6 @@ fun SettingsTab(
     // was rendering for Parakeet users and hiding from Gemma users).
     val isLlmBackend = BuiltInBackendIds.isLlm(uiState.transcriptionBackend)
     // TASK-858: the whistle-only keyword-biasing card's gate.
-    val isWhistleBackend = BuiltInBackendIds.isWhistle(uiState.transcriptionBackend)
     val isModelLoaded by viewModel.llmIsReadyFlow.collectAsState()
     // TASK-574: tick the countdown every second while a live deadline exists;
     // the getter is a plain read, so without the producer the banner would
@@ -401,6 +407,15 @@ fun SettingsTab(
             initialScroll = pendingSubPageScroll,
             onScrollConsumed = { pendingSubPageScroll = null },
             onBack = { showVoiceNoteSettings = false }
+        )
+    } else if (showDictionarySettings) {
+        // TASK-994.2 (maintainer trial 2026-11-14): the personal dictionary
+        // gets the subpage treatment; the main tree keeps one hub row.
+        DictionarySettingsScreen(
+            viewModel = viewModel,
+            initialScroll = pendingSubPageScroll,
+            onScrollConsumed = { pendingSubPageScroll = null },
+            onBack = { showDictionarySettings = false }
         )
     } else if (showPromptSettings) {
         PromptSettingsScreen(
@@ -485,7 +500,6 @@ fun SettingsTab(
         // vocabulary can never drift from the tree.
         val searchState = SettingsSearchState(
             isLlmBackend = isLlmBackend,
-            isWhistleBackend = isWhistleBackend,
             isModelLoaded = isModelLoaded,
             gemmaConfigured = gemmaConfigured,
             punctuationPromptForced = currentPunctuationMode == PunctuationPolicy.PREF_ALWAYS,
@@ -1136,13 +1150,17 @@ fun SettingsTab(
 
                 // TASK-121.4: the summary prompt override; the summary
                 // TOGGLE lives in the basic block (TASK-588.2). Same
-                // gemmaConfigured gate as its toggle.
+                // gemmaConfigured gate as its toggle. TASK-993: the preset
+                // picker is the primary control; the free field rides Custom.
                 if (gemmaConfigured) {
                     SearchFilterRow(searchQuery, SettingsSearchId.SUMMARY_PROMPT, searchState) {
                         if (summarizeOn) {
-                            SummaryPromptCard(
+                            SummaryPresetCard(
+                                presetKey = viewModel.currentSummaryPreset.collectAsState().value,
                                 prompt = viewModel.currentSummaryPrompt.collectAsState().value,
-                                onSave = { viewModel.saveSummaryPrompt(it) }
+                                enabled = !uiState.isSaving,
+                                onPresetSelected = { viewModel.saveSummaryPreset(it) },
+                                onSavePrompt = { viewModel.saveSummaryPrompt(it) },
                             )
                         }
                     }
@@ -1165,18 +1183,18 @@ fun SettingsTab(
                 }
                 }
 
-                // TASK-858: the whistle engine's keyword-biasing terms. The
-                // EditablePromptCard contract (commit on focus loss, the
-                // 500-char cap at the impl layer) fits: a term list is a
-                // short free-text preference. Request-time by design (the
-                // backend reads the flow per decode; no reload).
-                if (isWhistleBackend) {
-                    SearchFilterRow(searchQuery, SettingsSearchId.KEYWORD_BIASING, searchState) {
-                        KeywordBiasingCard(
-                            terms = viewModel.currentKeywordBiasing.collectAsState().value,
-                            onSave = { viewModel.saveKeywordBiasing(it) },
-                        )
-                    }
+                // TASK-858 -> TASK-994.2: the whistle terms generalized
+                // into the PERSONAL DICTIONARY; since the 2026-11-14 trial
+                // the surface is a hub row + subpage (the card-in-tree was
+                // obscure: engine detail now lives on the page's "Where it
+                // applies" section, not in the tree). Search vocabulary is
+                // the hub-union (this row's strings + the page's), the
+                // DIARIZATION_HUB precedent.
+                SearchFilterRow(searchQuery, SettingsSearchId.KEYWORD_BIASING, searchState) {
+                    SettingsHubCard(
+                        titleRes = R.string.keyword_biasing_title,
+                        summaryRes = R.string.keyword_biasing_summary,
+                    ) { showDictionarySettings = true }
                 }
 
                 // Maintainer decision 2026-09-30: diarization settings moved
@@ -2252,6 +2270,96 @@ internal fun VoiceNoteSettingsScreen(
                 }
             }
 
+    }
+}
+
+/**
+ * TASK-994.2 (maintainer trial 2026-11-14: "obscure" + the subpage rule):
+ * the personal-dictionary page. The main tree keeps one hub row; the
+ * engine detail that used to be crammed into the card description lives
+ * here as a "Where it applies" section, and the editor's own helper is
+ * back to the one-line "one per line" sentence.
+ */
+@Composable
+internal fun DictionarySettingsScreen(
+    viewModel: SettingsViewModel,
+    initialScroll: AppNavigation.ScrollRequest? = null,
+    onScrollConsumed: () -> Unit = {},
+    onBack: () -> Unit,
+) {
+    SubPageScrollScaffold(
+        titleRes = R.string.keyword_biasing_title,
+        onBack = onBack,
+        scrollRequest = initialScroll,
+        onScrollConsumed = onScrollConsumed,
+        bodySpacing = Arrangement.spacedBy(12.dp),
+    ) { _ ->
+        // The terms editor: the EditablePromptCard contract (commit on
+        // focus loss, the cap at the impl layer); request-time by design
+        // (the passes read the flow per run).
+        KeywordBiasingCard(
+            terms = viewModel.currentKeywordBiasing.collectAsState().value,
+            onSave = { viewModel.saveKeywordBiasing(it) },
+        )
+        // TASK-994 knob (maintainer decision 2026-11-14, after the
+        // on-device score ladder: the aggressive score fixes common-word
+        // collisions but may shorten some listed names; the trade is the
+        // user's). Local drag state, persisted on release only.
+        val biasingScore by viewModel.currentBiasingScore.collectAsState()
+        var scoreDraft by remember(biasingScore) { mutableStateOf(biasingScore) }
+        SectionCard(
+            icon = Icons.Default.Edit,
+            title = stringResource(R.string.keyword_biasing_score_title),
+        ) {
+            Column {
+                Text(
+                    stringResource(R.string.keyword_biasing_score_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Slider(
+                        value = scoreDraft,
+                        onValueChange = { scoreDraft = it },
+                        onValueChangeFinished = { viewModel.saveBiasingScore(scoreDraft) },
+                        valueRange = PreferencesManager.MIN_BIASING_SCORE..
+                            PreferencesManager.MAX_BIASING_SCORE,
+                        steps = 6,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        scoreDraft.toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
+        SectionCard(
+            icon = Icons.Default.Info,
+            title = stringResource(R.string.keyword_biasing_where_title),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    stringResource(R.string.keyword_biasing_where_recognition),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    stringResource(R.string.keyword_biasing_where_passes),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    stringResource(R.string.keyword_biasing_where_download),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.keyword_biasing_where_qwen3),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -3712,23 +3820,59 @@ private fun signaturePositionLabel(value: String): String = when (value) {
     else -> stringResource(R.string.signature_position_append)
 }
 
-
 /**
- * TASK-483: editable override of the summary-pass prompt. Same contract as
- * the punctuation prompt card: blank means the built-in two-to-three-sentence
- * default, commits on focus loss, 500-char cap.
+ * TASK-993: the summary-pass style picker. The preset dropdown is the
+ * primary control (the PUNCTUATION_MODE row pattern: SectionCard +
+ * SettingsDropdown) and mirrors the stored key, the single source of
+ * truth; the free instruction field appears only for Custom, with the
+ * EditablePromptCard contract (commit on focus loss, the PROMPT_CAP cap).
+ * The stored prompt stays dormant under a non-custom preset (switching
+ * back restores it; no destructive clear).
  */
+/** Strong-skipping does the memoizing; the hoist just avoids the per-recomposition list. */
+private val SUMMARY_PRESET_OPTIONS = SummaryPreset.entries.toList()
+
 @Composable
-private fun SummaryPromptCard(
+private fun SummaryPresetCard(
+    presetKey: String,
     prompt: String,
-    onSave: (String) -> Unit,
-) = EditablePromptCard(
-    prompt = prompt,
-    onSave = onSave,
-    titleRes = R.string.summary_prompt_title,
-    descriptionRes = R.string.summary_prompt_description,
-    placeholderRes = R.string.summary_default_prompt,
-)
+    enabled: Boolean,
+    onPresetSelected: (String) -> Unit,
+    onSavePrompt: (String) -> Unit,
+) {
+    val preset = SummaryPreset.fromKey(presetKey)
+    val title = stringResource(R.string.summary_prompt_title)
+    SectionCard(
+        icon = Icons.Default.Notes,
+        title = title,
+        description = stringResource(R.string.summary_prompt_description),
+    ) {
+        SettingsDropdown(
+            currentValue = preset,
+            options = SUMMARY_PRESET_OPTIONS,
+            currentValueDisplay = summaryPresetLabel(preset),
+            optionDisplay = { summaryPresetLabel(it) },
+            onOptionSelected = { onPresetSelected(it.key) },
+            label = title,
+            enabled = enabled,
+        )
+        if (preset == SummaryPreset.CUSTOM) {
+            EditablePromptField(
+                prompt = prompt,
+                onSave = onSavePrompt,
+                placeholderRes = R.string.summary_default_prompt,
+            )
+        }
+    }
+}
+
+@Composable
+private fun summaryPresetLabel(preset: SummaryPreset): String = when (preset) {
+    SummaryPreset.SUMMARY -> stringResource(R.string.summary_preset_summary)
+    SummaryPreset.ACTION_ITEMS -> stringResource(R.string.summary_preset_action_items)
+    SummaryPreset.MEETING_MINUTES -> stringResource(R.string.summary_preset_meeting_minutes)
+    SummaryPreset.CUSTOM -> stringResource(R.string.summary_preset_custom)
+}
 
 /**
  * TASK-276: editable override of the punctuation-pass prompt. Blank means the
@@ -3815,9 +3959,7 @@ internal enum class SettingsSearchGroup(val labelRes: Int) {
  */
 internal data class SettingsSearchState(
     val isLlmBackend: Boolean,
-    /** TASK-858: the keyword-biasing card exists only on the whistle backend. */
-    val isWhistleBackend: Boolean,
-    val isModelLoaded: Boolean,
+        val isModelLoaded: Boolean,
     val gemmaConfigured: Boolean,
     /**
      * The prompt OVERRIDE is honored (PREF_ALWAYS only): its card renders.
@@ -3887,7 +4029,6 @@ internal fun SettingsSearchCard.outerSectionGate(state: SettingsSearchState): Bo
         state.gemmaConfigured && !state.isLlmBackend
     SettingsSearchId.SUMMARY_PROMPT -> state.gemmaConfigured
     SettingsSearchId.DEFAULT_PROMPT -> state.isLlmBackend
-    SettingsSearchId.KEYWORD_BIASING -> state.isWhistleBackend
     else -> true
 }
 
@@ -3999,7 +4140,13 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     ),
     SettingsSearchCard(
         SettingsSearchId.SUMMARY_PROMPT, SettingsSearchSection.TRANSCRIPTION,
-        listOf(R.string.summary_prompt_title, R.string.summary_prompt_description),
+        // TASK-993: the preset names join the union so a query like
+        // "action items" lands on the picker card (the vocabulary is the
+        // static union of the card's strings).
+        listOf(
+            R.string.summary_prompt_title, R.string.summary_prompt_description,
+            R.string.summary_preset_summary, R.string.summary_preset_action_items,
+            R.string.summary_preset_meeting_minutes, R.string.summary_preset_custom),
         visible = { s -> s.gemmaConfigured && s.summarizeOn },
         group = SettingsSearchGroup.GEMMA_TEXT,
         advanced = true,
@@ -4013,9 +4160,15 @@ internal val SETTINGS_SEARCH_CARDS: List<SettingsSearchCard> = listOf(
     ),
     SettingsSearchCard(
         SettingsSearchId.KEYWORD_BIASING, SettingsSearchSection.TRANSCRIPTION,
-        listOf(R.string.keyword_biasing_title, R.string.keyword_biasing_description,
-            R.string.keyword_biasing_placeholder),
-        visible = { s -> s.isWhistleBackend },
+        listOf(R.string.keyword_biasing_title, R.string.keyword_biasing_summary,
+            R.string.keyword_biasing_description, R.string.keyword_biasing_placeholder,
+            R.string.keyword_biasing_where_title, R.string.keyword_biasing_where_recognition,
+            R.string.keyword_biasing_where_passes, R.string.keyword_biasing_where_download,
+            R.string.keyword_biasing_score_title, R.string.keyword_biasing_score_note,
+            R.string.keyword_biasing_where_qwen3),
+        // TASK-994: unconditional (the dictionary applies to every
+        // backend's Gemma passes and Whistle; the copy states the rest).
+        visible = { true },
         // Deliberately ungrouped: the DECODING cluster lives inside the
         // advanced reveal (a contiguous tree run the registry pins); this
         // card renders in the basic block beside the model-specific

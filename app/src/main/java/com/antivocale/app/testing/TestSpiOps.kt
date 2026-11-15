@@ -1,5 +1,6 @@
 package com.antivocale.app.testing
 
+import com.antivocale.app.data.ExternalModelDeleter
 import com.antivocale.app.data.ExternalModelRecord
 import java.io.File
 import com.antivocale.app.data.ExternalModelImportOperations
@@ -24,9 +25,19 @@ import com.antivocale.app.ui.theme.TextScale
 import com.antivocale.app.ui.theme.ThemeType
 import com.antivocale.app.util.SubtitleFormatter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** TASK-989: the not-wired envelope's one wording (the wired-surface ops share it). */
+private const val NOT_WIRED = "import surface not wired (open the Models tab once)"
+
 
 /**
  * Engine of the debug-only test SPI (TASK-409): the op handling behind
@@ -74,7 +85,30 @@ internal class TestSpiOps(
     /** TASK-912: the voice_note_simulate op drives the auto-transcriber.
      *  Same null-under-fakes story. */
     private val voiceNoteAutoTranscriber: com.antivocale.app.data.VoiceNoteAutoTranscriber? = null,
+    /** TASK-984: when set, op=import validates synchronously, dispatches the
+     *  import on this process-lifetime scope and acks immediately, because a
+     *  multi-hundred-MB download inside the broadcast receiver exceeds the
+     *  ~5min broadcast window and the system am_kills the process for a slow
+     *  receiver (live evidence: two kills at 299.6s/302.0s importing a 1.39GB
+     *  model, TASK-981). The launch inherits this scope's context, so the
+     *  dispatcher stays the owner's choice (the receiver composes IO in; the
+     *  unit tests pass Unconfined for deterministic completion). The outcome
+     *  lands on the TestSpi logcat channel; completion is polled via
+     *  op=records. Null keeps the synchronous behavior the JVM unit fakes
+     *  exercise (they run under runTest and await the record directly);
+     *  only the debug receiver passes the scope. */
+    private val asyncImportScope: CoroutineScope? = null,
+    /** TASK-984: where the async import's outcome line goes. Default logs
+     *  on the SPI channel; the unit tests capture it so the outcome
+     *  contract (imported/backendId vs failed/error) is asserted, not just
+     *  trusted (android.util.Log is a no-op stub under the JVM fakes). */
+    private val asyncImportOutcome: (String) -> Unit = { line ->
+        android.util.Log.i(SPI_LOG_TAG, line)
+    },
 ) {
+    /** TASK-974: the record_delete op runs the shared delete semantics over
+     *  the same store+preferences pair every other op uses. */
+    private val externalModelDeleter = ExternalModelDeleter(externalModels, preferences)
 
     suspend fun handle(
         op: String?,
@@ -92,8 +126,12 @@ internal class TestSpiOps(
             OP_GET -> get()
             OP_SET -> set(key, value, entry)
             OP_RECORDS -> records()
+            OP_RECORD_DELETE -> recordDelete(value)
             OP_IDENTITY_CACHE -> identityCache()
             OP_IMPORT -> importModel(url, family, modelType, entry, licence, streaming)
+            OP_IMPORT_STATE -> importState()
+            OP_IMPORT_CANCEL -> importCancel()
+            OP_IMPORT_RETRY -> importRetry()
             OP_NOTIFY_MEMORY_ERROR -> notifyMemoryError()
             OP_CLIPBOARD -> clipboard()
             OP_NOTIFICATIONS -> notifications()
@@ -153,6 +191,7 @@ internal class TestSpiOps(
             .put("paths", paths)
             .put("summarizeEnabled", preferences.summarizeEnabled.first())
             .put("keywordBiasing", preferences.keywordBiasing.first())
+            .put("biasingScore", preferences.biasingScore.first())
             .put("autoCopyEnabled", preferences.autoCopyEnabled.first())
             .put("signatureEnabled", preferences.signatureEnabled.first())
             .put("signatureText", preferences.signatureText.first())
@@ -224,6 +263,7 @@ internal class TestSpiOps(
             .put("themeMode", preferences.themeMode.first())
             .put("defaultPrompt", preferences.defaultPrompt.first())
             .put("summaryPrompt", preferences.summaryPrompt.first())
+            .put("summaryPreset", preferences.summaryPreset.first())
             .put("outputFolderUri", preferences.outputFolderUri.first() ?: JSONObject.NULL)
             .put("transcriptExportFormat", preferences.transcriptExportFormat.first())
             .put("externalCatalogUrl", preferences.externalCatalogUrl.first())
@@ -255,6 +295,7 @@ internal class TestSpiOps(
         // TASK-186: the early-preview gate (device trials flip it per clip).
         "early_preview" to preferences::saveEarlyPreviewEnabled,
         "interrupted_run_notifications" to preferences::saveInterruptedRunNotifications,
+        // TASK-994 knob (spot-filled below in floatKeys).
         "summarize" to preferences::saveSummarizeEnabled,
         "refinement_enabled" to preferences::saveRefinementEnabled,
         // TASK-939: the word-tap seek gate (device trials flip it per row).
@@ -305,6 +346,11 @@ internal class TestSpiOps(
         "punctuation" to Pair(PUNCTUATION_MODES, preferences::savePunctuationMode),
         "provider" to Pair(InferenceProvider.options, preferences::saveInferenceProvider),
         "swipe_action" to Pair(PreferencesManager.SWIPE_ACTION_MODES, preferences::saveSwipeActionMode),
+        // TASK-993: validated against SummaryPreset's keys (a typo'd preset
+        // must fail loudly, not silently normalize and run the wrong pass).
+        "summary_preset" to Pair(
+            com.antivocale.app.transcription.SummaryPreset.entries.map { it.key },
+            preferences::saveSummaryPreset),
         "theme" to Pair(THEME_TYPES, preferences::saveThemePreference),
         "theme_mode" to Pair(THEME_MODES, preferences::saveThemeMode),
         "text_scale" to Pair(TEXT_SCALES, preferences::saveTextScale),
@@ -314,6 +360,11 @@ internal class TestSpiOps(
             SubtitleFormatter.Format.entries.map { it.name },
             preferences::saveTranscriptExportFormat,
         ),
+    )
+
+    /** TASK-994: float preferences (the biasing-strength knob). */
+    private val floatKeys: Map<String, suspend (Float) -> Unit> = mapOf(
+        "biasing_score" to preferences::saveBiasingScore,
     )
 
     /** Free-text preferences: written as given, no parse. */
@@ -369,6 +420,14 @@ internal class TestSpiOps(
                     val enabled = value.toBooleanStrictOrNull()
                         ?: return@putUnique "$key expects true or false, got '$value'"
                     save(enabled)
+                    null
+                }
+            }
+            floatKeys.forEach { (key, save) ->
+                putUnique(key) { value, _ ->
+                    val parsed = value.toFloatOrNull()
+                        ?: return@putUnique "$key expects a number, got '$value'"
+                    save(parsed)
                     null
                 }
             }
@@ -577,14 +636,53 @@ internal class TestSpiOps(
     }
 
     /**
+     * TASK-974: delete one imported external record, the scripted twin of the
+     * Models tab's delete (trials could import via op=import but never clean
+     * up after themselves, so devices accumulated dangling debris with dead
+     * pinned sources). [value] is the record id from op=records; the
+     * external: backend prefix is tolerated and stripped. ONE call does the
+     * whole cleanup through the shared [ExternalModelDeleter]: record, files,
+     * and the selection resets when the deleted model was the active backend
+     * or the refinement pin, so a scripted teardown never dangles a
+     * selection. One deliberate divergence from the UI delete: no immediate
+     * share-alias resync (the op stays free of Android framework
+     * dependencies); the aliases converge at the next startup sync. An
+     * unknown id is idempotent: deleted=false, no side effects.
+     */
+    private suspend fun recordDelete(value: String?): String {
+        if (value.isNullOrBlank()) {
+            throw IllegalArgumentException("missing 'value' extra (a record id, see op=records)")
+        }
+        val id = value.removePrefix(ExternalModelRecord.BACKEND_ID_PREFIX)
+        val record = externalModels.records().firstOrNull { it.id == id }
+        val outcome = record?.let { externalModelDeleter.delete(it) }
+            ?: ExternalModelDeleter.Outcome(
+                existed = false, resetActiveBackend = false, clearedRefinementPin = false)
+        return JSONObject()
+            .put("op", OP_RECORD_DELETE)
+            .put("id", id)
+            .put("deleted", outcome.existed)
+            .put("resetActiveBackend", outcome.resetActiveBackend)
+            .put("clearedRefinementPin", outcome.clearedRefinementPin)
+            .toString()
+    }
+
+    /**
      * TASK-550 device pass: the external-model import, driven without UI. The
      * importer classifies the url (catalog-entry JSON, schema-1 CDN manifest,
-     * or HuggingFace repo), exactly the path the import dialog uses; the
-     * response is the imported record, so a device test can chain set
-     * backend=external:<id> on it. The [displayName]/[licence]/[streaming]
-     * extras are the schema-1 index-metadata transport (TASK-912 parity with
-     * the dialog's catalog pick): a manifest URL like the streaming Fritter's
-     * needs streaming=true here, exactly as its catalog entry authors it.
+     * or HuggingFace repo), exactly the path the import dialog uses. The
+     * [displayName]/[licence]/[streaming] extras are the schema-1
+     * index-metadata transport (TASK-912 parity with the dialog's catalog
+     * pick): a manifest URL like the streaming Fritter's needs streaming=true
+     * here, exactly as its catalog entry authors it.
+     *
+     * TASK-984 CONTRACT: with [asyncImportScope] set (the receiver, i.e.
+     * every real device) this op is FIRE-AND-ACK: validation errors answer
+     * synchronously, the download dispatches on the scope, the ack carries
+     * dispatched=true, and the imported record arrives LATER as an outcome
+     * line on the SPI channel (then via op=records; poll, do not parse
+     * `record` out of the ack). Only the null-scope JVM fakes get the
+     * synchronous record in the ack.
      */
     private suspend fun importModel(
         url: String?,
@@ -644,18 +742,98 @@ internal class TestSpiOps(
                     "streaming extra '$raw' is not a boolean (use true or false)")
             }
         } ?: false
-        val record = importer.importFromUrlWithMetadata(
-            url,
-            displayName = displayName,
-            licence = licence,
-            modelType = modelType,
-            family = parsedFamily,
-            streaming = streamingFlag,
-        )
-        return JSONObject()
-            .put("op", OP_IMPORT)
-            .put("record", record.toJson().put("backendId", record.backendId))
-            .toString()
+        // TASK-984: every check above stays in the SYNCHRONOUS reply so a
+        // bad call still answers its error envelope. Only the download,
+        // which can run for many minutes, moves off the broadcast. Both
+        // arms run the SAME import call through this lambda: a future
+        // importer parameter added to one arm cannot silently diverge the
+        // other.
+        val runImport: suspend () -> ExternalModelRecord = {
+            importer.importFromUrlWithMetadata(
+                url,
+                displayName = displayName,
+                licence = licence,
+                modelType = modelType,
+                family = parsedFamily,
+                streaming = streamingFlag,
+            )
+        }
+        val scope = asyncImportScope
+        if (scope != null) {
+            // TASK-989: with the Models surface wired, prefer ITS dispatch:
+            // the import then rides the ViewModel path, so the state
+            // renders in the UI and cancel/retry are live scriptable
+            // affordances (op=import_cancel / op=import_retry; observation
+            // via op=import_state and op=records). Only reachable with all
+            // optional extras at their defaults: the bridge's dispatch is
+            // the dialog's own shape (entry JSONs and manifests carry their
+            // own family; a bare repo URL defaults to TRANSDUCER exactly as
+            // the dialog's untouched selector does).
+            //
+            // One busy check covering BOTH lanes (simplify round): the
+            // wired surface's own state AND the headless arm's guard: a
+            // headless import in flight must also refuse a wired dispatch,
+            // or two multi-GB downloads race one importer and one store.
+            // Residual (review round): the check is check-then-act; a wired
+            // and a headless dispatch arriving in the same millisecond can
+            // still both pass it (the wired Importing state only flips once
+            // the ViewModel coroutine enters its mutex). Accepted for a
+            // debug tool: same-lane dispatches serialize on the ViewModel
+            // mutex and the headless CAS.
+            val wiredImporting = ExternalImportSpiBridge.importInFlight?.invoke() == true
+            if (wiredImporting || asyncImportInFlight.get()) {
+                throw IllegalArgumentException(
+                    "an import is already in flight (op=import_state reports the " +
+                        "wired one; op=records and the TestSpi channel the headless one)")
+            }
+            val wiredDispatch = ExternalImportSpiBridge.dispatchUrlImport
+            if (wiredDispatch != null && displayName == null &&
+                family == null && modelType == null && licence == null && streaming == null
+            ) {
+                wiredDispatch(url)
+                return ack(OP_IMPORT) {
+                    put("dispatched", true)
+                    put("surface", "viewmodel")
+                    put("url", url)
+                }
+            }
+            if (!asyncImportInFlight.compareAndSet(false, true)) {
+                throw IllegalArgumentException(
+                    "an async import is already in flight; poll op=records or the " +
+                        "TestSpi logcat channel for its outcome")
+            }
+            // No dispatcher HERE: the scope's own context decides (the
+            // @ApplicationScope contract puts the dispatcher choice at the
+            // owner site; the receiver passes the app scope composed with
+            // IO, and the unit tests pass Unconfined for determinism).
+            scope.launch {
+                headlessImportJob = kotlin.coroutines.coroutineContext[Job]
+                try {
+                    val record = runImport()
+                    asyncImportOutcome(ack(OP_IMPORT) {
+                        put("result", "imported")
+                        put("backendId", record.backendId)
+                    })
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    asyncImportOutcome(ack(OP_IMPORT) {
+                        put("result", "failed")
+                        put("error", t.message ?: t.javaClass.simpleName)
+                    })
+                } finally {
+                    asyncImportInFlight.set(false)
+                }
+            }
+            return ack(OP_IMPORT) {
+                put("dispatched", true)
+                put("url", url)
+            }
+        }
+        val record = runImport()
+        return ack(OP_IMPORT) {
+            put("record", record.toJson().put("backendId", record.backendId))
+        }
     }
 
     /**
@@ -1231,7 +1409,44 @@ internal class TestSpiOps(
             .toString()
     }
 
-    private fun help(error: String? = null): String = JSONObject()
+    /**
+     * TASK-989: the external-import affordances over the bridge the Models
+     * ViewModel wires (state rendering, cancel, retry, dispatch). The
+     * bridge is null while the Models tab has never composed in this
+     * process; every op answers the honest envelope then instead of
+     * pretending (the state lives in a ViewModel, which a cold background
+     * process does not have).
+     */
+    /** TASK-989: the wired-surface ops share this shape (the SPI's one
+     *  envelope builder plus the single not-wired wording). */
+    private inline fun <T> importBridgeOp(op: String, handle: T?, crossinline wired: JSONObject.(T) -> Unit): String =
+        ack(op) { if (handle == null) put("error", NOT_WIRED) else wired(handle) }
+
+    private fun importState(): String = importBridgeOp(
+        OP_IMPORT_STATE, ExternalImportSpiBridge.renderState) { put("state", it()) }
+
+    private fun importCancel(): String =
+        importBridgeOp(OP_IMPORT_CANCEL, ExternalImportSpiBridge.cancel) { wired ->
+            val cancelled = wired()
+            if (!cancelled) {
+                // The wired surface had nothing in flight; a headless import
+                // the SPI itself started can still be stopped (review round:
+                // the op must not claim success over a running download).
+                val headless = headlessImportJob
+                headless?.cancel()
+                put("cancelled", headless != null)
+                if (headless == null) {
+                    put("note", "nothing was in flight on either lane")
+                }
+            } else {
+                put("cancelled", true)
+            }
+        }
+
+    private fun importRetry(): String = importBridgeOp(
+        OP_IMPORT_RETRY, ExternalImportSpiBridge.retry) { put("retry_dispatched", it()) }
+
+        private fun help(error: String? = null): String = JSONObject()
         .apply { error?.let { put("error", it) } }
         .put("op", OP_HELP)
         // OPS single-sources the enumeration: the array and the usage line
@@ -1256,11 +1471,51 @@ internal class TestSpiOps(
         .toString()
 
     companion object {
+        /** TASK-984: single-flight guard for the async import arm. A NEW
+         *  TestSpiOps is built per broadcast, so instance state cannot see a
+         *  previous dispatch; this process-wide flag is the one place both
+         *  instances consult. Set before the ack, cleared in the launched
+         *  coroutine's finally. */
+        private val asyncImportInFlight = AtomicBoolean(false)
+
+        /** The headless arm's live Job, so import_cancel can stop what the
+         *  SPI itself started when no wired surface owns an import. */
+        @Volatile private var headlessImportJob: kotlinx.coroutines.Job? = null
+
+        /** TASK-984: the SPI logcat channel's ONE owner. The debug receiver
+         *  aliases this as its TAG (debug sees main; the reverse would not
+         *  compile), so the async import outcome lines and every receiver
+         *  ack share one literal that cannot drift apart. */
+        internal const val SPI_LOG_TAG = "TestSpi"
+
+        /**
+         * The SPI's one JSON envelope builder (TASK-826 in the receiver,
+         * moved here TASK-984 so the async import arm builds its outcome
+         * envelopes with the same owner): one line of JSON, quotes and
+         * backslashes inside a body safe. The debug receiver and the grant
+         * activity call this through one-line delegates.
+         */
+        internal fun ack(op: String, body: JSONObject.() -> Unit = {}): String =
+            JSONObject().put("op", op).apply(body).toString()
+
+        /** The always-works channel as a one-liner: ack + Log on the shared tag. */
+        internal fun logSpi(op: String, result: String) {
+            android.util.Log.i(SPI_LOG_TAG, ack(op) { put("result", result) })
+        }
+
         const val OP_GET = "get"
         const val OP_SET = "set"
         const val OP_RECORDS = "records"
+        /** TASK-974: value=<record id>, the Models-tab delete without UI (see recordDelete). */
+        const val OP_RECORD_DELETE = "record_delete"
         internal const val OP_IDENTITY_CACHE = "identity_cache"
         const val OP_IMPORT = "import"
+        /** TASK-989: read the import affordances' live state (no UI). */
+        const val OP_IMPORT_STATE = "import_state"
+        /** TASK-989: the Cancel button's own call, without the tap. */
+        const val OP_IMPORT_CANCEL = "import_cancel"
+        /** TASK-989: fire the Error/Cancelled retry closure, without the tap. */
+        const val OP_IMPORT_RETRY = "import_retry"
         const val OP_NOTIFY_MEMORY_ERROR = "notify_memory_error"
         const val OP_CLIPBOARD = "clipboard"
         const val OP_NOTIFICATIONS = "notifications"
@@ -1325,7 +1580,7 @@ internal class TestSpiOps(
          * both are intercepted receiver-side before handle() runs, so they
          * live in the receiver's own table.
          */
-        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_IDENTITY_CACHE, OP_IMPORT, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_BUNDLE_EXPORT, OP_BUNDLE_IMPORT, OP_MODEL_PRESENT, OP_SEARCH, OP_LOG, OP_LOG_READ, OP_LOG_DELETE, OP_VOICE_NOTE_WATERMARK_RESET, OP_VOICE_NOTE_SIMULATE, OP_NOTIFY_TEXT, OP_HELP)
+        val OPS = listOf(OP_GET, OP_SET, OP_RECORDS, OP_RECORD_DELETE, OP_IDENTITY_CACHE, OP_IMPORT, OP_IMPORT_STATE, OP_IMPORT_CANCEL, OP_IMPORT_RETRY, OP_NOTIFY_MEMORY_ERROR, OP_CLIPBOARD, OP_NOTIFICATIONS, OP_UNLOAD, OP_VOICE_NOTE_STATE, OP_MODEL_DOWNLOAD, OP_CLEAR_ORPHANED, OP_BUNDLE_EXPORT, OP_BUNDLE_IMPORT, OP_MODEL_PRESENT, OP_SEARCH, OP_LOG, OP_LOG_READ, OP_LOG_DELETE, OP_VOICE_NOTE_WATERMARK_RESET, OP_VOICE_NOTE_SIMULATE, OP_NOTIFY_TEXT, OP_HELP)
 
         /** clipboard op cap: keeps the result string far under the binder limit (TASK-506 class). */
         const val CLIPBOARD_TEXT_CAP = 64 * 1024

@@ -144,11 +144,22 @@ interface PreferencesManager {
     val punctuationPrompt: Flow<String>
     /** TASK-858: whistle keyword biasing (newline-separated terms; "" = off). */
     val keywordBiasing: Flow<String>
+    /** TASK-994 knob: the hotwords biasing strength (1.5 default; higher =
+     *  more aggressive correction, may affect the rest of the transcript). */
+    val biasingScore: Flow<Float>
     /** TASK-121.4 smart-summary pass toggle: attach a Gemma summary to long transcripts. Default off. */
     val summarizeEnabled: Flow<Boolean>
 
     /** TASK-483: editable override of the summary-pass prompt. Blank = the built-in 2-3 sentence default. */
     val summaryPrompt: Flow<String>
+
+    /**
+     * TASK-993: the summary-pass preset key ([com.antivocale.app.transcription.SummaryPreset]),
+     * the single source of truth for which instruction runs. The stored
+     * custom prompt stays DORMANT under a non-custom preset (switching back
+     * to Custom restores it; choosing a preset never deletes user text).
+     */
+    val summaryPreset: Flow<String>
     val threadCount: Flow<Int>
     val inferenceProvider: Flow<String>
     val transcriptionLanguage: Flow<String>
@@ -297,6 +308,29 @@ interface PreferencesManager {
     suspend fun saveThemePreference(theme: String)
     suspend fun saveThemeMode(mode: String)
     suspend fun saveTranscriptionBackend(backendId: String)
+
+    /**
+     * TASK-963: the repairer's pre-cleaner selection snapshot, persisted
+     * because the Recover tap can land in a LATER process than the one
+     * that captured (the notification survives process death; the
+     * in-memory capture does not). Blank = nothing pending. Cleared when a
+     * restore consumes it or when a startup scan finds nothing dangling;
+     * not backed up: a stale pending restore has no meaning on another
+     * device.
+     */
+    val wipedRepairCapturedActive: Flow<String>
+    /** TASK-973: record ids whose pinned source proved dead or unusable in
+     *  a repair; the startup scan and the Recover candidates exclude them
+     *  (retrying cannot help), and the failed notice offers their removal.
+     *  Transient like the whole wiped-repair family: not backed up. */
+    val wipedRepairDeadSources: Flow<Set<String>>
+    suspend fun saveWipedRepairCapturedActive(backendId: String)
+    suspend fun saveWipedRepairDeadSources(ids: Set<String>)
+
+    /** TASK-963: the refinement-pin half of the same snapshot. */
+    val wipedRepairCapturedPin: Flow<String>
+    suspend fun saveWipedRepairCapturedPin(backendId: String)
+
     suspend fun saveSherpaModelPath(entryId: String, path: String)
     suspend fun clearSherpaModelPath(entryId: String)
 
@@ -328,8 +362,25 @@ interface PreferencesManager {
     suspend fun savePunctuationMode(mode: String)
     suspend fun savePunctuationPrompt(prompt: String)
 
+    /**
+     * TASK-993: persists the preset key. Never touches the custom prompt:
+     * user text stays dormant under a non-custom preset.
+     */
+    suspend fun saveSummaryPreset(preset: String)
+
+    /**
+     * TASK-993 one-shot migration (idempotent): promotes a legacy state
+     * (a non-blank custom prompt with NO stored preset key) to
+     * preset=custom, so the key becomes the single source of truth instead
+     * of a runtime arbitration rule. Runs at startup and after a settings
+     * import; a deliberate non-custom choice stores the key, which makes
+     * this a no-op from then on.
+     */
+    suspend fun reconcileLegacySummaryPrompt()
+
     /** TASK-858: persists the whistle keyword-biasing terms (capped). */
     suspend fun saveKeywordBiasing(terms: String)
+    suspend fun saveBiasingScore(value: Float)
     suspend fun saveSummarizeEnabled(enabled: Boolean)
     suspend fun saveSummaryPrompt(prompt: String)
     suspend fun saveThreadCount(threads: Int)
@@ -497,11 +548,17 @@ interface PreferencesManager {
          * Character cap shared by every prompt editor and saver (TASK-485:
          * the 500 literal had drifted across 7 unlinked take() sites).
          */
+        const val DEFAULT_BIASING_SCORE = 1.5f
+        const val MIN_BIASING_SCORE = 1.5f
+        const val MAX_BIASING_SCORE = 5.0f
         const val PROMPT_CAP = 500
         /** TASK-276: the AUTO mode trusts the per-model punctuatesOutput flag. */
         const val DEFAULT_PUNCTUATION_MODE = "auto"
         /** TASK-121.4: opt-in; a second inference per long transcript must be a choice. */
         const val DEFAULT_SUMMARIZE_ENABLED = false
+
+        /** TASK-993: the untouched preset key (the built-in recap). */
+        const val DEFAULT_SUMMARY_PRESET = "summary"
         const val DEFAULT_THEME = "DEFAULT"
         const val DEFAULT_THEME_MODE = "SYSTEM"
         const val DEFAULT_TEXT_SCALE = "SYSTEM"
@@ -533,9 +590,10 @@ interface PreferencesManager {
         /** TASK-939: the word-tap seek surface ships off; users opt in. */
         const val DEFAULT_WORD_TAP_SEEK = false
         /** TASK-800 (GH #128 pt 3): the advanced Share… format picker on
-         *  the result row; default OFF (the plain one-tap share is the
-         *  reasonable default, the maintainer's UX direction). */
-        const val DEFAULT_ADVANCED_SHARE_FORMATS = false
+         *  the result row. TASK-990: ON by default (a Play reviewer could
+         *  not find .srt; the toggle was a discoverability wall). Existing
+         *  users who explicitly turned it OFF keep their choice (DataStore). */
+        const val DEFAULT_ADVANCED_SHARE_FORMATS = true
         /** TASK-631: protection is opt-in; by default the app never refuses a load on its own. */
         const val DEFAULT_MEMORY_PROTECTION = false
         /** TASK-274: the automation receivers are opt-in; off, they answer with the error

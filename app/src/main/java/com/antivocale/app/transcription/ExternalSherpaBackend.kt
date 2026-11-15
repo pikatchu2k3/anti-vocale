@@ -18,6 +18,7 @@ import com.antivocale.app.util.CrashReporter
 import com.antivocale.app.util.NativeKeepAlive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,7 +38,11 @@ import javax.inject.Singleton
  * so no consumer can address a half-configured engine.
  */
 @Singleton
-class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
+class ExternalSherpaBackend @Inject constructor(
+    /** TASK-994: the personal dictionary, for transducer-family biasing
+     *  when the imported model ships a bpe.vocab (Daniel's Fritter does). */
+    private val preferences: PreferencesManager,
+) : TranscriptionBackend {
 
     companion object {
         private const val TAG = "ExternalSherpaBackend"
@@ -299,7 +304,10 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                             numThreads = externalConfig.numThreads,
                             debug = false,
                             provider = externalConfig.provider,
-                            // Streaming zipformers carry no modelType metadata: "" (Nemotron pattern).
+                            // Streaming externals are NeMo EncDec exports: the
+                            // encoder DOES carry model_type (and chunk_shift,
+                            // the gate's NeMo discriminator), but the ONLINE
+                            // loader wants no modelType: "" (Nemotron pattern).
                             modelType = "",
                         ),
                         featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
@@ -338,13 +346,39 @@ class ExternalSherpaBackend @Inject constructor() : TranscriptionBackend {
                         ?: modelConfig.canary?.srcLang
                         ?: "").ifBlank { "auto" }
 
+                // TASK-994: transducer-family externals bias when the model
+                // ships a bpe.vocab (CDN publishers like Daniel's Fritter
+                // already do) AND the dictionary is non-empty. Same shape as
+                // the built-in SherpaBackend: ONE construction-time snapshot
+                // of the dictionary (the predicate and the file write must
+                // never read the pref twice: a concurrent save between them
+                // would arm beam search against a hotwordsFile that was
+                // never written and fail the native load), greedy without
+                // either condition.
+                val biasingCsv = PersonalDictionary.promptTerms(preferences.keywordBiasing.first())
+                val vocabFile = File(record.dir, com.antivocale.app.data.BIASING_VOCAB_FILE)
+                val hotwordsFile = File(context.cacheDir, "hotwords-${record.backendId}.txt")
+                val externalBiasing = record.family == ModelFamily.TRANSDUCER &&
+                    !record.streaming &&
+                    vocabFile.isFile &&
+                    biasingCsv != null
+                if (externalBiasing && biasingCsv != null) {
+                    hotwordsFile.parentFile?.mkdirs()
+                    hotwordsFile.writeText(PersonalDictionary.toHotwordsFileLines(biasingCsv))
+                    modelConfig.bpeVocab = vocabFile.absolutePath
+                    modelConfig.modelingUnit = "bpe"
+                    Log.i(TAG, "External transducer biasing ON (${record.backendId})")
+                }
                 val recognizerConfig = OfflineRecognizerConfig(
                     modelConfig = modelConfig,
                     // Family-defined mel bands: canary needs 128, every other
                     // family 80 (TASK-408; a wrong dim fails the native load or
                     // decodes garbage).
                     featConfig = FeatureConfig(sampleRate = 16000, featureDim = support.featureDim),
-                    decodingMethod = "greedy_search"
+                    decodingMethod = if (externalBiasing) "modified_beam_search" else "greedy_search",
+                    maxActivePaths = if (externalBiasing) 4 else 1,
+                    hotwordsFile = if (externalBiasing) hotwordsFile.absolutePath else "",
+                    hotwordsScore = if (externalBiasing) preferences.biasingScore.first() else 0f,
                 )
 
                 recognizer = OfflineRecognizer(config = recognizerConfig)

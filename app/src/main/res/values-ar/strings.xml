@@ -181,6 +181,14 @@
     <string name="catalog_download_confirm_message">سيتم تنزيل نحو %1$d ميغابايت.</string>
     <string name="model_fit_no_fit">من المرجح ألا يعمل هذا النموذج على هذا الجهاز: ذاكرته العشوائية أقل مما يحتاجه النموذج.</string>
     <string name="model_fit_tight">تنبيه: يحتاج هذا النموذج إلى معظم ذاكرة هذا الجهاز العشوائية؛ قد يفشل عند نقص الذاكرة.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">ذاكرة الجهاز: %1$d غيغابايت، %2$s</string>
+    <string name="device_tier_constrained">من الفئة الاقتصادية</string>
+    <string name="device_tier_standard">من الفئة المتوسطة</string>
+    <string name="device_tier_high">من الفئة الرائدة</string>
+    <string name="model_fit_chip_tight">على الحدّ</string>
+    <string name="model_fit_chip_no_fit">قد لا يتّسع</string>
+
     <string name="catalog_extract_confirm_title">استخراج %1$s؟</string>
     <string name="catalog_extract_confirm_message">تم تنزيل ملف النموذج بالفعل. سيتم استخراجه للاستخدام.</string>
     <string name="download_status_downloading">جارٍ التنزيل…</string>
@@ -343,6 +351,7 @@
     <string name="model_selected_message">تم اختيار %1$s</string>
     <string name="model_use_missing_files">ملفات النموذج %1$s مفقودة أو غير مكتملة. أعد تنزيل هذا الإصدار من علامة تبويب النماذج.</string>
     <string name="model_demoted_notice">لم يُختر تلقائيًا: لم يُنتج هذا النموذج أي نص رغم وجود كلام. اختره مرة أخرى لمنحه فرصة أخرى.</string>
+    <string name="external_model_wiped_notice">أزالته عملية تنظيف مساحة التخزين في النظام. أعد استيراده بإجراءات الاستيراد أعلاه.</string>
     <string name="delete">حذف</string>
     <string name="variant_more_actions">إجراءات أخرى</string>
     <string name="download">تنزيل</string>
@@ -483,15 +492,32 @@
     <string name="summary_prompt_title">موجّه الملخص</string>
     <string name="signature_setting_title">توقيع النسخ (إخلاء مسؤولية الذكاء الاصطناعي)</string>
     <string name="signature_setting_description">يضيف سطر توقيع إلى كل نص يغادر التطبيق: النسخ والمشاركة والملفات المصدّرة. أما شاشات التطبيق نفسها فتعرض النص العادي.</string>
-    <string name="keyword_biasing_title">ترجيح الكلمات المفتاحية (Whistle)</string>
-    <string name="keyword_biasing_description">أسماء أو أماكن أو مصطلحات يجب أن يرجّحها نموذج Whistle، مصطلح واحد في كل سطر. تنطبق على النسخة التالية دون الحاجة إلى إعادة تحميل.</string>
+    <string name="keyword_biasing_title">القاموس الشخصي</string>
+    <string name="keyword_biasing_description">أسماء أو أماكن أو مصطلحات يجب أن تراعيها التطبيق، واحدة في كل سطر.</string>
+    <string name="keyword_biasing_summary">أسماء ومصطلحات يجب أن يكتبها التعرّف بطريقتك.</string>
+    <string name="keyword_biasing_where_title">أين يُطبَّق</string>
+    <string name="keyword_biasing_where_recognition">التعرّف: Whistle وQwen3 وParakeet وGigaAM وNemotron المتدفق.</string>
+    <string name="keyword_biasing_where_passes">مراحل التلميع والتلخيص بالذكاء الاصطناعي؛ التلميع المحافظ يبقي على موجّهه الثابت.</string>
+    <string name="keyword_biasing_where_download">عند تعيين القاموس يُنزَّل ملف محرك صغير مرة واحدة لكل من Parakeet وGigaAM وNemotron المتدفق.</string>
+    <string name="keyword_biasing_where_qwen3">على Qwen3 تُطبَّق فقط المصطلحات الأولى من القائمة.</string>
+    <string name="keyword_biasing_score_title">تصحيح أكثر إجبارًا</string>
+    <string name="keyword_biasing_score_note">القيم الأعلى قد تؤثر أيضًا على بقية التفريغ. يسري التغيير عند تحميل النموذج في المرة القادمة.</string>
+    <string name="personal_dictionary_prompt_line">تظهر هذه الأسماء أو المصطلحات في هذا المحتوى؛ حافظ على هذا التهجئة الدقيقة حيثما ترد: %1$s</string>
     <string name="keyword_biasing_placeholder">مصطلح واحد في كل سطر</string>
     <string name="signature_text_title">نص التوقيع</string>
     <string name="signature_text_description">اتركه فارغًا لاستخدام إخلاء المسؤولية القياسي.</string>
     <string name="signature_position_title">الموضع</string>
     <string name="signature_position_prepend">قبل النص</string>
     <string name="signature_position_append">بعد النص</string>
-    <string name="summary_prompt_description">تجاوز تعليمات ملخص الذكاء الاصطناعي. تركه فارغًا يعني استخدام الموجّه المدمج المكوّن من جملتين إلى ثلاث جمل.</string>
+    <string name="summary_prompt_description">اختر ما تضيفه خطوة الذكاء الاصطناعي إلى التفريغات الطويلة. مخصص يقبل تعليمة حرة؛ تركه فارغًا يستخدم الموجّه المدمج.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">ملخص</string>
+    <string name="summary_preset_action_items">بنود المهام</string>
+    <string name="summary_preset_meeting_minutes">محضر الاجتماع</string>
+    <string name="summary_preset_custom">مخصص</string>
+    <string name="summary_preset_action_items_prompt">اسرد بنود المهام من هذا التفريغ في قائمة قصيرة، بند واحد في كل سطر، بلغة التفريغ. اذكر المسؤولين والمواعيد النهائية عند ذكرها. أخرج القائمة فقط.</string>
+    <string name="summary_preset_meeting_minutes_prompt">اكتب محضر اجتماع من هذا التفريغ: المواضيع المطروحة والقرارات المتخذة وبنود المهام مع مسؤوليها، بلغة التفريغ. حافظ على الأسماء والأرقام. أخرج المحضر فقط.</string>
+
     <string name="punctuation_default_prompt">أضف علامات الترقيم والأحرف الكبيرة إلى هذا النص المنسوخ. احتفظ بكل كلمة كما كُتبت تمامًا؛ ولا تصلح أو تترجم أو تضيف أو تحذف أي شيء. أخرِج النص المصحّح فقط.</string>
     <string name="punctuation_default_prompt_conservative">أضف علامات الترقيم والأحرف الكبيرة وفواصل الفقرات إلى هذا النص المنسوخ. لا تترجم ولا تلخّص، ولا تضف أو تحذف أو تعيد ترتيب أو تصحّح أي كلمة: يجب أن يبقى تسلسل الكلمات كما كُتب تمامًا. أخرِج النص المنسّق فقط.</string>
     <string name="summarize_title">تلخيص النسخ الطويلة</string>
@@ -840,6 +866,7 @@
     <string name="external_import">استيراد</string>
     <string name="external_importing">جارٍ استيراد النموذج…</string>
     <string name="external_importing_file">جارٍ استيراد %1$s (%2$d من %3$d)…</string>
+    <string name="external_import_cancelled">تم إلغاء التنزيل</string>
     <string name="external_import_failed">فشل الاستيراد: %1$s</string>
     <string name="external_imported">تم استيراد %1$s</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1234,4 +1261,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">ما الجديد</string>
     <string name="whats_new_summary">ما الجديد في هذا الإصدار</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">استرداد النماذج</string>
+    <string name="notification_channel_model_repair_description">إشعارات عندما يحذف منظّف مساحة التخزين في النظام نموذجًا مستوردًا، وعن نتيجة عملية الاسترداد.</string>
+    <string name="wiped_imports_title">منظّف النظام حذف ملفات النموذج</string>
+    <string name="wiped_imports_text">حذف منظّف مساحة التخزين في النظام ملفات نماذج مستوردة عددها %1$d: %2$s. اضغط زر الاسترداد لتنزيلها مرة أخرى من المصدر الأصلي.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d أخرى</string>
+    <string name="wiped_imports_recover_action">استرداد</string>
+    <string name="wiped_imports_recovered_title">اكتمل الاسترداد</string>
+    <string name="wiped_imports_recovered_text">أُعيد تنزيل ملفات نماذج عددها %1$d وهي جاهزة للاستخدام.</string>
+    <string name="wiped_imports_failed_title">فشل استرداد النموذج</string>
+    <string name="wiped_imports_failed_text">لم يكتمل إعادة التنزيل. افتح تبويب النماذج لإعادة استيراد النموذج يدويًا.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">مصدر النموذج غير متاح</string>
+    <string name="wiped_imports_source_failed_text">لم يعد يمكن تنزيل %1$d نموذج من مصدره الأصلي. احذف الإدخالات المعطلة أو أعد استيراد النموذج يدويًا من تبويب النماذج.</string>
+    <string name="wiped_imports_remove_action">إزالة</string>
+    <string name="wiped_imports_removed_text">تمت إزالة %1$d إدخال نموذج معطل من تبويب النماذج.</string>
+    <string name="wiped_imports_progress_title">جارٍ استعادة النموذج</string>
+    <string name="wiped_imports_progress_text">يتم تنزيل ملفات النموذج المحذوف مرة أخرى. قد يستغرق ذلك بضع دقائق.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">اسأل الذكاء الاصطناعي</string>
+    <string name="ask_transcripts_title">اسأل تفريغاتك</string>
+    <string name="ask_transcripts_no_matches">لا توجد تفريغات مطابقة لهذا السؤال.</string>
+    <string name="ask_transcripts_sources">بناءً على %1$d تفريغ/تفريغات</string>
+    <string name="ask_transcripts_error">خطأ: %1$s</string>
+    <string name="ask_transcripts_instruction">أجب عن السؤال أدناه بالاعتماد على هذه التفريغات فقط. إذا لم تكن التفريغات تحتوي على الإجابة، فقل ذلك. أجب بلغة السؤال.</string>
+<string name="ask_transcripts_working">جارٍ سؤال النموذج على الجهاز…</string>
 </resources>

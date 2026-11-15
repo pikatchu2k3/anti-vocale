@@ -167,6 +167,14 @@
     <string name="catalog_download_confirm_message">Cela téléchargera environ %1$d Mo.</string>
     <string name="model_fit_no_fit">Ce modèle ne fonctionnera probablement pas sur cet appareil : sa RAM est insuffisante.</string>
     <string name="model_fit_tight">Attention : ce modèle tient juste dans la RAM de cet appareil ; il peut échouer sous pression mémoire.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">RAM de l\'appareil : %1$d Go, %2$s</string>
+    <string name="device_tier_constrained">d\'entrée de gamme</string>
+    <string name="device_tier_standard">de milieu de gamme</string>
+    <string name="device_tier_high">haut de gamme</string>
+    <string name="model_fit_chip_tight">Juste</string>
+    <string name="model_fit_chip_no_fit">Peut ne pas convenir</string>
+
     <string name="catalog_extract_confirm_title">Extraire %1$s ?</string>
     <string name="catalog_extract_confirm_message">Le fichier du modèle est déjà téléchargé. Il sera extrait pour utilisation.</string>
     <string name="download_status_downloading">Téléchargement…</string>
@@ -350,6 +358,7 @@
     <string name="model_selected_message">%1$s sélectionné</string>
     <string name="model_use_missing_files">Les fichiers du modèle %1$s sont manquants ou incomplets. Re-téléchargez la variante depuis l\'onglet Modèle.</string>
     <string name="model_demoted_notice">Non choisi automatiquement : ce modèle n\'a produit aucun texte alors que de la voix était présente. Sélectionne-le à nouveau pour lui donner une autre chance.</string>
+    <string name="external_model_wiped_notice">Supprimé par le nettoyage du stockage système. Réimportiez-le avec les actions d\'importation ci-dessus.</string>
     <string name="delete">Supprimer</string>
     <string name="variant_more_actions">Plus d\'actions</string>
     <string name="download">Télécharger</string>
@@ -486,7 +495,15 @@
     <string name="signature_position_title">Position</string>
     <string name="signature_position_prepend">Avant la transcription</string>
     <string name="signature_position_append">Après la transcription</string>
-    <string name="summary_prompt_description">Instruction personnalisée pour le résumé IA. Vide utilise l\'invite intégrée (deux ou trois phrases).</string>
+    <string name="summary_prompt_description">Choisissez ce que le traitement IA ajoute aux longues transcriptions. Personnalisée accepte une instruction libre ; vide utilise l\'invite intégrée.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">Récapitulatif</string>
+    <string name="summary_preset_action_items">Points d\'action</string>
+    <string name="summary_preset_meeting_minutes">Compte-rendu de réunion</string>
+    <string name="summary_preset_custom">Personnalisée</string>
+    <string name="summary_preset_action_items_prompt">Liste les points d\'action de cette transcription sous forme de liste courte, une ligne par point, dans la langue de la transcription. Inclue les responsables et les échéances lorsqu\'ils sont indiqués. Ne retourne que la liste.</string>
+    <string name="summary_preset_meeting_minutes_prompt">Rédige le compte-rendu de cette transcription : sujets abordés, décisions prises et points d\'action avec responsables, dans la langue de la transcription. Conserve les noms et les chiffres. Ne retourne que le compte-rendu.</string>
+
     <string name="punctuation_default_prompt">Ajoute la ponctuation et les majuscules à cette transcription. Garde chaque mot exactement comme écrit ; ne corrige, traduis, ajoute ni retire rien. Renvoie uniquement la transcription corrigée.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">Résumer les longues transcriptions</string>
@@ -848,6 +865,7 @@
     <string name="external_import">Importer</string>
     <string name="external_importing">Importation du modèle…</string>
     <string name="external_importing_file">Importation de %1$s (%2$d sur %3$d)…</string>
+    <string name="external_import_cancelled">Téléchargement annulé</string>
     <string name="external_import_failed">Échec de l\'importation : %1$s</string>
     <string name="external_imported">%1$s importé</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1187,8 +1205,17 @@
     <string name="backup_import_history_failed">Réglages importés, mais l\'historique n\'a pas pu être ajouté. Réessayer est sans risque.</string>
     <string name="backup_disclosure_title">Avant d\'exporter</string>
     <string name="backup_disclosure_body">La sauvegarde contient chaque transcription, nom d\'expéditeur et étiquette de locuteur en texte lisible. Ne la partagez qu\'avec des destinataires de confiance.</string>
-    <string name="keyword_biasing_title">Biais de mots-clés (Whistle)</string>
-    <string name="keyword_biasing_description">Noms, lieux ou jargon que le modèle Whistle doit favoriser, un par ligne. Effective à la transcription suivante, sans rechargement.</string>
+    <string name="keyword_biasing_title">Dictionnaire personnel</string>
+    <string name="keyword_biasing_description">Noms, lieux ou jargon que l\'application doit respecter, un par ligne.</string>
+    <string name="keyword_biasing_summary">Noms et termes que la reconnaissance doit écrire à votre façon.</string>
+    <string name="keyword_biasing_where_title">Où cela s\'applique</string>
+    <string name="keyword_biasing_where_recognition">Reconnaissance : Whistle, Qwen3, Parakeet, GigaAM et Nemotron en flux.</string>
+    <string name="keyword_biasing_where_passes">Les passes de polissage et de résumé de l\'IA ; le polissage conservateur garde son invite fixe.</string>
+    <string name="keyword_biasing_where_download">La définition du dictionnaire télécharge une fois un petit fichier moteur pour Parakeet, GigaAM et Nemotron en flux.</string>
+    <string name="keyword_biasing_where_qwen3">Sur Qwen3, seuls les premiers termes de la liste s\'appliquent.</string>
+    <string name="keyword_biasing_score_title">Correction plus agressive</string>
+    <string name="keyword_biasing_score_note">Des valeurs élevées peuvent aussi influencer le reste de la transcription. Le changement s\'applique au prochain chargement du modèle.</string>
+    <string name="personal_dictionary_prompt_line">Ces noms ou termes apparaissent dans ce contenu ; conservez cette orthographe exacte là où ils figurent : %1$s</string>
     <string name="keyword_biasing_placeholder">Un terme par ligne</string>
     <string name="freeze_protection_title">Protection de la transcription en arrière-plan</string>
     <string name="freeze_protection_description">Garde un flux audio silencieux actif pendant la transcription pour que les économiseurs de batterie agressifs ne suspendent pas l\'app. Activez-la si la transcription s\'arrête écran éteint (certains Oppo, Realme, OnePlus et Vivo).</string>
@@ -1205,4 +1232,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">Nouveautés</string>
     <string name="whats_new_summary">Nouveautés de cette version</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">Récupération des modèles</string>
+    <string name="notification_channel_model_repair_description">Avis quand un nettoyeur de stockage système supprime un modèle importé, et sur le résultat de la récupération.</string>
+    <string name="wiped_imports_title">Un nettoyeur système a supprimé des fichiers de modèle</string>
+    <string name="wiped_imports_text">Un nettoyeur de stockage système a supprimé les fichiers de %1$d modèle(s) importé(s) : %2$s. Touchez Récupérer pour les télécharger à nouveau depuis la source d\'origine.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d autres</string>
+    <string name="wiped_imports_recover_action">Récupérer</string>
+    <string name="wiped_imports_recovered_title">Récupération terminée</string>
+    <string name="wiped_imports_recovered_text">Les fichiers de %1$d modèle(s) ont été téléchargés à nouveau et sont prêts à l\'emploi.</string>
+    <string name="wiped_imports_failed_title">Échec de la récupération</string>
+    <string name="wiped_imports_failed_text">Le nouveau téléchargement ne s\'est pas terminé. Ouvrez l\'onglet Modèles pour réimporter le modèle manuellement.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">Source du modèle indisponible</string>
+    <string name="wiped_imports_source_failed_text">%1$d modèle(s) ne peut plus être téléchargé depuis sa source d\'origine. Supprimez les entrées cassées ou réimportez le modèle manuellement depuis l\'onglet Modèles.</string>
+    <string name="wiped_imports_remove_action">Supprimer</string>
+    <string name="wiped_imports_removed_text">%1$d entrées de modèle cassées supprimées de l\'onglet Modèles.</string>
+    <string name="wiped_imports_progress_title">Restauration du modèle en cours</string>
+    <string name="wiped_imports_progress_text">Les fichiers du modèle supprimé sont en cours de téléchargement. Cela peut prendre quelques minutes.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">Demander à l\'IA</string>
+    <string name="ask_transcripts_title">Demandez à vos transcriptions</string>
+    <string name="ask_transcripts_no_matches">Aucune transcription trouvée pour cette question.</string>
+    <string name="ask_transcripts_sources">Basé sur %1$d transcription(s)</string>
+    <string name="ask_transcripts_error">Erreur : %1$s</string>
+    <string name="ask_transcripts_instruction">Réponds à la question ci-dessous en te basant UNIQUEMENT sur ces transcriptions. Si les transcriptions ne contiennent pas la réponse, dis-le. Réponds dans la langue de la question.</string>
+<string name="ask_transcripts_working">Interrogation du modèle sur l’appareil…</string>
 </resources>

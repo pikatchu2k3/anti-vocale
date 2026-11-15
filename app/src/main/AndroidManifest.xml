@@ -79,6 +79,17 @@
             android:supportsPictureInPicture="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:theme="@style/Theme.AntiVocale">
+
+            <!-- TASK-995: antivocale://import?url=<http(s)> one-tap model
+                 imports. MainActivity (singleTop) captures in onCreate AND
+                 onNewIntent; the URL rides the consume-once
+                 DeepLinkImport.pending handoff to MainScreen. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="antivocale" android:host="import" />
+            </intent-filter>
         </activity>
         <!-- TASK-552: the dynamic model-shortcut trampoline. NoDisplay:
              never visible, never in recents, finishes before drawing; the
@@ -247,6 +258,15 @@
                 <action android:name="com.antivocale.app.PRELOAD_MODEL" />
             </intent-filter>
         </receiver>
+
+        <!-- TASK-963: the Recover action of the wiped-imports notification;
+             not exported and filterless, reached only through its explicit
+             PendingIntent (an intent-filter here would be dead wiring: no
+             implicit delivery can reach a non-exported receiver). -->
+        <receiver
+            android:name=".receiver.WipedImportRepairReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
         <!-- Activity for receiving shared audio files.
              TASK-927 review V6: configChanges keeps a mid-batch rotation from
@@ -680,6 +700,14 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="ai_inference" />
         </service>
+
+        <!-- TASK-971: foreground surface for the Recover-triggered
+             wiped-import repair; started ONLY from the notification tap. -->
+        <service
+            android:name=".service.WipedImportRepairService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Foreground service for model download + extraction -->
         <service

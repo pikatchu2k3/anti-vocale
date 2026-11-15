@@ -216,6 +216,14 @@
     <string name="catalog_download_confirm_message">Dit downloadt ~%1$dMB.</string>
     <string name="model_fit_no_fit">Dit model draait waarschijnlijk niet op dit apparaat: het RAM ligt onder wat het model nodig heeft.</string>
     <string name="model_fit_tight">Let op: dit model past maar net in het RAM van dit apparaat; bij geheugendruk kan het mislukken.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">Apparaat-RAM: %1$d GB, %2$s</string>
+    <string name="device_tier_constrained">instapniveau</string>
+    <string name="device_tier_standard">middenklasse</string>
+    <string name="device_tier_high">topklasse</string>
+    <string name="model_fit_chip_tight">Krap past</string>
+    <string name="model_fit_chip_no_fit">Past misschien niet</string>
+
     <string name="catalog_extract_confirm_title">%1$s uitpakken?</string>
     <string name="catalog_extract_confirm_message">Het modelbestand is al gedownload. Dit pakt het uit voor gebruik.</string>
 
@@ -410,6 +418,7 @@
     <string name="model_use_missing_files">De modelbestanden van %1$s ontbreken of zijn onvolledig. Download de variant opnieuw via het tabblad Modellen.</string>
     <!-- TASK-675: honest one-line reason on a demoted model card. -->
     <string name="model_demoted_notice">Niet automatisch gekozen: dit model gaf geen tekst terwijl er spraak was. Kies het opnieuw om het nog een kans te geven.</string>
+    <string name="external_model_wiped_notice">Verwijderd door de opslagopschoning van het systeem. Importeer het opnieuw met de importacties hierboven.</string>
     <string name="delete">Verwijderen</string>
     <string name="variant_more_actions">Meer acties</string>
     <string name="download">Downloaden</string>
@@ -590,7 +599,15 @@
     <string name="signature_position_title">Positie</string>
     <string name="signature_position_prepend">Vóór de transcriptie</string>
     <string name="signature_position_append">Na de transcriptie</string>
-    <string name="summary_prompt_description">Vervang de AI-samenvattingsinstructie. Leeg gebruikt de ingebouwde prompt van twee tot drie zinnen.</string>
+    <string name="summary_prompt_description">Kies wat de AI-stap toevoegt aan lange transcripties. Aangepast gebruikt een vrije instructie; leeg gebruikt de ingebouwde prompt.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">Samenvatting</string>
+    <string name="summary_preset_action_items">Actiepunten</string>
+    <string name="summary_preset_meeting_minutes">Notulen</string>
+    <string name="summary_preset_custom">Aangepast</string>
+    <string name="summary_preset_action_items_prompt">Som de actiepunten uit deze transcriptie op als een korte lijst, één regel per punt, in de taal van de transcriptie. Noem verantwoordelijken en deadlines waar genoemd. Geef alleen de lijst terug.</string>
+    <string name="summary_preset_meeting_minutes_prompt">Schrijf de notulen van deze transcriptie: besproken onderwerpen, genomen besluiten en actiepunten met verantwoordelijken, in de taal van de transcriptie. Behoud namen en getallen. Geef alleen de notulen terug.</string>
+
     <string name="punctuation_default_prompt">Voeg interpunctie en hoofdletters toe aan deze transcriptie. Houd elk woord precies zoals geschreven; corrigeer niets, vertaal niet, voeg niets toe en verwijder niets. Geef alleen de gecorrigeerde transcriptie als uitvoer.</string>
     <!-- TASK-666: the fenced conservative prompt; the strict token validation backs the fences. -->
     <string name="punctuation_default_prompt_conservative">Voeg interpunctie, hoofdletters en alinea-indeling toe aan deze transcriptie. Vertaal niet, vat niet samen en voeg geen woorden toe, verwijder of herorder ze niet en corrigeer ze niet: de woordvolgorde moet exact zo blijven als geschreven. Geef alleen de opgemaakte transcriptie als uitvoer.</string>
@@ -1023,6 +1040,7 @@
     <string name="external_import">Importeren</string>
     <string name="external_importing">Model importeren…</string>
     <string name="external_importing_file">%1$s importeren (%2$d van %3$d)…</string>
+    <string name="external_import_cancelled">Download geannuleerd</string>
     <string name="external_import_failed">Importeren mislukt: %1$s</string>
     <string name="external_imported">%1$s geïmporteerd</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1335,8 +1353,17 @@
     <string name="backup_import_history_failed">Instellingen geïmporteerd, maar de geschiedenis kon niet worden toegevoegd. Opnieuw proberen is veilig.</string>
     <string name="backup_disclosure_title">Voordat je exporteert</string>
     <string name="backup_disclosure_body">De back-up bevat elke transcriptie, afzendernaam en sprekerlabels in leesbare tekst. Deel hem alleen met ontvangers die je vertrouwt.</string>
-    <string name="keyword_biasing_title">Sleutelwoord-voorkeur (Whistle)</string>
-    <string name="keyword_biasing_description">Namen, plaatsen of jargon die het Whistle-model moet bevoordelen, een per regel. Geldt vanaf de volgende transcriptie, zonder herladen.</string>
+    <string name="keyword_biasing_title">Persoonlijk woordenboek</string>
+    <string name="keyword_biasing_description">Namen, plaatsen of jargon die de app moet respecteren, één per regel.</string>
+    <string name="keyword_biasing_summary">Namen en termen die de herkenning op jouw manier schrijft.</string>
+    <string name="keyword_biasing_where_title">Waar het geldt</string>
+    <string name="keyword_biasing_where_recognition">Herkenning: Whistle, Qwen3, Parakeet, GigaAM en streaming-Nemotron.</string>
+    <string name="keyword_biasing_where_passes">De AI-bewerkings- en samenvattingsstappen; conservatieve bewerking houdt zijn vaste prompt.</string>
+    <string name="keyword_biasing_where_download">Het instellen van het woordenboek downloadt eenmalig een klein enginebestand voor Parakeet, GigaAM en streaming-Nemotron.</string>
+    <string name="keyword_biasing_where_qwen3">Op Qwen3 gelden alleen de eerste termen van de lijst.</string>
+    <string name="keyword_biasing_score_title">Agressievere correctie</string>
+    <string name="keyword_biasing_score_note">Hogere waarden kunnen ook de rest van de transcriptie beïnvloeden. De wijziging geldt bij de volgende keer dat het model laadt.</string>
+    <string name="personal_dictionary_prompt_line">Deze namen of termen komen voor in dit materiaal; behoud deze exacte spelling waar ze voorkomen: %1$s</string>
     <string name="keyword_biasing_placeholder">Eén term per regel</string>
     <string name="freeze_protection_title">Bescherming van achtergrondtranscriptie</string>
     <string name="freeze_protection_description">Houdt tijdens de transcriptie een stille audiostream actief zodat agressieve batterijbesparers de app niet pauzeren. Zet dit aan als de transcriptie stopt wanneer het scherm uit is (sommige Oppo-, Realme-, OnePlus- en Vivo-toestellen).</string>
@@ -1353,4 +1380,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">Wat is er nieuw</string>
     <string name="whats_new_summary">Wat is er nieuw in deze versie</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">Modelherstel</string>
+    <string name="notification_channel_model_repair_description">Meldingen wanneer een opschoontool van het systeem een geïmporteerd model verwijdert, en over de uitkomst van het herstel.</string>
+    <string name="wiped_imports_title">Opschoontool van het systeem verwijderde modelbestanden</string>
+    <string name="wiped_imports_text">Een opschoontool van de systeemopslag heeft de bestanden van %1$d geïmporteerd model(len) verwijderd: %2$s. Tik op Herstellen om ze opnieuw te downloaden van de oorspronkelijke bron.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d extra</string>
+    <string name="wiped_imports_recover_action">Herstellen</string>
+    <string name="wiped_imports_recovered_title">Herstel voltooid</string>
+    <string name="wiped_imports_recovered_text">De bestanden van %1$d model(len) zijn opnieuw gedownload en weer bruikbaar.</string>
+    <string name="wiped_imports_failed_title">Herstellen mislukt</string>
+    <string name="wiped_imports_failed_text">De download is niet voltooid. Open het tabblad Modellen om het model handmatig opnieuw te importeren.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">Modelbron niet beschikbaar</string>
+    <string name="wiped_imports_source_failed_text">%1$d model(len) kan niet langer worden gedownload van de originele bron. Verwijder de kapotte items of importeer het model opnieuw via het tabblad Modellen.</string>
+    <string name="wiped_imports_remove_action">Verwijderen</string>
+    <string name="wiped_imports_removed_text">%1$d kapotte modelitems verwijderd uit het tabblad Modellen.</string>
+    <string name="wiped_imports_progress_title">Modelherstel wordt uitgevoerd</string>
+    <string name="wiped_imports_progress_text">De verwijderde modelbestanden worden opnieuw gedownload. Dit kan enkele minuten duren.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">AI vragen</string>
+    <string name="ask_transcripts_title">Vraag je transcripties</string>
+    <string name="ask_transcripts_no_matches">Geen transcripties gevonden voor deze vraag.</string>
+    <string name="ask_transcripts_sources">Gebaseerd op %1$d transcriptie(s)</string>
+    <string name="ask_transcripts_error">Fout: %1$s</string>
+    <string name="ask_transcripts_instruction">Beantwoord de onderstaande vraag ALLEEN op basis van deze transcripties. Zijn de antwoorden er niet in te vinden, zeg dat dan. Antwoord in de taal van de vraag.</string>
+<string name="ask_transcripts_working">Bezig met vragen aan het model op het apparaat…</string>
 </resources>

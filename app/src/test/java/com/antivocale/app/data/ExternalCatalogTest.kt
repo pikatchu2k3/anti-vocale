@@ -209,23 +209,47 @@ class ExternalCatalogTest {
         // Round 2: + fritter streaming english (Nemotron 0.6B streaming
         // transducer, same manifest dialect; the INDEX entry carries the
         // streaming flag, the manifest has no such field).
-        assertEquals(38, entries.size)
+        // + parakeet tdt ultra int8 (TASK-970: moondream fine-tune; our 11-language
+        // FLEURS bench: 11/11 wins over v3 stock (avg 9.95 vs 12.40 WER); real
+        // WhatsApp audio: v3 wins (the read-speech vs real-audio tradeoff) ->
+        // catalog alternative, default stays v3; hosted at csukuangfj repo)
+        // + canary 1b v2 finnish int8 (TASK-981: the SAME bnoordhuis files
+        // as the Dutch entry with fi pinned; our FLEURS fi 9.35 vs Ultra
+        // 14.48 vs v3 20.66; device pass done - RSS peak 1.75GB, warm RTF
+        // 1.35; it 4.25 and en 5.83 bench legs beside it)
+        // - parakeet tdt redux REMOVED (2026-11-12, review round on the
+        // push: the entry's name claimed a 327MB download but the catalog
+        // dialect fetches loose files totaling 671MB, the same as Ultra,
+        // which beats it on quality in every measured language: strictly
+        // dominated, false advertising as shipped. The 327MB was the
+        // TARBALL size; no tarball path exists in the entry dialect.)
+        assertEquals(41, entries.size)
 
         // The three schema-1 manifest entries: family/languages from the index,
         // entryUrl is the live manifest (no committed asset; see the
         // asset-pairing test's exemption).
-        // TASK-968 device finding: the STREAMING entry was pulled. Daniel's
-        // published int8 artifact is an OFFLINE export of the hybrid (no
-        // decode_chunk_len anywhere in the encoder): streaming=true dies at
-        // the TASK-720 gate, and without the flag the name heuristic rejects
-        // it. Relisted only when the artifact is a true online export.
+        // TASK-968 follow-up: the streaming twin is BACK. The 7a23e80c pull
+        // rested on a refuted premise (the encoder IS a streaming NeMo
+        // export: cache tensors, works through OnlineRecognizer; the
+        // bundled streaming Nemotron ALSO lacks decode_chunk_len, it is a
+        // zipformer-only key). The real bug was the TASK-720 gate applying
+        // the zipformer probe to a NeMo export; it now discriminates NeMo
+        // exports (model_type "EncDec*") on chunk_shift instead.
         val fritter = ExternalCatalog.filter(entries, "fritter")
-        assertEquals(1, fritter.size)
+        assertEquals(2, fritter.size)
         assertEquals(ModelFamily.TRANSDUCER, fritter[0].family)
         assertEquals(listOf("en"), fritter[0].languages)
         assertEquals("https://models.carrotcakeai.com/asr/fritter/latest/manifest.json",
             fritter[0].entryUrl)
         assertFalse(fritter[0].streaming)
+        // The streaming twin: index-authored streaming flag is the ONLY
+        // streaming transport for a schema-1 manifest.
+        assertEquals("Fritter Streaming English int8 (Nemotron 0.6B, CC-BY-NC)", fritter[1].name)
+        assertEquals(ModelFamily.TRANSDUCER, fritter[1].family)
+        assertEquals(listOf("en"), fritter[1].languages)
+        assertEquals("https://models.carrotcakeai.com/asr/fritter-streaming/latest/manifest.json",
+            fritter[1].entryUrl)
+        assertTrue(fritter[1].streaming)
         val sabich = ExternalCatalog.filter(entries, "sabich")
         assertEquals(1, sabich.size)
         assertEquals(ModelFamily.TRANSDUCER, sabich[0].family)
@@ -292,6 +316,8 @@ class ExternalCatalogTest {
             // TASK-953: the French distil pick (the heavy tier lost to it on
             // every axis and is NOT published).
             Triple("french.json", "WHISPER" to "", 3),
+            // TASK-970: the Ultra quality alternative (4-file transducer).
+            Triple("parakeet-ultra.json", "TRANSDUCER" to "nemo_transducer", 4),
             // GH #183 maintainer decision: the German full fine-tune ships
             // ALONGSIDE turbo (domain pick: CV15 3.00 on its training
             // domain, FLEURS 7.48 vs turbo 6.01 on ours).
@@ -330,6 +356,7 @@ class ExternalCatalogTest {
             "finnish.json" to "fi",
             "dutch.json" to "nl",
             "french.json" to "fr",
+            "parakeet-ultra.json" to "en",
             "german-large.json" to "de",
         ).forEach { (file, lang) ->
             val obj = org.json.JSONObject(
@@ -356,13 +383,13 @@ class ExternalCatalogTest {
         // "ry" is an inner substring of "Canary": word matching keeps it silent
         assertTrue(ExternalCatalog.filter(entries, "ry").isEmpty())
         // a real name word still finds the four flash entries plus the
-        // Dutch 1B pick (TASK-954)...
-        assertEquals(5, ExternalCatalog.filter(entries, "canary").size)
+        // Dutch 1B pick (TASK-954) and the Finnish 1B twin (TASK-981)...
+        assertEquals(6, ExternalCatalog.filter(entries, "canary").size)
         // ...and the "de" code surfaces every German-capable entry via
         // languages (TASK-596: orukeet now declares its full 24-language
         // set, so it joins the German results; TASK-855: transcribepsy
         // EU declares de too)
-        assertEquals(7, ExternalCatalog.filter(entries, "de").size)
+        assertEquals(8, ExternalCatalog.filter(entries, "de").size)
         // TASK-652: the six IndicConformer entries surface via their codes.
         // TASK-663: Dolphin declares the same six codes, so each surfaces
         // exactly the IndicConformer entry plus Dolphin (order: Dolphin first).
@@ -378,10 +405,10 @@ class ExternalCatalogTest {
         val moonshine = ExternalCatalog.filter(entries, "moonshine")
         assertEquals(3, moonshine.size)
         assertEquals(setOf(ModelFamily.MOONSHINE), moonshine.map { it.family }.toSet())
-        assertEquals(3, ExternalCatalog.filter(entries, "uk").size)
+        assertEquals(4, ExternalCatalog.filter(entries, "uk").size)
         assertEquals(3, ExternalCatalog.filter(entries, "vi").size)
         // TASK-855: transcribepsy EU declares es (and the other 19).
-        assertEquals(5, ExternalCatalog.filter(entries, "es").size)
+        assertEquals(6, ExternalCatalog.filter(entries, "es").size)
     }
 
     /** TASK-652 review: pin the six entry files like the omnilingual

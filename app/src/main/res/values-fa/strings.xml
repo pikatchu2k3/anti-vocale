@@ -210,6 +210,14 @@
     <string name="catalog_download_confirm_message">حدود %1$dMB دانلود خواهد شد.</string>
     <string name="model_fit_no_fit">این مدل احتمالاً روی این دستگاه اجرا نمی‌شود: رم آن کمتر از مقدار لازم مدل است.</string>
     <string name="model_fit_tight">هشدار: این مدل درست در محدوده رم این دستگاه جا می‌گیرد؛ زیر فشار حافظه ممکن است از کار بیفتد.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">رم دستگاه: %1$d گیگابایت، %2$s</string>
+    <string name="device_tier_constrained">ردهٔ اقتصادی</string>
+    <string name="device_tier_standard">ردهٔ میان‌رده</string>
+    <string name="device_tier_high">ردهٔ بالا</string>
+    <string name="model_fit_chip_tight">در حد مرز</string>
+    <string name="model_fit_chip_no_fit">ممکن است جا نشود</string>
+
     <string name="catalog_extract_confirm_title">%1$s استخراج شود؟</string>
     <string name="catalog_extract_confirm_message">فایل مدل قبلاً دانلود شده است. برای استفاده استخراج خواهد شد.</string>
 
@@ -400,6 +408,7 @@
     <string name="model_selected_message">%1$s انتخاب شد</string>
     <string name="model_use_missing_files">فایل‌های مدل %1$s مفقود یا ناقص‌اند. این نسخه را از زبانه مدل دوباره دانلود کنید.</string>
     <string name="model_demoted_notice">به‌طور خودکار انتخاب نمی‌شود: این مدل با وجود گفتار متن تولید نکرد. دوباره انتخابش کنید تا فرصت دیگری به آن بدهید.</string>
+    <string name="external_model_wiped_notice">با پاک‌سازی فضای ذخیره‌سازی سیستم حذف شد. آن را با اقدامات درون‌ریزی بالا دوباره درون‌ریزی کنید.</string>
     <string name="delete">حذف</string>
     <string name="variant_more_actions">اقدامات بیشتر</string>
     <string name="download">دانلود</string>
@@ -558,7 +567,15 @@
     <string name="signature_position_title">موقعیت</string>
     <string name="signature_position_prepend">قبل از رونویسی</string>
     <string name="signature_position_append">بعد از رونویسی</string>
-    <string name="summary_prompt_description">دستور خلاصه‌سازی هوش مصنوعی را جایگزین کنید. خالی یعنی دستور داخلی (دو سه جمله).</string>
+    <string name="summary_prompt_description">انتخاب کنید مرحلهٔ هوش مصنوعی به تفریغ‌های بلند چه چیزی اضافه کند. سفارشی یک دستور آزاد می‌پذیرد؛ خالی یعنی استفاده از دستور داخلی.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">خلاصه</string>
+    <string name="summary_preset_action_items">اقدام‌ها</string>
+    <string name="summary_preset_meeting_minutes">صورت‌جلسه</string>
+    <string name="summary_preset_custom">سفارشی</string>
+    <string name="summary_preset_action_items_prompt">اقدام‌های این تفریغ را به صورت فهرست کوتاه، هر مورد در یک سطر، به زبان تفریغ فهرست کن. در صورت ذکر، مسئول و مهلت را بیاور. فقط فهرست را بنویس.</string>
+    <string name="summary_preset_meeting_minutes_prompt">از این تفریغ صورت‌جلسه بنویس: موضوع‌های بحث، تصمیم‌های گرفته‌شده و اقدام‌ها با مسئولشان، به زبان تفریغ. نام‌ها و عددها را نگه دار. فقط صورت‌جلسه را بنویس.</string>
+
     <string name="punctuation_default_prompt">به این رونویسی نشانه‌گذاری و بزرگ‌نویسی حروف اضافه کنید. هر کلمه را دقیقاً همان‌طور که نوشته شده نگه دارید؛ چیزی را تصحیح، ترجمه، اضافه یا حذف نکنید. فقط رونویسی اصلاح‌شده را برگردانید.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">خلاصه‌کردن رونویسی‌های طولانی</string>
@@ -951,6 +968,7 @@
     <string name="external_import">وارد کردن</string>
     <string name="external_importing">در حال وارد کردن مدل…</string>
     <string name="external_importing_file">در حال وارد کردن %1$s (%2$d از %3$d)…</string>
+    <string name="external_import_cancelled">دانلود لغو شد</string>
     <string name="external_import_failed">وارد کردن ناموفق بود: %1$s</string>
     <string name="external_imported">%1$s وارد شد</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1324,8 +1342,17 @@
     <string name="backup_import_history_failed">تنظیمات درون‌ریزی شد، اما افزودن تاریخچه ممکن نشد. تلاش دوباره بی‌خطر است.</string>
     <string name="backup_disclosure_title">پیش از برون‌بری</string>
     <string name="backup_disclosure_body">پشتیبان شامل هر رونوشت، نام فرستنده و برچسب گوینده به صورت متن خوانا است. آن را فقط با مقصدهای مطمئن به اشتراک بگذارید.</string>
-    <string name="keyword_biasing_title">گرایش کلیدواژه‌ای (Whistle)</string>
-    <string name="keyword_biasing_description">نام‌ها، مکان‌ها یا اصطلاحاتی که مدل Whistle باید ترجیح دهد، در هر خط یک مورد. از رونویسی بعدی اعمال می‌شود، بدون بارگذاری مجدد.</string>
+    <string name="keyword_biasing_title">واژه‌نامهٔ شخصی</string>
+    <string name="keyword_biasing_description">نام‌ها، مکان‌ها یا اصطلاح‌هایی که برنامه باید رعایت کند، در هر سطر یکی.</string>
+    <string name="keyword_biasing_summary">نام‌ها و اصطلاح‌هایی که تشخیص باید به سبک خودت بنویسد.</string>
+    <string name="keyword_biasing_where_title">کجا اعمال می‌شود</string>
+    <string name="keyword_biasing_where_recognition">تشخیص: Whistle و Qwen3 و Parakeet و GigaAM و Nemotron جریانی.</string>
+    <string name="keyword_biasing_where_passes">مراحل پرداخت و خلاصهٔ هوش مصنوعی؛ پرداخت محافظه‌کار پرامپت ثابت خود را نگه می‌دارد.</string>
+    <string name="keyword_biasing_where_download">با تنظیم واژه‌نامه، یک فایل موتور کوچک یک‌بار برای Parakeet وGigaAM وNemotron جریانی دانلود می‌شود.</string>
+    <string name="keyword_biasing_where_qwen3">در Qwen3 فقط نخستین اصطلاح‌های فهرست اعمال می‌شوند.</string>
+    <string name="keyword_biasing_score_title">اصلاح بیشتر و قوی‌تر</string>
+    <string name="keyword_biasing_score_note">مقادیر بالاتر می‌توانند روی بقیهٔ تفریغ هم اثر بگذارند. تغییر در بارگذاری بعدی مدل اعمال می‌شود.</string>
+    <string name="personal_dictionary_prompt_line">این نام‌ها یا اصطلاح‌ها در این محتوا می‌آیند؛ هر جا آمدند این نوشتار دقیق را حفظ کن: %1$s</string>
     <string name="keyword_biasing_placeholder">در هر خط یک عبارت</string>
     <string name="freeze_protection_title">محافظت از رونویسی پس‌زمینه</string>
     <string name="freeze_protection_description">در طول رونویسی یک جریان صوتی بی‌صدا فعال نگه می‌دارد تا صرفه‌جویان تهاجمی باتری برنامه را متوقف نکنند. اگر رونویسی با خاموش شدن صفحه متوقف می‌شود، این را روشن کنید (برخی گوشی‌های Oppo، Realme، OnePlus و Vivo).</string>
@@ -1342,4 +1369,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">تازه‌ها</string>
     <string name="whats_new_summary">تازه‌های این نسخه</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">بازیابی مدل‌ها</string>
+    <string name="notification_channel_model_repair_description">اعلان‌ها وقتی پاک‌کننده فضای ذخیره‌سازی سیستم مدلی واردشده را حذف می‌کند و درباره نتیجه بازیابی.</string>
+    <string name="wiped_imports_title">پاک‌کننده سیستم فایل‌های مدل را حذف کرد</string>
+    <string name="wiped_imports_text">پاک‌کننده فضای ذخیره‌سازی سیستم فایل‌های %1$d مدل واردشده را حذف کرد: %2$s. برای دانلود دوباره از منبع اصلی، «بازیابی» را بزنید.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d مورد دیگر</string>
+    <string name="wiped_imports_recover_action">بازیابی</string>
+    <string name="wiped_imports_recovered_title">بازیابی تمام شد</string>
+    <string name="wiped_imports_recovered_text">فایل‌های %1$d مدل دوباره دانلود شد و آماده استفاده است.</string>
+    <string name="wiped_imports_failed_title">بازیابی مدل ناموفق بود</string>
+    <string name="wiped_imports_failed_text">دانلود دوباره کامل نشد. برای وارد کردن دوباره مدل به‌صورت دستی، تب مدل‌ها را باز کنید.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">منبع مدل در دسترس نیست</string>
+    <string name="wiped_imports_source_failed_text">%1$d مدل دیگر از منبع اصلی‌اش دانلود نمی‌شود. ورودی‌های خراب را حذف کنید یا مدل را از تب مدل‌ها دوباره به‌صورت دستی درون‌ریزی کنید.</string>
+    <string name="wiped_imports_remove_action">حذف</string>
+    <string name="wiped_imports_removed_text">%1$d ورودی مدل خراب از تب مدل‌ها حذف شد.</string>
+    <string name="wiped_imports_progress_title">بازیابی مدل در جریان است</string>
+    <string name="wiped_imports_progress_text">فایل‌های مدل حذف‌شده دوباره دانلود می‌شوند. این کار ممکن است چند دقیقه طول بکشد.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">پرسیدن از هوش مصنوعی</string>
+    <string name="ask_transcripts_title">از تفریغ‌هایت بپرس</string>
+    <string name="ask_transcripts_no_matches">تفریغی برای این سؤال پیدا نشد.</string>
+    <string name="ask_transcripts_sources">بر اساس %1$d تفریغ</string>
+    <string name="ask_transcripts_error">خطا: %1$s</string>
+    <string name="ask_transcripts_instruction">به پرسش زیر فقط بر اساس این تفریغ‌ها پاسخ بده. اگر تفریغ‌ها پاسخ را در بر ندارند، همین را بگو. به زبان پرسش پاسخ بده.</string>
+<string name="ask_transcripts_working">در حال پرسیدن از مدل روی دستگاه…</string>
 </resources>

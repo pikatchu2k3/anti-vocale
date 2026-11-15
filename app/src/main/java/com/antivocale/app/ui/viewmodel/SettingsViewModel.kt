@@ -147,7 +147,9 @@ class SettingsViewModel @Inject constructor(
                 modelConfigured = !preferencesManager.modelPath.first().isNullOrBlank(),
                 punctuationPrompt = preferencesManager.punctuationPrompt.first(),
                 keywordBiasing = preferencesManager.keywordBiasing.first(),
+                biasingScore = preferencesManager.biasingScore.first(),
                 summaryPrompt = preferencesManager.summaryPrompt.first(),
+                summaryPreset = preferencesManager.summaryPreset.first(),
                 transcriptionAdvancedExpanded =
                     preferencesManager.settingsTranscriptionAdvancedExpanded.first(),
         )
@@ -157,7 +159,10 @@ class SettingsViewModel @Inject constructor(
         val modelConfigured: Boolean,
         val punctuationPrompt: String,
         val keywordBiasing: String = "",
+        val biasingScore: Float = com.antivocale.app.data.PreferencesManager.DEFAULT_BIASING_SCORE,
         val summaryPrompt: String,
+        /** TASK-993: seeds the preset picker (no first-frame flash). */
+        val summaryPreset: String,
         /** TASK-588.1: seeds the advanced-reveal state (no first-frame flash). */
         val transcriptionAdvancedExpanded: Boolean,
     )
@@ -379,6 +384,14 @@ class SettingsViewModel @Inject constructor(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = warmedPrefs.summaryPrompt
+        )
+
+    /** TASK-993: the summary-pass preset key (SummaryPreset). */
+    val currentSummaryPreset: StateFlow<String> = preferencesManager.summaryPreset
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = warmedPrefs.summaryPreset
         )
 
     /** TASK-858: whistle keyword-biasing terms; blank = off. */
@@ -1344,6 +1357,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun saveSummaryPreset(preset: String) {
+        viewModelScope.launch {
+            preferencesManager.saveSummaryPreset(preset)
+        }
+    }
+
     fun savePunctuationPrompt(prompt: String) {
         viewModelScope.launch {
             preferencesManager.savePunctuationPrompt(prompt)
@@ -1462,6 +1481,18 @@ class SettingsViewModel @Inject constructor(
 
     fun saveKeywordBiasing(terms: String) {
         viewModelScope.launch { preferencesManager.saveKeywordBiasing(terms) }
+    }
+
+    /** TASK-994 knob: the biasing strength (1.5 default .. 5.0 max). */
+    val currentBiasingScore: StateFlow<Float> = preferencesManager.biasingScore
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = warmedPrefs.biasingScore
+    )
+
+    fun saveBiasingScore(value: Float) {
+        viewModelScope.launch { preferencesManager.saveBiasingScore(value) }
     }
 
     fun saveSignatureText(text: String) {

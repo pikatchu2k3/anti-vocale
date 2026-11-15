@@ -14,6 +14,7 @@ import com.antivocale.app.data.ShortcutIconStore
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.TranscriptionCalibrator
 import com.antivocale.app.data.EXTERNAL_MODELS_DIR_NAME
+import com.antivocale.app.data.ExternalModelDeleter
 import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelStore
 import com.antivocale.app.data.catalog.BundledModelCatalog
@@ -182,6 +183,22 @@ object AppModule {
     fun provideExternalModelStore(preferencesManager: PreferencesManager): ExternalModelStore =
         ExternalModelStore(preferencesManager)
 
+    // TASK-971: the repair's progress seam (see the relay class KDoc).
+    @Provides
+    @Singleton
+    fun provideExternalImportProgressRelay(): com.antivocale.app.data.ExternalImportProgressRelay =
+        com.antivocale.app.data.ExternalImportProgressRelay()
+
+    // TASK-974: the shared external-model delete semantics (store row, files,
+    // selection resets). No @Inject constructor: ExternalModelStore itself is
+    // provided here (the defaulted-lambda Dagger gotcha documented on it).
+    @Provides
+    @Singleton
+    fun provideExternalModelDeleter(
+        externalModelStore: ExternalModelStore,
+        preferencesManager: PreferencesManager,
+    ): ExternalModelDeleter = ExternalModelDeleter(externalModelStore, preferencesManager)
+
     // TASK-670 (GH #83): the voiceprint store, app-private files only.
     @Provides
     @Singleton
@@ -220,6 +237,29 @@ object AppModule {
             store = store,
             filesRoot = { java.io.File(context.filesDir, EXTERNAL_MODELS_DIR_NAME) },
             repoListing = com.antivocale.app.data.HuggingFaceRepoListing(okHttpClient),
+        )
+
+    /**
+     * TASK-963: the wiped-import repairer, a singleton because its captured
+     * state (dangling candidates, selections) must survive from the startup
+     * capture to the notification's Recover tap, minutes or hours later.
+     * Provided via @Provides (not @Inject), the [ExternalModelStore]
+     * precedent: the reimport lambda parameter is invisible to Dagger.
+     */
+    @Provides
+    @Singleton
+    fun provideExternalImportRepairer(
+        store: ExternalModelStore,
+        preferencesManager: PreferencesManager,
+        importer: com.antivocale.app.data.ExternalModelImportOperations,
+        deleter: com.antivocale.app.data.ExternalModelDeleter,
+        progressRelay: com.antivocale.app.data.ExternalImportProgressRelay,
+    ): com.antivocale.app.data.ExternalImportRepairer =
+        com.antivocale.app.data.ExternalImportRepairer(
+            store,
+            preferencesManager,
+            deleter = deleter,
+            reimport = com.antivocale.app.data.ExternalImportRepairer.reimportFor(importer, progressRelay),
         )
 
     @Provides

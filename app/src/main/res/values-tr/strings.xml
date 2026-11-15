@@ -213,6 +213,14 @@
     <string name="catalog_download_confirm_message">Bu, yaklaşık %1$dMB indirir.</string>
     <string name="model_fit_no_fit">Bu model bu cihazda büyük olasılıkla çalışmaz: RAM\'i modelin ihtiyacının altında.</string>
     <string name="model_fit_tight">Not: bu model bu cihazın RAM\'ine ancak sığıyor; bellek baskısı altında başarısız olabilir.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">Cihaz RAM: %1$d GB, %2$s</string>
+    <string name="device_tier_constrained">giriş seviyesi</string>
+    <string name="device_tier_standard">orta seviye</string>
+    <string name="device_tier_high">üst seviye</string>
+    <string name="model_fit_chip_tight">Sinirde</string>
+    <string name="model_fit_chip_no_fit">Sığmayabilir</string>
+
     <string name="catalog_extract_confirm_title">%1$s ayıklansın mı?</string>
     <string name="catalog_extract_confirm_message">Model dosyası zaten indirildi. Bu, kullanım için dosyayı ayıklar.</string>
 
@@ -406,6 +414,7 @@
     <string name="model_selected_message">%1$s seçildi</string>
     <string name="model_use_missing_files">%1$s için model dosyaları eksik veya tamamlanmamış. Model sekmesinden varyantı yeniden indirin.</string>
     <string name="model_demoted_notice">Otomatik olarak seçilmez: bu model konuşma varken metin üretmedi. Ona bir şans daha vermek için yeniden seçin.</string>
+    <string name="external_model_wiped_notice">Sistem depolama temizliği tarafından kaldırıldı. Yukarıdaki içe aktarma eylemleriyle yeniden içe aktarın.</string>
     <string name="delete">Sil</string>
     <string name="variant_more_actions">Diğer eylemler</string>
     <string name="download">İndir</string>
@@ -570,7 +579,15 @@
     <string name="signature_position_title">Konum</string>
     <string name="signature_position_prepend">Transkriptten önce</string>
     <string name="signature_position_append">Transkriptten sonra</string>
-    <string name="summary_prompt_description">Yapay zekâ özeti talimatını değiştirin. Boş bırakılırsa yerleşik istem (iki-üç cümle) kullanılır.</string>
+    <string name="summary_prompt_description">Yapay zekâ adımının uzun transkripsiyonlara ne ekleyeceğini seçin. Özel serbest bir talimat alır; boş bırakılırsa yerleşik istem kullanılır.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">Özet</string>
+    <string name="summary_preset_action_items">Yapılacaklar</string>
+    <string name="summary_preset_meeting_minutes">Toplantı tutanağı</string>
+    <string name="summary_preset_custom">Özel</string>
+    <string name="summary_preset_action_items_prompt">Bu transkripsiyondaki yapılacakları her satıra bir madde düşecek şekilde kısa bir liste olarak yaz, transkripsiyonun dilinde. Belirtildiyse sorumluları ve süreleri dahil et. Sadece listeyi yaz.</string>
+    <string name="summary_preset_meeting_minutes_prompt">Bu transkripsiyondan toplantı tutanağı yaz: konuşulan konular, alınan kararlar ve sorumlularıyla yapılacaklar, transkripsiyonun dilinde. İsimleri ve sayıları koru. Sadece tutanağı yaz.</string>
+
     <string name="punctuation_default_prompt">Bu transkripte noktalama ve büyük harfler ekle. Her kelimeyi tam yazıldığı gibi koru; hiçbir şeyi düzeltme, çevirme, ekleme veya çıkarma. Yalnızca düzeltilmiş transkripti yaz.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">Uzun transkriptleri özetle</string>
@@ -991,6 +1008,7 @@
     <string name="external_import">İçe Aktar</string>
     <string name="external_importing">Model içe aktarılıyor…</string>
     <string name="external_importing_file">%1$s içe aktarılıyor (%2$d/%3$d)…</string>
+    <string name="external_import_cancelled">İndirme iptal edildi</string>
     <string name="external_import_failed">İçe aktarma başarısız: %1$s</string>
     <string name="external_imported">%1$s içe aktarıldı</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1319,8 +1337,17 @@
     <string name="backup_import_history_failed">Ayarlar içe aktarıldı ancak geçmiş eklenemedi. Yeniden denemek güvenlidir.</string>
     <string name="backup_disclosure_title">Dışa aktarmadan önce</string>
     <string name="backup_disclosure_body">Yedek, her transkripsiyonu, gönderen adını ve konuşmacı etiketini okunabilir metin olarak içerir. Yalnızca güvendiğiniz kişilerle paylaşın.</string>
-    <string name="keyword_biasing_title">Anahtar kelime eğilimi (Whistle)</string>
-    <string name="keyword_biasing_description">Whistle modelinin tercih etmesi gereken isimler, yerler veya terimler, her satıra bir tane. Yeniden yüklemeden bir sonraki transkripsiyonda geçerlidir.</string>
+    <string name="keyword_biasing_title">Kişisel sözlük</string>
+    <string name="keyword_biasing_description">Uygulamanın dikkate alması gereken isimler, yerler veya jargon, satır başına bir tane.</string>
+    <string name="keyword_biasing_summary">Tanımanın senin tarzınla yazması gereken isimler ve terimler.</string>
+    <string name="keyword_biasing_where_title">Nerede geçerli</string>
+    <string name="keyword_biasing_where_recognition">Tanıma: Whistle, Qwen3, Parakeet, GigaAM ve akış Nemotron.</string>
+    <string name="keyword_biasing_where_passes">Yapay zekâ düzeltme ve özet adımları; muhafazakâr düzeltme sabit istemini korur.</string>
+    <string name="keyword_biasing_where_download">Sözlüğü ayarlamak, Parakeet, GigaAM ve akış Nemotron için bir kez küçük bir motor dosyası indirir.</string>
+    <string name="keyword_biasing_where_qwen3">Qwen3\'te yalnızca listenin ilk terimleri geçerlidir.</string>
+    <string name="keyword_biasing_score_title">Daha agresif düzeltme</string>
+    <string name="keyword_biasing_score_note">Yüksek değerler transkriptin geri kalanını da etkileyebilir. Değişiklik, modelin bir sonraki yüklenişinde etkili olur.</string>
+    <string name="personal_dictionary_prompt_line">Bu isimler veya terimler bu içerikte geçiyor; geçtikleri yerlerde bu tam yazımı koru: %1$s</string>
     <string name="keyword_biasing_placeholder">Satır başına bir terim</string>
     <string name="freeze_protection_title">Arka plan transkripsiyon koruması</string>
     <string name="freeze_protection_description">Transkripsiyon sırasında sessiz bir ses akışını etkin tutar, böylece agresif pil tasarrufu araçları uygulamayı duraklatamaz. Ekran kapalıyken transkripsiyon duruyorsa açın (bazı Oppo, Realme, OnePlus ve Vivo telefonlar).</string>
@@ -1337,4 +1364,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">Yenilikler</string>
     <string name="whats_new_summary">Bu sürümdeki yenilikler</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">Model kurtarma</string>
+    <string name="notification_channel_model_repair_description">Sistem depolama temizleyicisi içe aktarılan bir modeli sildiğinde ve kurtarma girişiminin sonucu hakkında bildirimler.</string>
+    <string name="wiped_imports_title">Sistem temizleyici model dosyalarını sildi</string>
+    <string name="wiped_imports_text">Sistem depolama temizleyicisi %1$d içe aktarılan modelin dosyalarını sildi: %2$s. Orijinal kaynaktan yeniden indirmek için Kurtar düğmesine dokunun.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d tane daha</string>
+    <string name="wiped_imports_recover_action">Kurtar</string>
+    <string name="wiped_imports_recovered_title">Kurtarma tamamlandı</string>
+    <string name="wiped_imports_recovered_text">%1$d modelin dosyaları yeniden indirildi ve kullanılmaya hazır.</string>
+    <string name="wiped_imports_failed_title">Model kurtarma başarısız</string>
+    <string name="wiped_imports_failed_text">Yeniden indirme tamamlanmadı. Modeli elle yeniden içe aktarmak için Modeller sekmesini açın.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">Model kaynağı kullanılamıyor</string>
+    <string name="wiped_imports_source_failed_text">%1$d model artık özgün kaynağından indirilemiyor. Bozuk kayıtları kaldırın veya modeli Modeller sekmesinden elle yeniden içe aktarın.</string>
+    <string name="wiped_imports_remove_action">Kaldır</string>
+    <string name="wiped_imports_removed_text">Modeller sekmesinden %1$d bozuk model kaydı kaldırıldı.</string>
+    <string name="wiped_imports_progress_title">Model kurtarma işlemi sürüyor</string>
+    <string name="wiped_imports_progress_text">Silinen model dosyaları yeniden indiriliyor. Bu işlem birkaç dakika sürebilir.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">YZ\'ye sor</string>
+    <string name="ask_transcripts_title">Transkriplerine sor</string>
+    <string name="ask_transcripts_no_matches">Bu soru için transkript bulunamadı.</string>
+    <string name="ask_transcripts_sources">%1$d transkripte dayalı</string>
+    <string name="ask_transcripts_error">Hata: %1$s</string>
+    <string name="ask_transcripts_instruction">Aşağıdaki soruyu SADECE bu transkriptlere dayanarak yanıtla. Transkriptlerde yanıt yoksa bunu söyle. Sorunun dilinde yanıtla.</string>
+<string name="ask_transcripts_working">Cihazdaki modele soruluyor…</string>
 </resources>

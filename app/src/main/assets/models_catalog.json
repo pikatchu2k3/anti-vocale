@@ -86,6 +86,9 @@
               "name": "tokens.txt",
               "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
             }
+          ],
+          "supplements": [
+            {"name": "bpe.vocab", "sha256": "41130ff456706304a1adec782ccc9e003c4d417e8e324353d281be958cac4e17"}
           ]
         },
         {
@@ -102,25 +105,28 @@
           "estimatedSizeMB": 640,
           "source": {
             "kind": "huggingface",
-            "repo": "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+            "repo": "pantinor/parakeet-tdt-0.6b-v3-int8"
           },
           "files": [
             {
               "name": "encoder.int8.onnx",
-              "sha256": "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247"
+              "sha256": "1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479"
             },
             {
               "name": "decoder.int8.onnx",
-              "sha256": "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e"
+              "sha256": "0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5"
             },
             {
               "name": "joiner.int8.onnx",
-              "sha256": "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3"
+              "sha256": "cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98"
             },
             {
               "name": "tokens.txt",
               "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
             }
+          ],
+          "supplements": [
+            {"name": "bpe.vocab", "sha256": "41130ff456706304a1adec782ccc9e003c4d417e8e324353d281be958cac4e17"}
           ]
         }
       ]
@@ -663,7 +669,7 @@
       ],
       "variants": [
         {
-          "name": "0.6b-int8",
+          "name": "0.6b-int4",
           "title": {
             "resourceKey": "qwen3_asr_0_6b_title"
           },
@@ -672,11 +678,11 @@
             "sizePlaceholder": true,
             "countPlaceholder": true
           },
-          "dirName": "sherpa-onnx-qwen3-asr-0.6b-int8",
-          "estimatedSizeMB": 938,
+          "dirName": "sherpa-onnx-qwen3-asr-0.6b-int4",
+          "estimatedSizeMB": 606,
           "source": {
             "kind": "huggingface",
-            "repo": "pantinor/sherpa-onnx-qwen3-asr-0.6b-int8"
+            "repo": "goodpixelltd/qwen3-asr-0.6b-int4-sherpa-onnx"
           },
           "files": [
             {
@@ -684,12 +690,20 @@
               "sha256": "d22dc4423e0940e49884e903d2ea2f7e5567c14fc1aed97e4e26d6b8f208ef9e"
             },
             {
-              "name": "encoder.int8.onnx",
-              "sha256": "60748d3e6744a57c9c91e1b17424a6c2990567e8adceb0783940c03ed98fa9d9"
+              "name": "encoder.int4.onnx",
+              "sha256": "774e997d23a2f06c3f544666625c93a3b824fdd83d04c6acd88ee25f4e3b6e2e"
             },
             {
-              "name": "decoder.int8.onnx",
-              "sha256": "61e5f8249f9e7c82d5e01e1938c79fb3f5b3135f91664928033029e42451bd18"
+              "name": "encoder.int4.weights",
+              "sha256": "dc66975d9be10fbd31f89c76d33dd0bf4a8059ef14da4abf545bbf9895a5293d"
+            },
+            {
+              "name": "decoder.int4.onnx",
+              "sha256": "c588d2a89460315f51ca8c65dbe85a0619891500fc853e5b673e3c914c25b2d3"
+            },
+            {
+              "name": "decoder.int4.weights",
+              "sha256": "126c8e16074cc87250dacbf07602315e3bc5239c93ea414773b6e3a6fd4bf466"
             },
             {
               "name": "tokenizer/merges.txt",
@@ -804,6 +818,9 @@
               "name": "tokens.txt",
               "sha256": "729cc103155bafa785f9cd45746cd41cabe97eab7182fc04d594129587958f8a"
             }
+          ],
+          "supplements": [
+            {"name": "bpe.vocab", "sha256": "013996075936cc418b707afa244d5426f71746373c620529ac15b7cdffaf1447", "repo": "pantinor/nemotron-3.5-asr-streaming-vocab"}
           ]
         }
       ]
@@ -865,6 +882,9 @@
               "name": "gigaam_v3_e2e_rnnt_tokens.txt",
               "sha256": "7ddf22514c42c531358182c81446a8159771e9921019f09ae743ea622d40221d"
             }
+          ],
+          "supplements": [
+            {"name": "bpe.vocab", "sha256": "af72e53d851552fca7510fd1aa8ca7db340407ee1c57bd34c4bafaec1a79529c"}
           ]
         }
       ]

@@ -7,9 +7,11 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.antivocale.app.transcription.SummaryPreset
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,6 +49,14 @@ class PreferencesManagerImpl(
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val TRANSCRIPTION_BACKEND = stringPreferencesKey("transcription_backend")
         private val REFINEMENT_MODEL_BACKEND_ID = stringPreferencesKey("refinement_model_backend_id")
+        private val WIPED_REPAIR_CAPTURED_ACTIVE =
+            stringPreferencesKey("wiped_repair_captured_active")
+        private val WIPED_REPAIR_CAPTURED_PIN =
+            stringPreferencesKey("wiped_repair_captured_pin")
+        // TASK-973: record ids whose source proved dead (the native set
+        // form, same as DEMOTED_BACKENDS above).
+        private val WIPED_REPAIR_DEAD_SOURCES =
+            stringSetPreferencesKey("wiped_repair_dead_sources")
         private val SHERPA_MODEL_PATH_PREFIX = "sherpa_model_path_"
         /**
          * Data-store keys of the pre-consolidation per-model path preferences, mapped to
@@ -86,8 +96,10 @@ class PreferencesManagerImpl(
         private val PUNCTUATION_MODE = stringPreferencesKey("punctuation_mode")
         private val PUNCTUATION_PROMPT = stringPreferencesKey("punctuation_prompt")
         private val KEYWORD_BIASING = stringPreferencesKey("keyword_biasing")
+        private val BIASING_SCORE = floatPreferencesKey("biasing_score")
         private val SUMMARIZE_ENABLED = booleanPreferencesKey("summarize_enabled")
         private val SUMMARY_PROMPT = stringPreferencesKey("summary_prompt")
+        private val SUMMARY_PRESET = stringPreferencesKey("summary_preset")
         private val THREAD_COUNT = intPreferencesKey("thread_count")
         private val INFERENCE_PROVIDER = stringPreferencesKey("inference_provider")
         private val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
@@ -181,7 +193,9 @@ class PreferencesManagerImpl(
         val punctuationMode: String = PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         val punctuationPrompt: String = "",
         val keywordBiasing: String = "",
+        val biasingScore: Float = PreferencesManager.DEFAULT_BIASING_SCORE,
         val summaryPrompt: String = "",
+        val summaryPreset: String = PreferencesManager.DEFAULT_SUMMARY_PRESET,
         val summarizeEnabled: Boolean = PreferencesManager.DEFAULT_SUMMARIZE_ENABLED,
         val threadCount: Int = PreferencesManager.DEFAULT_THREAD_COUNT,
         val inferenceProvider: String = PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
@@ -261,7 +275,9 @@ class PreferencesManagerImpl(
         punctuationMode = this[PUNCTUATION_MODE] ?: PreferencesManager.DEFAULT_PUNCTUATION_MODE,
         punctuationPrompt = this[PUNCTUATION_PROMPT] ?: "",
         keywordBiasing = this[KEYWORD_BIASING] ?: "",
+        biasingScore = this[BIASING_SCORE] ?: PreferencesManager.DEFAULT_BIASING_SCORE,
         summaryPrompt = this[SUMMARY_PROMPT] ?: "",
+        summaryPreset = this[SUMMARY_PRESET] ?: PreferencesManager.DEFAULT_SUMMARY_PRESET,
         summarizeEnabled = this[SUMMARIZE_ENABLED] ?: PreferencesManager.DEFAULT_SUMMARIZE_ENABLED,
         threadCount = this[THREAD_COUNT] ?: PreferencesManager.DEFAULT_THREAD_COUNT,
         inferenceProvider = this[INFERENCE_PROVIDER] ?: PreferencesManager.DEFAULT_INFERENCE_PROVIDER,
@@ -466,6 +482,41 @@ class PreferencesManagerImpl(
             preferences[TRANSCRIPTION_BACKEND] = backendId
         }
         cache.updateAndGet { it.copy(transcriptionBackend = backendId) }
+    }
+
+    // TASK-963: the wiped-repair pending snapshot. No cache entry: the only
+    // reader is the repairer's restore, which reads it at tap time, and the
+    // distinctUntilChanged concern does not apply (no UI collector).
+    override val wipedRepairCapturedActive: Flow<String> =
+        dataStore.data.map { it[WIPED_REPAIR_CAPTURED_ACTIVE] ?: "" }
+            .distinctUntilChanged()
+
+    override suspend fun saveWipedRepairCapturedActive(backendId: String) {
+        dataStore.edit { preferences ->
+            preferences[WIPED_REPAIR_CAPTURED_ACTIVE] = backendId
+        }
+    }
+
+    override val wipedRepairDeadSources: Flow<Set<String>> =
+        dataStore.data.map { preferences ->
+            preferences[WIPED_REPAIR_DEAD_SOURCES] ?: emptySet()
+        }
+
+    override suspend fun saveWipedRepairDeadSources(ids: Set<String>) {
+        dataStore.edit { preferences ->
+            if (ids.isEmpty()) preferences.remove(WIPED_REPAIR_DEAD_SOURCES)
+            else preferences[WIPED_REPAIR_DEAD_SOURCES] = ids
+        }
+    }
+
+    override val wipedRepairCapturedPin: Flow<String> =
+        dataStore.data.map { it[WIPED_REPAIR_CAPTURED_PIN] ?: "" }
+            .distinctUntilChanged()
+
+    override suspend fun saveWipedRepairCapturedPin(backendId: String) {
+        dataStore.edit { preferences ->
+            preferences[WIPED_REPAIR_CAPTURED_PIN] = backendId
+        }
     }
 
     override fun sherpaModelPath(entryId: String): Flow<String?> {
@@ -699,6 +750,10 @@ class PreferencesManagerImpl(
     override val summaryPrompt: Flow<String> = dataStore.data.map { it[SUMMARY_PROMPT] ?: "" }
         .onStart { emit(cache.get().summaryPrompt) }
 
+    override val summaryPreset: Flow<String> = dataStore.data.map {
+        it[SUMMARY_PRESET] ?: PreferencesManager.DEFAULT_SUMMARY_PRESET
+    }.onStart { emit(cache.get().summaryPreset) }
+
     override suspend fun savePunctuationPrompt(prompt: String) {
         // Same 500-char cap as the default transcription prompt: one
         // instruction paragraph, not an essay (TASK-276).
@@ -711,6 +766,18 @@ class PreferencesManagerImpl(
 
     override val keywordBiasing: Flow<String> = dataStore.data.map { it[KEYWORD_BIASING] ?: "" }
         .onStart { emit(cache.get().keywordBiasing) }
+
+    override val biasingScore: Flow<Float> =
+        dataStore.data.map { it[BIASING_SCORE] ?: PreferencesManager.DEFAULT_BIASING_SCORE }
+            .onStart { emit(cache.get().biasingScore) }
+
+    override suspend fun saveBiasingScore(value: Float) {
+        val clamped = value.coerceIn(PreferencesManager.MIN_BIASING_SCORE, PreferencesManager.MAX_BIASING_SCORE)
+        dataStore.edit { preferences ->
+            preferences[BIASING_SCORE] = clamped
+        }
+        cache.updateAndGet { it.copy(biasingScore = clamped) }
+    }
 
     override suspend fun saveKeywordBiasing(terms: String) {
         val truncated = terms.take(PreferencesManager.PROMPT_CAP)
@@ -729,6 +796,24 @@ class PreferencesManagerImpl(
             preferences[SUMMARY_PROMPT] = truncated
         }
         cache.updateAndGet { it.copy(summaryPrompt = truncated) }
+    }
+
+    override suspend fun saveSummaryPreset(preset: String) {
+        val normalized = SummaryPreset.fromKey(preset)
+        dataStore.edit { preferences ->
+            preferences[SUMMARY_PRESET] = normalized.key
+        }
+        cache.updateAndGet { it.copy(summaryPreset = normalized.key) }
+    }
+
+    override suspend fun reconcileLegacySummaryPrompt() {
+        // One-shot, idempotent: only a NEVER-SET preset key plus a saved
+        // prompt counts as legacy (a deliberate non-custom choice stores
+        // the key and permanently opts out). See the interface KDoc.
+        val legacy = dataStore.data.first().let { it[SUMMARY_PRESET] == null && !(it[SUMMARY_PROMPT] ?: "").isBlank() }
+        if (!legacy) return
+        dataStore.edit { it[SUMMARY_PRESET] = SummaryPreset.CUSTOM.key }
+        cache.updateAndGet { it.copy(summaryPreset = SummaryPreset.CUSTOM.key) }
     }
 
     override suspend fun saveSummarizeEnabled(enabled: Boolean) {
@@ -1281,9 +1366,26 @@ class PreferencesManagerImpl(
                     when (val v = typed) {
                         is Boolean -> prefs[booleanPreferencesKey(name)] = v
                         is Int -> prefs[intPreferencesKey(name)] = v
-                        else -> prefs[stringPreferencesKey(name)] = v as String
+                        // A hand-edited archive may carry a Long/Double for a
+                        // string key (JSON has no int/long distinction); drop
+                        // the malformed entry instead of failing the whole
+                        // one-transaction import (review: the CCE killed
+                        // every setting over one bad value).
+                        is String -> prefs[stringPreferencesKey(name)] = v
                     }
                 }
+            // TASK-993 review: an archive from a pre-preset version carries
+            // the prompt with NO preset key, and that absence is ARCHIVE
+            // knowledge: the imported instruction was the active one on the
+            // source device. It must win over a LOCAL deliberate non-custom
+            // preset (the plain reconcile only fires when the local key is
+            // unset, which a prior choice defeats), so the promotion rides
+            // the same edit with the archive in hand.
+            val archivedPrompt = (values["summary_prompt"] as? String).orEmpty()
+            val archiveHasPresetKey = values.containsKey("summary_preset")
+            if (!archiveHasPresetKey && archivedPrompt.isNotBlank()) {
+                prefs[SUMMARY_PRESET] = SummaryPreset.CUSTOM.key
+            }
         }
         cache.set(dataStore.data.first().toCached())
     }

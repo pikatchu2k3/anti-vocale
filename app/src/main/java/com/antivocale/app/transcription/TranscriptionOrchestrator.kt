@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import com.antivocale.app.R
+import com.antivocale.app.ui.AppNavigation
 import com.antivocale.app.manager.EngineWedgeTimeoutException
 import com.antivocale.app.util.DecodedOfTotalFormat
 import com.antivocale.app.util.SubtitleParser
@@ -1010,9 +1011,14 @@ class TranscriptionOrchestrator @Inject constructor(
             val passPrompt = if (fenced) {
                 context.getString(R.string.punctuation_default_prompt_conservative)
             } else {
-                PunctuationPolicy.effectivePrompt(
-                    preferencesManager.punctuationPrompt.first(),
-                    context.getString(R.string.punctuation_default_prompt))
+                // TASK-994: the personal dictionary rides the UNFENCED polish
+                // prompt only; the fenced mode's token validation pins its
+                // prompt, and a suffix could break the fences.
+                withPersonalDictionary(
+                    context,
+                    PunctuationPolicy.effectivePrompt(
+                        preferencesManager.punctuationPrompt.first(),
+                        context.getString(R.string.punctuation_default_prompt)))
             }
             // TASK-666.2: over the context guard the pass runs CHUNKED (the
             // summary pass's map-reduce precedent, TASK-520; ContextChunker
@@ -1028,7 +1034,14 @@ class TranscriptionOrchestrator @Inject constructor(
             // ContextChunker's own identity path covers the under-guard
             // case (one chunk, same constant); the log fires only on a
             // real split.
-            val chunks = ContextChunker.split(result.text)
+            // TASK-994 review: the chunk budget leaves room for the FULL
+            // rendered prompt (base instruction + the dictionary rider),
+            // the same accounting the summary map stage applies; a
+            // rider-only subtraction left every chunk overshooting by the
+            // base prompt's length.
+            val chunks = ContextChunker.split(
+                result.text,
+                maxChars = (PunctuationPolicy.MAX_TRANSCRIPT_CHARS - passPrompt.length).coerceAtLeast(1))
             if (chunks.size > 1) {
                 Log.i(TAG, "Punctuation pass chunked: ${result.text.length} chars -> ${chunks.size} chunks")
             }
@@ -1197,16 +1210,19 @@ class TranscriptionOrchestrator @Inject constructor(
         )
     }
 
+
     /**
-     * TASK-121.4: the summary pass. Chains Gemma after a long transcription
-     * (the punctuation pass, when it ran, has already left the LLM active)
-     * and attaches a short summary as METADATA: the delivered transcript is
-     * never replaced (content preservation is the app's prime directive).
-     * Opt-in and skipped for short transcripts; every skip path (toggle,
-     * length, context limit, no Gemma configured) avoids the swap entirely,
-     * and any failure degrades to no summary: an optional extra may never
-     * fail a completed transcription.
+     * TASK-994: the personal-dictionary rider, ONE construction for every
+     * Gemma pass (the prompt-line template and the pref read live here, so
+     * a third pass cannot drift the resource or the semantics). Locale is
+     * resolved at the call site per the package's pure-core convention.
      */
+    private suspend fun withPersonalDictionary(context: android.content.Context, instruction: String): String =
+        PersonalDictionary.withVocabularyLine(
+            instruction,
+            preferencesManager.keywordBiasing.first(),
+        ) { terms -> context.getString(R.string.personal_dictionary_prompt_line, terms) }
+
     /**
      * TASK-520: map-reduce summary for transcripts past the context guard
      * (a 78-minute call is 60-80k chars; the single-shot pass would skip).
@@ -1238,7 +1254,7 @@ class TranscriptionOrchestrator @Inject constructor(
                     Log.i(TAG, "Summary pass clock spent by the previous attempt; not retrying")
                     break
                 }
-                Log.i(TAG, "Custom summary prompt did not produce an acceptable map-reduce summary; retrying with the built-in prompt")
+                Log.i(TAG, "Primary summary instruction (preset or custom) did not produce an acceptable map-reduce summary; retrying with the built-in prompt")
             }
             val generation = summarizeWithMapReduce(llm, instruction, result.text, MAX_SUMMARY_LEVELS, clock)
             // TASK-607 F7: the LATEST attempt's outcome wins, matching the
@@ -1305,8 +1321,14 @@ class TranscriptionOrchestrator @Inject constructor(
             Log.i(TAG, "Summary stage: single-shot overflowed a fresh session's state entries; chunking")
         }
         if (levelsLeft <= 0) return SummaryGeneration(null)
-        val chunks = ContextChunker.split(text)
-        Log.i(TAG, "Summary map stage: ${chunks.size} chunks (${text.length} chars)")
+        // TASK-994: the instructions (with the dictionary rider) prepend
+        // every chunk via ChunkPromptPolicy.finalPrompt; the chunk budget
+        // must leave room for the longest instruction.
+        val instructionBudget = instruction.length
+        val chunks = ContextChunker.split(
+            text,
+            maxChars = (PunctuationPolicy.MAX_TRANSCRIPT_CHARS - instructionBudget).coerceAtLeast(1))
+        Log.i(TAG, "Summary map stage: ${chunks.size} chunks (${text.length} chars, budget ${PunctuationPolicy.MAX_TRANSCRIPT_CHARS - instructionBudget})")
         val partials = mutableListOf<String>()
         var lastFailure: Throwable? = null
         var droppedChunks = 0
@@ -1418,6 +1440,16 @@ class TranscriptionOrchestrator @Inject constructor(
      * fail a completed transcription. Transcripts past the context guard
      * take the TASK-520 map-reduce branch below instead of skipping.
      */
+    /**
+     * TASK-121.4: the summary pass. Chains Gemma after a long transcription
+     * (the punctuation pass, when it ran, has already left the LLM active)
+     * and attaches a short summary as METADATA: the delivered transcript is
+     * never replaced (content preservation is the app's prime directive).
+     * Opt-in and skipped for short transcripts; every skip path (toggle,
+     * length, context limit, no Gemma configured) avoids the swap entirely,
+     * and any failure degrades to no summary: an optional extra may never
+     * fail a completed transcription.
+     */
     private suspend fun applySummaryPass(
         context: Context,
         result: TranscriptionResult,
@@ -1452,25 +1484,36 @@ class TranscriptionOrchestrator @Inject constructor(
             // model to answer in the transcript's language (the app locale
             // is deliberately not resolved into the prompt). TASK-483: a
             // saved prompt overrides the built-in, same contract as the
-            // punctuation pass (blank = built-in).
+            // punctuation pass (blank = built-in). TASK-993: the preset key
+            // selects a named instruction (action items, minutes); the
+            // ladder keeps the TASK-498 retry contract (a failed primary
+            // attempt degrades to the built-in recap) and applies to the
+            // map-reduce path too.
             val builtInInstruction = context.getString(R.string.summary_default_prompt)
-            val customInstruction = preferencesManager.summaryPrompt.first().trim()
-            // TASK-498: a custom-prompt attempt that fails (guard rejection
-            // or a thrown generation error) retries ONCE with the built-in
-            // instruction on the same loaded backend: the user still gets a
-            // real recap instead of a caption. With no custom prompt the
-            // built-in IS the first attempt and a failure stays one-shot.
-            // TASK-520: the ladder applies to the map-reduce path too
-            // (summarizeLongTranscript): long transcripts keep the retry.
-            val instructions = buildList {
-                add(SummaryPolicy.effectivePrompt(customInstruction, builtInInstruction))
-                // A saved prompt identical to the built-in text must not run
-                // the same generation twice.
-                if (customInstruction.isNotEmpty() && customInstruction != builtInInstruction) {
-                    add(builtInInstruction)
-                }
-            }
-            if (!SummaryPolicy.withinContextLimit(result.text)) {
+            // TASK-993 review: the legacy promotion runs at startup as a
+            // fire-and-forget coroutine, but a transcription can cold-start
+            // the process straight into THIS pass (Tasker, a share): the
+            // reconcile is idempotent and one cheap DataStore read, so the
+            // pass itself promotes legacy state before reading the keys and
+            // the race is closed at the consumer.
+            preferencesManager.reconcileLegacySummaryPrompt()
+            val customInstruction = preferencesManager.summaryPrompt.first()
+            val instructions = SummaryPolicy.instructionLadder(
+                presetKey = preferencesManager.summaryPreset.first(),
+                customPrompt = customInstruction,
+                builtIn = builtInInstruction,
+                actionItems = context.getString(R.string.summary_preset_action_items_prompt),
+                meetingMinutes = context.getString(R.string.summary_preset_meeting_minutes_prompt),
+                // TASK-994: the personal dictionary rides EVERY ladder
+                // attempt (mapped AFTER the ladder so its custom-vs-built-in
+                // equality stays pure and the dedup keeps working).
+            ).map { withPersonalDictionary(context, it) }
+            // TASK-994 review: the guard counts the LONGEST rendered
+            // instruction exactly (the rider is already inside it via
+            // withPersonalDictionary): no duplicated render, no separator
+            // arithmetic to keep in lockstep with withVocabularyLine.
+            val maxInstructionChars = instructions.maxOf { it.length }
+            if (!SummaryPolicy.withinContextLimit(result.text.length + maxInstructionChars)) {
                 // TASK-520: too long for ONE generation, not too long to
                 // summarize: map over context-sized chunks, reduce the
                 // partials. Falls back to the recorded skip only when the
@@ -1491,7 +1534,7 @@ class TranscriptionOrchestrator @Inject constructor(
                         Log.i(TAG, "Summary pass clock spent by the previous attempt; not retrying")
                         break
                     }
-                    Log.i(TAG, "Custom summary prompt did not produce an acceptable summary; retrying with the built-in prompt")
+                    Log.i(TAG, "Primary summary instruction (preset or custom) did not produce an acceptable summary; retrying with the built-in prompt")
                 }
                 val generated = clock.generate(
                     llm, ChunkPromptPolicy.finalPrompt(instruction, result.text)
@@ -2546,9 +2589,15 @@ class TranscriptionOrchestrator @Inject constructor(
                 val nm = context.getSystemService(NotificationManager::class.java)
                 nm.notify(
                     MEMORY_MARGIN_WARNING_ID,
+                    // TASK-975: the warning names the memory-protection row;
+                    // the settings-row deep link lands there. The factory is
+                    // built inline twice (the notify argument list admits no
+                    // local val); the constructor's channel-create is idempotent.
                     ResultNotificationFactory(context).alertNotification(
                         title = context.getString(R.string.memory_margin_warning_title),
                         text = context.getString(R.string.memory_margin_warning_body, label),
+                        contentIntent = ResultNotificationFactory(context)
+                            .settingsRowPendingIntent(AppNavigation.ROW_KEY_MEMORY_PROTECTION),
                     ))
             }.onFailure { Log.w(TAG, "Could not post the memory-margin warning", it) }
         }

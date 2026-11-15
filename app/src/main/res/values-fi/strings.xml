@@ -189,6 +189,14 @@
     <string name="catalog_download_confirm_message">Tämä lataa noin %1$d Mt.</string>
     <string name="model_fit_no_fit">Tämä malli ei todennäköisesti toimi tällä laitteella: laitteen RAM-muisti on pienempi kuin malli vaatii.</string>
     <string name="model_fit_tight">Huomio: tämä malli mahtuu tällä laitteella täpärästi RAM-muistiin; se voi epäonnistua, kun muisti on tiukoilla.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">Laitteen RAM: %1$d Gt, %2$s</string>
+    <string name="device_tier_constrained">aloitustaso</string>
+    <string name="device_tier_standard">keskitaso</string>
+    <string name="device_tier_high">ylätaso</string>
+    <string name="model_fit_chip_tight">Niukasti</string>
+    <string name="model_fit_chip_no_fit">Ei välttämättä mahdu</string>
+
     <string name="catalog_extract_confirm_title">Puretaanko %1$s?</string>
     <string name="catalog_extract_confirm_message">Mallitiedosto on jo ladattu. Tämä purkaa sen käyttöä varten.</string>
     <string name="download_status_downloading">Ladataan…</string>
@@ -359,6 +367,7 @@
     <string name="model_selected_message">%1$s valittu</string>
     <string name="model_use_missing_files">Mallin %1$s tiedostot puuttuvat tai ovat epätäydelliset. Lataa variantti uudelleen Mallit-välilehdeltä.</string>
     <string name="model_demoted_notice">Ei valittu automaattisesti: tämä malli ei tuottanut tekstiä, vaikka äänessä oli puhetta. Valitse se uudelleen antaaksesi sille uuden mahdollisuuden.</string>
+    <string name="external_model_wiped_notice">Järjestelmän tallennustilan siivous poisti sen. Tuo se uudelleen yllä olevilla tuontitoiminnoilla.</string>
     <string name="delete">Poista</string>
     <string name="variant_more_actions">Lisää toimintoja</string>
     <string name="download">Lataa</string>
@@ -503,15 +512,32 @@
     <string name="summary_prompt_title">Yhteenvetokehote</string>
     <string name="signature_setting_title">Transkription allekirjoitus (tekoälyhuomautus)</string>
     <string name="signature_setting_description">Lisää allekirjoitusrivin jokaiseen sovelluksesta lähtevään transkriptioon: kopioihin, jaettuihin teksteihin ja vietyihin tiedostoihin. Sovelluksen omat näytöt näyttävät pelkän tekstin.</string>
-    <string name="keyword_biasing_title">Avainsanojen painotus (Whistle)</string>
-    <string name="keyword_biasing_description">Nimet, paikat tai erikoistermit, joita Whistle-mallin tulisi suosia, yksi per rivi. Koskee seuraavaa transkriptiota; mallia ei tarvitse ladata uudelleen.</string>
+    <string name="keyword_biasing_title">Oma sanasto</string>
+    <string name="keyword_biasing_description">Nimiä, paikkoja tai termejä, jotka sovelluksen pitää huomioida, yksi riviä kohden.</string>
+    <string name="keyword_biasing_summary">Nimet ja termit, jotka tunnistuksen pitää kirjoittaa sinun tavallasi.</string>
+    <string name="keyword_biasing_where_title">Mihin se vaikuttaa</string>
+    <string name="keyword_biasing_where_recognition">Tunnistus: Whistle, Qwen3, Parakeet, GigaAM ja suoratoisto-Nemotron.</string>
+    <string name="keyword_biasing_where_passes">Tekoälyn viimeistely- ja yhteenvetovaiheet; säilyttävä viimeistely pitää kiinteän kehotteensa.</string>
+    <string name="keyword_biasing_where_download">Sanaston asettaminen lataa kerran pienen moottoritiedoston Parakeetille, GigaAMille ja suoratoisto-Nemotronille.</string>
+    <string name="keyword_biasing_where_qwen3">Qwen3:ssa sovelletaan vain listan ensimmäisiä termejä.</string>
+    <string name="keyword_biasing_score_title">Voimakkaampi korjaus</string>
+    <string name="keyword_biasing_score_note">Suuremmat arvot voivat vaikuttaa myös muuhun tekstiin. Muutos tulee voimaan, kun malli ladataan seuraavan kerran.</string>
+    <string name="personal_dictionary_prompt_line">Nämä nimet tai termit esiintyvät tässä aineistossa; säilytä tämä tarkka kirjoitusasu kaikkialla, missä ne esiintyvät: %1$s</string>
     <string name="keyword_biasing_placeholder">Yksi termi per rivi</string>
     <string name="signature_text_title">Allekirjoitusteksti</string>
     <string name="signature_text_description">Jätä tyhjäksi, jos haluat käyttää vakiohuomautusta.</string>
     <string name="signature_position_title">Sijainti</string>
     <string name="signature_position_prepend">Ennen transkriptiota</string>
     <string name="signature_position_append">Transkription jälkeen</string>
-    <string name="summary_prompt_description">Korvaa tekoälyn yhteenveto-ohje. Tyhjä käyttää sisäänrakennettua kahden tai kolmen lauseen kehotetta.</string>
+    <string name="summary_prompt_description">Valitse, mitä tekoälyvaihe lisää pitkiin teksteihin. Mukautettu hyväksyy vapaan ohjeen; tyhjä käyttää sisäänrakennettua kehotetta.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">Tiivistelmä</string>
+    <string name="summary_preset_action_items">Toimenpiteet</string>
+    <string name="summary_preset_meeting_minutes">Kokouksen muistio</string>
+    <string name="summary_preset_custom">Mukautettu</string>
+    <string name="summary_preset_action_items_prompt">Listaa tämän tekstin toimenpiteet lyhyenä luettelona, yksi rivi per kohta, tekstin kielellä. Sisällytä vastuuhenkilöt ja määräajat, kun ne mainitaan. Palauta vain luettelo.</string>
+    <string name="summary_preset_meeting_minutes_prompt">Kirjoita tästä tekstistä kokouksen muistio: käsitellyt aiheet, tehdyt päätökset ja toimenpiteet vastuuhenkilöineen, tekstin kielellä. Säilytä nimet ja numerot. Palauta vain muistio.</string>
+
     <string name="punctuation_default_prompt">Lisää tähän transkriptioon välimerkit ja suuraakkostuksen. Säilytä jokainen sana täsmälleen sellaisenaan; älä korjaa, käännä, lisää tai poista mitään. Tulosta vain korjattu transkriptio.</string>
     <string name="punctuation_default_prompt_conservative">Lisää tähän transkriptioon välimerkit, suuraakkostuksen ja kappalejaot. Älä käännä, älä tee yhteenvetoa äläkä lisää, poista, järjestele uudelleen tai korjaa yhtään sanaa: sanajärjestyksen on pysyttävä täsmälleen kirjoitetussa muodossa. Tulosta vain muotoiltu transkriptio.</string>
     <string name="summarize_title">Tee yhteenveto pitkistä transkriptioista</string>
@@ -880,6 +906,7 @@
     <string name="external_import">Tuo</string>
     <string name="external_importing">Tuodaan mallia…</string>
     <string name="external_importing_file">Tuodaan %1$s (%2$d/%3$d)…</string>
+    <string name="external_import_cancelled">Lataus peruutettu</string>
     <string name="external_import_failed">Tuonti epäonnistui: %1$s</string>
     <string name="external_imported">Tuotu: %1$s</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1177,4 +1204,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">Uutta</string>
     <string name="whats_new_summary">Tämän version uutuudet</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">Mallien palautus</string>
+    <string name="notification_channel_model_repair_description">Ilmoitukset, kun järjestelmän tallennustilan siivous poistaa tuodun mallin, sekä palautuksen lopputuloksesta.</string>
+    <string name="wiped_imports_title">Järjestelmän siivous poisti mallitiedostoja</string>
+    <string name="wiped_imports_text">Järjestelmän tallennustilan siivous poisti tuotujen mallien tiedostot (%1$d kpl): %2$s. Napauta Palauta, jolloin ne ladataan uudelleen alkuperäisestä lähteestä.</string>
+    <string name="wiped_imports_names_overflow">+ %1$d lisää</string>
+    <string name="wiped_imports_recover_action">Palauta</string>
+    <string name="wiped_imports_recovered_title">Palautus valmis</string>
+    <string name="wiped_imports_recovered_text">Mallien (%1$d kpl) tiedostot on ladattu uudelleen ja ne ovat valmiita käytettäväksi.</string>
+    <string name="wiped_imports_failed_title">Mallin palautus epäonnistui</string>
+    <string name="wiped_imports_failed_text">Uudelleenlataus ei valmistunut. Avaa Mallit-välilehti ja tuo malli uudelleen käsin.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">Mallin lähde ei ole käytettävissä</string>
+    <string name="wiped_imports_source_failed_text">%1$d mallia ei voi enää ladata alkuperäisestä lähteestään. Poista rikkinäiset merkinnät tai tuo malli uudelleen manuaalisesti Mallit-välilehdeltä.</string>
+    <string name="wiped_imports_remove_action">Poista</string>
+    <string name="wiped_imports_removed_text">Poistettiin %1$d rikkinäistä mallimerkintää Mallit-välilehdeltä.</string>
+    <string name="wiped_imports_progress_title">Mallin palautus käynnissä</string>
+    <string name="wiped_imports_progress_text">Poistettujen mallitiedostojen lataaminen käynnissä uudelleen. Tämä voi kestää muutaman minuutin.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">Kysy tekoälyltä</string>
+    <string name="ask_transcripts_title">Kysy transkripteiltasi</string>
+    <string name="ask_transcripts_no_matches">Tähän kysymykseen ei löytynyt transkriptejä.</string>
+    <string name="ask_transcripts_sources">Perustuu %1$d transkriptiin</string>
+    <string name="ask_transcripts_error">Virhe: %1$s</string>
+    <string name="ask_transcripts_instruction">Vastaa alla olevaan kysymykseen VUOROVAAN näiden litterointien perusteella. Jos litteroinnit eivät sisällä vastausta, sano se. Vastaa kysymyksen kielellä.</string>
+<string name="ask_transcripts_working">Kysytään mallilta laitteella…</string>
 </resources>

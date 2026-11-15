@@ -15,7 +15,10 @@ import androidx.hilt.work.HiltWorkerFactory
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -30,9 +33,11 @@ class BridgeApplication : Application(), Configuration.Provider {
     @Inject lateinit var launcherIconManager: com.antivocale.app.ui.appearance.LauncherIconManager
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var externalModelStore: com.antivocale.app.data.ExternalModelStore
+    @Inject lateinit var externalImportRepairer: com.antivocale.app.data.ExternalImportRepairer
     @Inject lateinit var logDao: com.antivocale.app.data.local.LogDao
     @Inject lateinit var scheduledFolderStore: com.antivocale.app.data.ScheduledFolderStore
     @Inject lateinit var voiceNoteDetectionCoordinators: com.antivocale.app.data.VoiceNoteDetectionCoordinators
+    @Inject lateinit var biasingVocabSupplement: com.antivocale.app.data.download.BiasingVocabSupplement
 
     /**
      * Shared process-lifetime scope for startup work that must not block the
@@ -115,6 +120,13 @@ class BridgeApplication : Application(), Configuration.Provider {
                 runCatching { preferencesManager.saveExternalMigrationDone(false) }
             }
         }.also { com.antivocale.app.service.StartupSweepGate.arm(it) }
+        // TASK-993: one-shot legacy promotion (a saved summary prompt with
+        // no preset key -> preset=custom); idempotent, re-checked at every
+        // start because a settings import can recreate the legacy state.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { preferencesManager.reconcileLegacySummaryPrompt() }
+                .onFailure { android.util.Log.w("BridgeApplication", "summary preset reconcile failed", it) }
+        }
         // Road test 2026-10-08: backfill of name-derived languages for
         // records imported before the derivation existed (paraformer-zh and
         // friends). Runs at EVERY app start, idempotently (writes only when
@@ -125,6 +137,32 @@ class BridgeApplication : Application(), Configuration.Provider {
         applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { externalModelStore.backfillDerivedLanguages() }
                 .onFailure { android.util.Log.w("BridgeApplication", "language backfill failed", it) }
+        }
+        // TASK-994.1: fetch missing variant supplements (the transducer
+        // biasing vocab, ~100-320KB) into INSTALLED model dirs, only when
+        // the personal dictionary is set; silent, deferred to the next
+        // start on failure. A dir without its supplement stays valid, so
+        // this can never trigger a heal or a re-download.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { biasingVocabSupplement.run(this@BridgeApplication) }
+                .onFailure { android.util.Log.w("BridgeApplication", "supplement pass failed", it) }
+        }
+        // TASK-994.1: the pass also runs when the dictionary CHANGES
+        // (drop(1) skips the value the startup pass above already served;
+        // the delay coalesces save-time typing bursts, collectLatest
+        // cancels the superseded run): a first-term edit arms biasing
+        // within seconds instead of at the next app start.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            preferencesManager.keywordBiasing
+                .drop(1)
+                .collectLatest {
+                    delay(2_000)
+                    // The stale-resident fix first (any edit or clear must
+                    // reach the armed recognizer), then the fetch pass.
+                    biasingVocabSupplement.onDictionaryChanged()
+                    runCatching { biasingVocabSupplement.run(this@BridgeApplication) }
+                        .onFailure { android.util.Log.w("BridgeApplication", "supplement pass failed", it) }
+                }
         }
         // TASK-736 hardening: the identity listener's COMPONENT follows the
         // preference (ships disabled; the toggle, TEST_SPI, or any other
@@ -196,6 +234,25 @@ class BridgeApplication : Application(), Configuration.Provider {
         }.onFailure { e ->
             android.util.Log.e("BridgeApplication", "Crash-quarantine check failed (marker cleared, no quarantine applied)", e)
         }
+        // TASK-963: the repairer's selection capture runs FIRST, inside the
+        // same blocking window, because the cleaner's reset is what erases
+        // the user's selection of a wiped-but-repairable record. ORDERING IS
+        // LOAD-BEARING: moving captureSelections() after cleanIfNeeded()
+        // compiles and repairs fine, but the selection restore silently dies
+        // (the capture would read the already-reset default). Only the two
+        // preference reads need this window (TASK-899's startup lesson): the
+        // dangling scan and the wiped-imports notification post run async
+        // below, and the repair itself runs ONLY when the user taps Recover
+        // (no automatic re-download of gigabyte payloads; maintainer
+        // decision).
+        runCatching {
+            kotlinx.coroutines.runBlocking { externalImportRepairer.captureSelections() }
+        }.onFailure { e ->
+            // Its own containment: a capture failure must not also skip the
+            // cleaner's TASK-342 reset below (the retired 'gemma4_gguf' id
+            // has this cleaner as its ONLY reset site).
+            android.util.Log.e("BridgeApplication", "External-import repair capture failed (will retry on next launch)", e)
+        }
         // Also before syncAll: a persisted external backend id whose record is gone
         // (deleted through another path, files vanished, quarantined) must fall back
         // to the default backend, or every transcription request fails on an
@@ -211,15 +268,41 @@ class BridgeApplication : Application(), Configuration.Provider {
         // run accumulate invisibly; reconcile the external root against the store's
         // records. Launched, not runBlocking: the delete can span GBs and must not
         // block cold start; contained so a sweep failure never crashes startup.
-        // No import can be in flight yet (every import entry is UI or debug-SPI
-        // driven, in-process), so no in-flight dir needs excluding.
-        applicationScope.launch(Dispatchers.IO) {
+        // No import can be in flight when this sweep starts (the UI and
+        // debug-SPI entries need a user, and the TASK-963 repairer JOINS
+        // this job before its first download), so no in-flight dir needs
+        // excluding. A future non-UI import entry point must do the same.
+        val externalDirSweepJob = applicationScope.launch(Dispatchers.IO) {
             runCatching {
                 com.antivocale.app.data.OrphanedExternalModelDirCleaner(externalModelStore) {
                     java.io.File(filesDir, com.antivocale.app.data.EXTERNAL_MODELS_DIR_NAME)
                 }.cleanIfNeeded()
             }.onFailure { e ->
                 android.util.Log.e("BridgeApplication", "External-model dir sweep failed (will retry on next launch)", e)
+            }
+        }
+        // TASK-963: the repairer joins that job before downloading anything
+        // (handed over here because the singleton cannot reach the local).
+        externalImportRepairer.onSweepLaunched(externalDirSweepJob)
+        // TASK-963: the wiped-import scan and its notification, off the main
+        // thread (the blocking window above owns only the preference capture;
+        // the scan re-reads the store and stats one dir per record). The scan
+        // result feeds only the notification: the repair re-derives the same
+        // set at tap time, so no ordering against this launch matters. An
+        // empty scan also retires the pending selection snapshot (nothing
+        // dangling: a kept snapshot would re-apply a selection the user has
+        // since replaced).
+        applicationScope.launch(Dispatchers.IO) {
+            runCatching {
+                val wiped = externalImportRepairer.scanWipedImports()
+                if (wiped.isNotEmpty()) {
+                    com.antivocale.app.receiver.WipedImportRepairNotifications
+                        .postWiped(this@BridgeApplication, wiped)
+                } else {
+                    externalImportRepairer.clearCapturedSelectionsIfIdle()
+                }
+            }.onFailure { e ->
+                android.util.Log.e("BridgeApplication", "Wiped-imports scan or notification failed", e)
             }
         }
         // GH #51: rows left QUEUED/PROCESSING by a process death can never complete

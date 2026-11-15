@@ -11,6 +11,9 @@ import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.data.optStringList
 import com.antivocale.app.transcription.BuiltInBackendIds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -33,6 +36,9 @@ class TestSpiOpsTest {
     /** Captures the url and answers with a fixture record; no network in unit tests. */
     private class FakeImporter(
         var lastUrl: String? = null,
+        /** TASK-984: when set, the URL import suspends on it first, so the
+         *  async-dispatch tests can hold one import in flight. */
+        var gate: CompletableDeferred<Unit>? = null,
         var lastFamily: ModelFamily? = null,
         var lastModelType: String? = null,
         var lastDisplayName: String? = null,
@@ -88,6 +94,7 @@ class TestSpiOpsTest {
             streaming: Boolean,
             onProgress: com.antivocale.app.data.ExternalImportProgress,
         ): ExternalModelRecord {
+            gate?.await()
             lastUrl = url
             lastDisplayName = displayName
             lastLicence = licence
@@ -107,10 +114,17 @@ class TestSpiOpsTest {
         ops = TestSpiOps(fake, ExternalModelStore(fake), fakeImporter)
     }
 
-    private fun record(id: String = "a1b2c3d4e5f6") = ExternalModelRecord(
+    private fun record(
+        id: String = "a1b2c3d4e5f6",
+        // The record_delete tests pass a temp dir: the deleter really calls
+        // deleteRecursively() on it, and the default Android path must never
+        // be touched on the host (the ModelViewModelExternalImportTest
+        // delete-row precedent).
+        dir: String = "/data/user/0/com.antivocale.app/files/models/external/gigaam-v3-$id",
+    ) = ExternalModelRecord(
         id = id,
         displayName = "GigaAM v3",
-        dir = "/data/user/0/com.antivocale.app/files/models/external/gigaam-v3-$id",
+        dir = dir,
         family = ModelFamily.TRANSDUCER,
         modelType = "nemo_transducer",
         languages = listOf("ru"),
@@ -447,13 +461,15 @@ class TestSpiOpsTest {
             "punctuation" to "auto", "provider" to "cpu", "swipe_action" to "REVEAL",
             "theme" to "DEFAULT", "theme_mode" to "SYSTEM", "text_scale" to "LARGE", "punctuation_prompt" to "p",
             "default_prompt" to "d",
-            "summary_prompt" to "s", "external_catalog_url" to "https://x",
+            "summary_prompt" to "s", "summary_preset" to "action_items",
+            "external_catalog_url" to "https://x",
             "output_folder" to "", "keep_alive" to "5", "subtitle_timeout" to "5", "threads" to "4",
             "whats_new_version" to "0",
             "backend" to "llm", "refinement_model" to "llm", "language" to "auto", "model_path" to "/m",
             "model_filter_language" to "it",
             "sherpa_path" to "/m", "transcript_export_format" to "SRT",
             "signature_position" to "append", "signature_text" to "sig",
+            "biasing_score" to "2.5",
         )
         for (key in ops.SET_KEYS) {
             val sample = samples[key] ?: "true"
@@ -480,6 +496,55 @@ class TestSpiOpsTest {
     }
 
     @Test
+    fun `record delete removes the record and tolerates the backend prefix`() = runTest {
+        val dir = java.nio.file.Files.createTempDirectory("spi-record-delete").toFile()
+        dir.resolve("encoder.int8.onnx").writeText("payload")
+        val rec = record(dir = dir.absolutePath)
+        fake._externalModelsJson.value = ExternalModelListJson.encode(listOf(rec))
+
+        val json = JSONObject(ops.handle(TestSpiOps.OP_RECORD_DELETE, value = rec.backendId))
+        assertTrue(json.getBoolean("deleted"))
+        assertEquals(rec.id, json.getString("id"))
+        // Nothing pointed at the record: the one-call cleanup reports no resets.
+        assertFalse(json.getBoolean("resetActiveBackend"))
+        assertFalse(json.getBoolean("clearedRefinementPin"))
+        // The files went with the record.
+        assertFalse(dir.exists())
+
+        val after = JSONObject(ops.handle(TestSpiOps.OP_RECORDS))
+        assertEquals(0, after.getInt("count"))
+        // An unknown id stays idempotent: no error, deleted=false, no side effects.
+        val unknown = JSONObject(ops.handle(TestSpiOps.OP_RECORD_DELETE, value = "no-such-id"))
+        assertFalse(unknown.getBoolean("deleted"))
+    }
+
+    @Test
+    fun `record delete resets the active backend and refinement pin that pointed at it`() = runTest {
+        val dir = java.nio.file.Files.createTempDirectory("spi-record-delete").toFile()
+        val rec = record(dir = dir.absolutePath)
+        fake._externalModelsJson.value = ExternalModelListJson.encode(listOf(rec))
+        fake._transcriptionBackend.value = rec.backendId
+        fake._refinementModelBackendId.value = rec.backendId
+
+        val json = JSONObject(ops.handle(TestSpiOps.OP_RECORD_DELETE, value = rec.id))
+        assertTrue(json.getBoolean("deleted"))
+        assertTrue(json.getBoolean("resetActiveBackend"))
+        assertTrue(json.getBoolean("clearedRefinementPin"))
+        // The UI delete's semantics: the selection lands on safe defaults,
+        // never dangling at the deleted record.
+        assertEquals(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND, fake._transcriptionBackend.value)
+        assertEquals("", fake._refinementModelBackendId.value)
+        assertFalse(dir.exists())
+        assertEquals(0, JSONObject(ops.handle(TestSpiOps.OP_RECORDS)).getInt("count"))
+    }
+
+    @Test
+    fun `record delete without a value answers the error contract`() = runTest {
+        val json = JSONObject(ops.handle(TestSpiOps.OP_RECORD_DELETE))
+        assertTrue(json.getString("error").contains("record id"))
+    }
+
+    @Test
     fun `unload without a backend manager answers the SPI error contract, not a throw`() = runTest {
         // The unit fakes construct TestSpiOps without the manager (debug
         // receiver passes the live singleton). handle()'s runCatching must
@@ -497,7 +562,7 @@ class TestSpiOpsTest {
         // help is a known op: it must NOT carry the unknown-op error (device
         // verification 2026-09-03 caught the dispatch bug this pins).
         assertFalse(json.has("error"))
-        assertEquals(listOf("get", "set", "records", "identity_cache", "import", "notify_memory_error", "clipboard", "notifications", "unload", "voice_note_state", "model_download", "clear_orphaned", "bundle_export", "bundle_import", "model_present", "search", "log", "log_read", "log_delete", "voice_note_watermark_reset", "voice_note_simulate", "notify_text", "help"), json.getJSONArray("ops").optStringList())
+        assertEquals(listOf("get", "set", "records", "record_delete", "identity_cache", "import", "import_state", "import_cancel", "import_retry", "notify_memory_error", "clipboard", "notifications", "unload", "voice_note_state", "model_download", "clear_orphaned", "bundle_export", "bundle_import", "model_present", "search", "log", "log_read", "log_delete", "voice_note_watermark_reset", "voice_note_simulate", "notify_text", "help"), json.getJSONArray("ops").optStringList())
         assertEquals(ops.SET_KEYS, json.getJSONArray("setKeys").optStringList())
         assertTrue(json.getString("usage").contains("com.antivocale.app.TEST_SPI"))
         assertTrue(json.getString("transcription").contains("com.antivocale.app.PROCESS_REQUEST"))
@@ -841,5 +906,148 @@ class TestSpiOpsTest {
                 .contains("Context"),
         )
     }
-}
+    @Test
+    fun `import op with an async scope dispatches and acks without awaiting the download`() = runTest {
+        // TASK-984: a scope turns the op into fire-and-ack (the broadcast
+        // window is never held by a multi-minute download). Unconfined runs
+        // the non-suspending fake inline, so the dispatched state is
+        // observable deterministically, no virtual-time games.
+        val outcomes = mutableListOf<String>()
+        val asyncOps = TestSpiOps(
+            fake, ExternalModelStore(fake), fakeImporter,
+            asyncImportScope = CoroutineScope(Dispatchers.Unconfined),
+            asyncImportOutcome = { outcomes.add(it) })
+        val json = JSONObject(asyncOps.handle("import", url = "http://127.0.0.1:8080/fi.json"))
+        assertEquals("import", json.getString("op"))
+        assertTrue(json.getBoolean("dispatched"))
+        assertEquals("http://127.0.0.1:8080/fi.json", json.getString("url"))
+        assertFalse("the record is not in the ack; it arrives on the TestSpi channel",
+            json.has("record"))
+        assertEquals("the import itself ran (Unconfined + non-suspending fake)",
+            "http://127.0.0.1:8080/fi.json", fakeImporter.lastUrl)
+        // The outcome contract: one line, imported, with the backendId.
+        assertEquals(1, outcomes.size)
+        val outcome = JSONObject(outcomes[0])
+        assertEquals("import", outcome.getString("op"))
+        assertEquals("imported", outcome.getString("result"))
+        assertEquals("external:fromurl", outcome.getString("backendId"))
+    }
 
+    @Test
+    fun `async import is single-flight and re-arms after completion`() = runTest {
+        // TASK-984: a second dispatch while one runs must be rejected, not
+        // race the first on the store; the guard re-arms when the import
+        // finishes.
+        val gate = CompletableDeferred<Unit>()
+        fakeImporter.gate = gate
+        val outcomes = mutableListOf<String>()
+        val asyncOps = TestSpiOps(
+            fake, ExternalModelStore(fake), fakeImporter,
+            asyncImportScope = CoroutineScope(Dispatchers.Unconfined),
+            asyncImportOutcome = { outcomes.add(it) })
+        val first = JSONObject(asyncOps.handle("import", url = "http://x/a"))
+        assertTrue(first.getBoolean("dispatched"))
+        assertTrue("no outcome before the download finishes", outcomes.isEmpty())
+        val second = JSONObject(asyncOps.handle("import", url = "http://x/b"))
+        assertTrue("the rejection names the in-flight import",
+            second.getString("error").contains("already in flight"))
+        // Unconfined resumes inline on the completing thread, so the first
+        // import has fully finished (guard cleared) once complete() returns.
+        // finally-block gate release: an assertion failing before this
+        // point must not leave the process-wide guard set (code-review
+        // round), or the OTHER async tests would fail with the wrong
+        // cause.
+        try {
+            gate.complete(Unit)
+            assertEquals("the import outcome arrived with the completion",
+                "imported", JSONObject(outcomes.single()).getString("result"))
+            val third = JSONObject(asyncOps.handle("import", url = "http://x/c"))
+            assertTrue("the guard re-armed after completion", third.getBoolean("dispatched"))
+            assertEquals("http://x/c", fakeImporter.lastUrl)
+        } finally {
+            gate.complete(Unit)
+        }
+    }
+
+    @Test
+    fun `async import validates synchronously before dispatching`() = runTest {
+        // TASK-984: a bad call still answers its error envelope in the ack,
+        // because every pre-download check runs before the dispatch arm.
+        val asyncOps = TestSpiOps(
+            fake, ExternalModelStore(fake), fakeImporter,
+            asyncImportScope = CoroutineScope(Dispatchers.Unconfined))
+        val json = JSONObject(asyncOps.handle("import", url = "http://x/repo", family = "bogus"))
+        assertTrue(json.getString("error").contains("bogus"))
+        assertNull(fakeImporter.lastUrl)
+        // And the guard was NOT left set by the rejected call.
+        val ok = JSONObject(asyncOps.handle("import", url = "http://x/repo"))
+        assertTrue(ok.getBoolean("dispatched"))
+    }
+    @Test
+    fun `import affordance ops answer the not-wired envelope when no Models surface exists`() = runTest {
+        // TASK-989: the bridge is a process singleton; the suite may leave it
+        // unwired (a ViewModel never composed), which is exactly the cold
+        // background process the op must answer honestly.
+        ExternalImportSpiBridge.renderState = null
+        ExternalImportSpiBridge.importInFlight = null
+        ExternalImportSpiBridge.cancel = null
+        ExternalImportSpiBridge.retry = null
+        ExternalImportSpiBridge.dispatchUrlImport = null
+        for (op in listOf("import_state", "import_cancel", "import_retry")) {
+            val json = JSONObject(ops.handle(op))
+            assertEquals(op, json.getString("op"))
+            assertTrue(json.getString("error").contains("not wired"))
+        }
+    }
+
+    @Test
+    fun `import affordance ops drive a wired surface`() = runTest {
+        // TASK-989: state read, cancel invocation, and the retry's fired
+        // report all go through the bridge the ViewModel wires.
+        try {
+            val cancelled = mutableListOf<Unit>()
+            ExternalImportSpiBridge.renderState = { "importing file=1/2 name=enc bytes=10/100" }
+            ExternalImportSpiBridge.cancel = { cancelled.add(Unit) }
+            ExternalImportSpiBridge.retry = { true }
+            val state = JSONObject(ops.handle("import_state"))
+            assertEquals("importing file=1/2 name=enc bytes=10/100", state.getString("state"))
+            val cancel = JSONObject(ops.handle("import_cancel"))
+            assertTrue(cancel.getBoolean("cancelled"))
+            assertEquals(1, cancelled.size)
+            val retry = JSONObject(ops.handle("import_retry"))
+            assertTrue(retry.getBoolean("retry_dispatched"))
+        } finally {
+            ExternalImportSpiBridge.renderState = null
+            ExternalImportSpiBridge.importInFlight = null
+            ExternalImportSpiBridge.cancel = null
+            ExternalImportSpiBridge.retry = null
+            ExternalImportSpiBridge.dispatchUrlImport = null
+        }
+    }
+
+    @Test
+    fun `async import prefers the wired viewmodel surface with default extras`() = runTest {
+        // TASK-989: with the bridge dispatch present and no family/model_type
+        // overrides, the import rides the ViewModel path (state renders in
+        // the UI, cancel/retry live) and the ack names the surface.
+        try {
+            val dispatched = mutableListOf<String>()
+            ExternalImportSpiBridge.dispatchUrlImport = { dispatched.add(it) }
+            ExternalImportSpiBridge.renderState = { "idle" }
+            val asyncOps = TestSpiOps(
+                fake, ExternalModelStore(fake), fakeImporter,
+                asyncImportScope = CoroutineScope(Dispatchers.Unconfined))
+            val json = JSONObject(asyncOps.handle("import", url = "http://x/entry.json"))
+            assertTrue(json.getBoolean("dispatched"))
+            assertEquals("viewmodel", json.getString("surface"))
+            assertEquals(listOf("http://x/entry.json"), dispatched)
+            assertNull("the fake importer is NOT touched on the wired path", fakeImporter.lastUrl)
+        } finally {
+            ExternalImportSpiBridge.renderState = null
+            ExternalImportSpiBridge.importInFlight = null
+            ExternalImportSpiBridge.cancel = null
+            ExternalImportSpiBridge.retry = null
+            ExternalImportSpiBridge.dispatchUrlImport = null
+        }
+    }
+}

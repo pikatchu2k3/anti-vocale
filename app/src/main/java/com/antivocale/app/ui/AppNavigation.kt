@@ -98,11 +98,14 @@ object AppNavigation {
     /** TASK-843/844: the backup-and-transfer page (the N>=2 subpage rule). */
     const val SUBPAGE_KEY_BACKUP = "backup"
 
+    /** TASK-994.2: the personal-dictionary page (maintainer trial 2026-11-14). */
+    const val SUBPAGE_KEY_DICTIONARY = "dictionary"
+
     /** Settings sections reachable by key (single source for parser + UI). */
     val SECTION_KEYS = setOf("transcription", "appearance", "advanced", "feedback")
 
     /** Settings sub-pages reachable by key. */
-    val SUBPAGE_KEYS = setOf("icon_picker", "prompt", "per_app", SUBPAGE_KEY_EXPORT, "speaker", "performance", "automation", SUBPAGE_KEY_VOICE_NOTES, SUBPAGE_KEY_BACKUP)
+    val SUBPAGE_KEYS = setOf("icon_picker", "prompt", "per_app", SUBPAGE_KEY_EXPORT, "speaker", "performance", "automation", SUBPAGE_KEY_VOICE_NOTES, SUBPAGE_KEY_BACKUP, SUBPAGE_KEY_DICTIONARY)
 
     /**
      * TASK-632: Settings ROWS reachable by key (the deep-link targets one
@@ -160,7 +163,12 @@ object AppNavigation {
         data class Tab(val index: Int) : Destination
         data class SettingsSubPage(val key: String) : Destination
         data class SettingsSection(val key: String) : Destination
-        data class ModelTarget(val key: String) : Destination
+        /** TASK-995: [importUrl] is the antivocale://import deep-link payload;
+         *  it rides its destination (the TASK-632 vocabulary rule: payload
+         *  travels inside Destination, not on a parallel channel). Null for
+         *  every token-parsed request (the SPI parser mints the plain
+         *  dialog-open form), non-null only for a deep-link handoff. */
+        data class ModelTarget(val key: String, val importUrl: String? = null) : Destination
 
         /** TASK-632: one Settings row, by key (see [ROW_KEYS]). */
         data class SettingsRow(val key: String) : Destination

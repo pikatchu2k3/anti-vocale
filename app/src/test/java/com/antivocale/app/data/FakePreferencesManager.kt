@@ -64,8 +64,10 @@ internal class FakePreferencesManager : PreferencesManager {
     val _punctuationMode = MutableStateFlow(PreferencesManager.DEFAULT_PUNCTUATION_MODE)
     val _punctuationPrompt = MutableStateFlow("")
     val _keywordBiasing = MutableStateFlow("")
+    val _biasingScore = MutableStateFlow(PreferencesManager.DEFAULT_BIASING_SCORE)
     val _summarizeEnabled = MutableStateFlow(PreferencesManager.DEFAULT_SUMMARIZE_ENABLED)
     val _summaryPrompt = MutableStateFlow("")
+    val _summaryPreset = MutableStateFlow(PreferencesManager.DEFAULT_SUMMARY_PRESET)
     val _defaultPrompt = MutableStateFlow("")
     val _threadCount = MutableStateFlow(PreferencesManager.DEFAULT_THREAD_COUNT)
     val _inferenceProvider = MutableStateFlow("auto")
@@ -116,6 +118,12 @@ internal class FakePreferencesManager : PreferencesManager {
     override val themePreference: Flow<String> get() = _themePreference
     override val themeMode: Flow<String> get() = _themeMode
     override val transcriptionBackend: Flow<String> get() = _transcriptionBackend
+    val _wipedRepairCapturedActive = MutableStateFlow("")
+    override val wipedRepairCapturedActive: Flow<String> get() = _wipedRepairCapturedActive
+    val _wipedRepairCapturedPin = MutableStateFlow("")
+    val _wipedRepairDeadSources = MutableStateFlow(emptySet<String>())
+    override val wipedRepairCapturedPin: Flow<String> get() = _wipedRepairCapturedPin
+    override val wipedRepairDeadSources: Flow<Set<String>> = _wipedRepairDeadSources
     override fun sherpaModelPath(entryId: String): Flow<String?> = _sherpaModelPath(entryId)
     override val externalCatalogUrl: Flow<String> get() = _externalCatalogUrl
     override suspend fun saveExternalCatalogUrl(url: String) { _externalCatalogUrl.value = url }
@@ -145,9 +153,15 @@ internal class FakePreferencesManager : PreferencesManager {
     override val punctuationMode: Flow<String> get() = _punctuationMode
     override val punctuationPrompt: Flow<String> get() = _punctuationPrompt
     override val keywordBiasing: Flow<String> get() = _keywordBiasing
+    override val biasingScore: Flow<Float> get() = _biasingScore
     override val summarizeEnabled: Flow<Boolean> get() = _summarizeEnabled
     override val summaryPrompt: Flow<String> get() = _summaryPrompt
     override suspend fun saveSummaryPrompt(prompt: String) { _summaryPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
+    override val summaryPreset: Flow<String> get() = _summaryPreset
+    override suspend fun saveSummaryPreset(preset: String) {
+        _summaryPreset.value = com.antivocale.app.transcription.SummaryPreset.fromKey(preset).key
+    }
+    override suspend fun reconcileLegacySummaryPrompt() = Unit
     override val defaultPrompt: Flow<String> get() = _defaultPrompt
     override val threadCount: Flow<Int> get() = _threadCount
     override val inferenceProvider: Flow<String> get() = _inferenceProvider
@@ -208,6 +222,10 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun saveThemePreference(theme: String) { _themePreference.value = theme }
     override suspend fun saveThemeMode(mode: String) { _themeMode.value = mode }
     override suspend fun saveTranscriptionBackend(backendId: String) { _transcriptionBackend.value = backendId }
+    override suspend fun saveWipedRepairCapturedActive(backendId: String) { _wipedRepairCapturedActive.value = backendId }
+    override suspend fun saveWipedRepairCapturedPin(backendId: String) { _wipedRepairCapturedPin.value = backendId }
+
+    override suspend fun saveWipedRepairDeadSources(ids: Set<String>) { _wipedRepairDeadSources.value = ids }
     override suspend fun saveSherpaModelPath(entryId: String, path: String) { _sherpaModelPath(entryId).value = path }
     override suspend fun clearSherpaModelPath(entryId: String) { _sherpaModelPath(entryId).value = null }
     override suspend fun saveExternalMigrationDone(done: Boolean) { _externalMigrationDone.value = done }
@@ -227,6 +245,7 @@ internal class FakePreferencesManager : PreferencesManager {
     override suspend fun savePunctuationMode(mode: String) { _punctuationMode.value = mode }
     override suspend fun savePunctuationPrompt(prompt: String) { _punctuationPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveKeywordBiasing(terms: String) { _keywordBiasing.value = terms.take(PreferencesManager.PROMPT_CAP) }
+    override suspend fun saveBiasingScore(value: Float) { _biasingScore.value = value.coerceIn(PreferencesManager.MIN_BIASING_SCORE, PreferencesManager.MAX_BIASING_SCORE) }
     override suspend fun saveSummarizeEnabled(enabled: Boolean) { _summarizeEnabled.value = enabled }
     override suspend fun saveDefaultPrompt(prompt: String) { _defaultPrompt.value = prompt.take(PreferencesManager.PROMPT_CAP) }
     override suspend fun saveThreadCount(threads: Int) { _threadCount.value = threads }

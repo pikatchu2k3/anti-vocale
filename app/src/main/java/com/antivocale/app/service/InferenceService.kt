@@ -69,7 +69,6 @@ class InferenceService : Service(), TranscriptionListener {
         private const val RC_LAUNCH_SETTINGS_ROW = 2
         private const val RC_NAV_PREV = 10
         private const val RC_NAV_NEXT = 11
-        private const val RC_NAV_LIVE = 12
 
         // TaskId-hash request codes live above the small-constant band: a raw
         // hash can land on a constant's value, and PendingIntent matching
@@ -260,25 +259,79 @@ class InferenceService : Service(), TranscriptionListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand called, action=${intent?.action}")
 
+        // TASK-978: the foreground promotion is the FIRST statement, before
+        // every early-return arm. Every startForegroundService delivery
+        // re-arms the system's fgRequired expectation, and the 1.16.0 crash
+        // (LogsViewModel.continueBrowseIntake's enqueue; map e0234b8f,
+        // deobfuscated) was exactly that window expiring. On a live service
+        // the call is an idempotent same-id refresh; on a cold start it
+        // closes the window at the earliest runnable moment. The control
+        // actions below arrive from TWO sources (review round): notification
+        // buttons through getService PendingIntents (no expectation), and
+        // in-app callers through direct startService (HistoryTab.cancelTask);
+        // both are safe today because both run with the app foreground, and
+        // the runCatching below absorbs a lapsed-allowlist delivery on the
+        // PendingIntent side. Promoting for them costs only a same-id
+        // repost; a control tap that revived a dead service gets a brief
+        // honest notification before the idle stop. PROMOTING WITH THE NAV
+        // SHAPE when one is live (altitude round): the bare form would
+        // overwrite the pinned chunk view, and no-op nav taps plus the
+        // signature dedup could never restore it.
+        // The guard (F4 of the release review, restored here after the
+        // merge dropped it): on a REQUIRED delivery the allowance existed at
+        // startForegroundService time so this cannot throw; on a getService
+        // control delivery with a lapsed temporary-allowlist window it can
+        // throw ForegroundServiceStartNotAllowedException on API 31+, and
+        // swallowing that one is strictly safe (no fgRequired window exists
+        // for a startService command).
+        runCatching {
+            startForeground(
+                NOTIFICATION_ID,
+                deriveChunkNavView()?.let { assembleChunkNavNotification(it) }
+                    // F3: a single-chunk job's live progress shape (file,
+                    // progress, ETA, chronometer) survives the promotion
+                    // instead of degrading to the bare form.
+                    ?: lastForegroundNotification
+                    ?: createNotification(getString(R.string.processing_audio)))
+        }.onFailure {
+            // Review round: a silent swallow would turn an OEM FGS restriction
+            // into an unattributable ForegroundServiceDidNotStartInTime kill.
+            Log.w(TAG, "startForeground promotion failed", it)
+        }
+
         if (intent?.action == ACTION_CANCEL) {
             handleCancelRequest()
             return START_NOT_STICKY
         }
 
         if (intent?.action == ACTION_CANCEL_TASK) {
-            intent.getStringExtra(EXTRA_CANCEL_TASK_ID)?.let { handleCancelTask(it) }
+            val cancelTaskId = intent.getStringExtra(EXTRA_CANCEL_TASK_ID)
+            if (cancelTaskId != null) {
+                handleCancelTask(cancelTaskId)
+            } else {
+                // A malformed per-task cancel (action set, extra absent) fell
+                // straight to the return after the promotion above, stranding
+                // the foreground notification this very block just posted
+                // (review round: the sibling arms all retire).
+                retireIfIdle()
+            }
             return START_NOT_STICKY
         }
 
-        // Chunk navigation: mutate the live cursor and re-post. The service is already
-        // foreground for the active job, so this delivers a command rather than starting work.
+        // Chunk navigation: mutate the live cursor and re-post.
         val navAction = intent?.action
+        // ACTION_NAV_LIVE is LEGACY-ONLY: no shipped notification carries
+        // it (jump-to-live folded into Next, see the builder comment), but a
+        // notification posted by a PREVIOUS install can survive an app
+        // update and still deliver it, so the arm and handler stay.
         if (navAction == ACTION_NAV_PREV || navAction == ACTION_NAV_NEXT || navAction == ACTION_NAV_LIVE) {
             handleChunkNavAction(navAction)
+            // TASK-978 review: a nav tap on a dead-process notification
+            // (chunkNavState null, nothing rendered) would otherwise leave
+            // the revived foreground service stranded like the cancel arms.
+            retireIfIdle()
             return START_NOT_STICKY
         }
-
-        startForeground(NOTIFICATION_ID, createNotification(getString(R.string.processing_audio)))
 
         val filePath = intent?.getStringExtra(TaskerRequestReceiver.EXTRA_FILE_PATH)
 
@@ -363,18 +416,20 @@ class InferenceService : Service(), TranscriptionListener {
                 return@launch
             }
 
-            // TASK-899: the startup sweep's "non-terminal = orphaned by
-            // process death" classification is only safe while no run is
-            // active; a request racing the (now async) sweep would have its
-            // fresh row closed as interrupted underneath it. Await the gate
-            // before this drain touches any row.
-            StartupSweepGate.await()
-
             _isTranscribing.value = true
             val totalInBatch = pendingCount.get()
             var currentIndex = 0
 
             try {
+                // TASK-899: the startup sweep's "non-terminal = orphaned by
+                // process death" classification is only safe while no run is
+                // active; a request racing the (now async) sweep would have
+                // its fresh row closed as interrupted underneath it. Await
+                // the gate before this drain touches any row. INSIDE the try
+                // (review round): a batch cancel while gated used to unwind
+                // before the finally, leaving drainEntered stuck true for the
+                // process lifetime, every later enqueue queueing forever.
+                StartupSweepGate.await()
                 // GH #67 (scoped): opt-in via Settings (DEFAULT OFF); the toggle is
                 // the reliability setting for freezer-ROMs, not a default behavior.
                 // Read here, on the batch-owning coroutine and inside the try, so
@@ -405,6 +460,9 @@ class InferenceService : Service(), TranscriptionListener {
                         latestDurationSeconds = 0
                         latestQueuedCount = 0
                         lastNavSignature = null
+                        // Review round: without this, the NEXT job's early
+                        // window promotes with the PREVIOUS job's final shape.
+                        lastForegroundNotification = null
                         // Throttle carries no state across jobs: the first progress tick
                         // of each request must post promptly (TASK-266).
                         progressNotifyThrottler.reset()
@@ -484,6 +542,15 @@ class InferenceService : Service(), TranscriptionListener {
                 currentTaskId = null
                 currentTaskJob = null
                 _isTranscribing.value = false
+                // Code-review round (TASK-978 F6): retire the chunk-nav view
+                // when the BATCH ends, not only when the next task starts.
+                // Between the two, a delivery promoting with the nav shape
+                // would re-post the finished job's chunk view; cleared here,
+                // that promotion falls back to the bare notification for the
+                // brief moment before the idle stop.
+                chunkNavState = null
+                lastNavSignature = null
+                lastForegroundNotification = null
                 drainEntered.set(false)
                 // The finally (not the post-join path) owns the keepalive
                 // stop: an escaped Error from native code skips everything
@@ -499,8 +566,7 @@ class InferenceService : Service(), TranscriptionListener {
             // Wait for any pending result-notification jobs before teardown:
             // stopSelf -> onDestroy cancels serviceScope, which would kill a
             // not-yet-run notification coroutine (the TASK-336 race).
-            val pending = synchronized(pendingResultNotifications) { pendingResultNotifications.toList() }
-            pending.forEach { it.join() }
+            joinPendingResultJobs()
 
             // The SAME idle guard as the cancel path: a batch enqueued
             // during the join window is live work; tearing down here
@@ -519,30 +585,30 @@ class InferenceService : Service(), TranscriptionListener {
         }
     }
 
+    /**
+     * TASK-336/820 (simplify round): the ONE snapshot-then-join over the
+     * tracked result jobs (notifications and auto-saves). The snapshot
+     * under the monitor is load-bearing: the list is mutated on job
+     * completion, and iterating the live list is the naive fourth-copy
+     * mistake. Both teardown paths (the drain loop's tail and
+     * [retireIfIdle]) consume this.
+     */
+    private suspend fun joinPendingResultJobs() {
+        val pending = synchronized(pendingResultNotifications) { pendingResultNotifications.toList() }
+        pending.forEach { it.join() }
+    }
+
     private fun handleCancelRequest() {
         Log.i(TAG, "Cancel request received")
         currentProcessingJob?.cancel()
         failQueuedLogs("Cancelled")
         requestQueue.clear()
         pendingCount.set(0)
-        // TASK-820 review: join the tracked jobs (the auto-save now rides
-        // them, not just notifications) before the teardown cancels the
-        // service scope; the same drain the queue loop's finally does
-        // (TASK-336). A completed task's file write must not die mid-stream.
-        // On the service scope, not runBlocking on main: the scope lives
-        // until this launch's own stopSelf completes.
-        serviceScope.launch {
-            val pending = synchronized(pendingResultNotifications) { pendingResultNotifications.toList() }
-            pending.forEach { it.join() }
-            // A batch enqueued during the join window owns the keepalive
-            // now: stopping it here would strip the freezer protection
-            // from a live batch (the burst-share race).
-            if (batchIdle()) {
-                silentKeepalive.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }
+        // TASK-820/TASK-336: the shared retire owns the join-then-stop
+        // discipline (a completed task's auto-save write must not die to
+        // the teardown's scope cancel; the simplify round folded this
+        // hand copy into [retireIfIdle] with the drain's path).
+        retireIfIdle()
     }
 
     /**
@@ -563,15 +629,55 @@ class InferenceService : Service(), TranscriptionListener {
             val removed = requestQueue.removeIf { it.taskId == taskId }
             if (!removed) {
                 Log.i(TAG, "Per-task cancel for unknown/finished $taskId; nothing to do")
+                // TASK-978 review: a control delivery that revived a dead
+                // process lands here with an empty queue. The delivery
+                // promotion (onStartCommand's first statement) put this
+                // fresh instance in the FOREGROUND; without a stop it
+                // would strand an unswipeable notification forever (the
+                // pre-promotion code leaked a background service instead,
+                // which the system reaps on its own).
+                retireIfIdle()
                 return
             }
             pendingCount.decrementAndGet()
             inFlightTaskIds.remove(taskId)
             Log.i(TAG, "Per-task cancel removed queued $taskId")
+            // The nav-notification restore after the delivery promotion
+            // lives in onStartCommand itself (signature-forced repost),
+            // which covers this arm: a queued cancel changes nothing the
+            // nav signature tracks, so no further re-render is needed.
         }
         serviceScope.launch {
             runCatching { logDao.failNonTerminal(taskId, "Cancelled", durationMs = 0) }
                 .onFailure { Log.w(TAG, "Failed to close cancelled row for $taskId", it) }
+        }
+    }
+
+    /**
+     * TASK-978/simplify: the ONE async retire, shared by the batch-cancel
+     * path and the control-action arms (which can arrive on a service with
+     * no work: a stale notification tap reviving a dead process, which the
+     * delivery promotion made foreground; unretired it would strand).
+     * The FULL teardown discipline (review finding): join the tracked
+     * result jobs first (a mid-write auto-save dying to onDestroy's scope
+     * cancel is the TASK-336/820 class), re-check idleness after the join
+     * (a batch enqueued in the window owns the service AND the keepalive:
+     * stopping it here would strip the freezer protection from a live
+     * batch, the burst-share race), then retire.
+     */
+    private fun retireIfIdle() {
+        // Entry guard (efficiency round): the common caller is a nav tap on
+        // a LIVE service, where batchIdle() is false and the drain loop's
+        // own finally already runs the identical join-then-stop discipline;
+        // skipping the launch allocation there is free.
+        if (!batchIdle()) return
+        serviceScope.launch {
+            joinPendingResultJobs()
+            if (batchIdle()) {
+                silentKeepalive.stop()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -692,11 +798,34 @@ class InferenceService : Service(), TranscriptionListener {
      * while navigating — still reachable by expanding or swiping). Per TASK-242.
      */
     private fun renderChunkNavNotification() {
-        val state = chunkNavState ?: return
-        // One atomic snapshot so action visibility, displayed text, and progress bar cannot
-        // disagree when chunk completions (IO) and button taps (main) race.
+        val view = deriveChunkNavView() ?: return
+        // Skip the rebuild + notify when nothing visible changed (e.g. successive 200ms progress
+        // ticks while pinned and the ETA string is unchanged). chunkText is included so a retried
+        // chunk's improved text refreshes even while pinned on it. The dedup lives HERE, on the
+        // derived view, so an unchanged tick never builds a Notification (code-review round:
+        // the previous Pair form built and discarded one per tick just to compare) and the
+        // startForeground promotion (altitude round) is never skipped.
+        if (view.signature == lastNavSignature) return
+        lastNavSignature = view.signature
+        postForeground(assembleChunkNavNotification(view))
+    }
+
+    /**
+     * The nav view's derived, comparable form: the guards (no state, or the
+     * live index not yet set), one atomic snapshot so action visibility,
+     * displayed text, and the progress bar cannot disagree when chunk
+     * completions (IO) and button taps (main) race, plus the visible-state
+     * signature and every field the notification assembly needs. The
+     * START-FOREGROUND PROMOTION and the posting wrapper both consume this
+     * (TASK-978 altitude round: a delivery while a nav job is live promotes
+     * WITH the nav shape instead of the bare "Processing audio" form), and
+     * the signature dedup lives in the POSTING wrapper, so a caller that
+     * hands the notification to startForeground is never skipped by dedup.
+     */
+    private fun deriveChunkNavView(): ChunkNavView? {
+        val state = chunkNavState ?: return null
         val snap = state.snapshot()
-        if (snap.liveIndex < 0) return
+        if (snap.liveIndex < 0) return null
 
         val total = snap.totalChunks
         val live = snap.liveIndex
@@ -712,14 +841,16 @@ class InferenceService : Service(), TranscriptionListener {
         }
         val timingText = formatTimingText(latestEtaText, latestDurationSeconds)
         val queueText = if (latestQueuedCount > 0) resources.getQuantityString(R.plurals.queued_count, latestQueuedCount, latestQueuedCount) else ""
-        // Skip the rebuild + notify when nothing visible changed (e.g. successive 200ms progress
-        // ticks while pinned and the ETA string is unchanged). chunkText is included so a retried
-        // chunk's improved text refreshes even while pinned on it.
+        // chunkText is in the signature so a retried chunk's improved text
+        // refreshes even while pinned on it.
         val signature = "$viewIndex|$pinned|$live|$queueText|$timingText|$chunkText"
-        if (signature == lastNavSignature) return
-        lastNavSignature = signature
         val subText = joinSubText(navSub, queueText, timingText) ?: navSub
+        return ChunkNavView(signature, total, live, viewIndex, pinned, chunkText, subText)
+    }
 
+    /** The nav view's Notification, assembled only when something consumes it. */
+    private fun assembleChunkNavNotification(view: ChunkNavView): android.app.Notification {
+        val (_, total, live, viewIndex, pinned, chunkText, subText) = view
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(chunkText)
@@ -760,8 +891,19 @@ class InferenceService : Service(), TranscriptionListener {
         // 'Jump to live' is deliberately not its own button: collapsed notifications cap at 3
         // actions, and pressing Next until the tail already clears the pin (returns to live).
 
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
+        return builder.build()
     }
+
+    /** The comparable form of the chunk-nav notification (see deriveChunkNavView). */
+    private data class ChunkNavView(
+        val signature: String,
+        val totalChunks: Int,
+        val liveIndex: Int,
+        val viewIndex: Int,
+        val pinned: Boolean,
+        val chunkText: String,
+        val subText: String,
+    )
 
     override fun onSuccess(
         taskId: String,
@@ -1036,8 +1178,9 @@ class InferenceService : Service(), TranscriptionListener {
         bigText: String? = null,
         subText: String? = null
     ) {
-        notificationManager.notify(
-            NOTIFICATION_ID,
+        // postForeground (review round): the interim-text shape IS the
+        // single-chunk view the promotion must preserve.
+        postForeground(
             createNotification(contentText, durationSeconds = durationSeconds, startTimeMillis = startTimeMillis, bigText = bigText, subText = subText)
         )
     }
@@ -1050,8 +1193,10 @@ class InferenceService : Service(), TranscriptionListener {
         durationSeconds: Int = 0,
         startTimeMillis: Long = 0
     ) {
-        notificationManager.notify(
-            NOTIFICATION_ID,
+        // postForeground (simplify round): this interim shape is exactly the
+        // single-chunk view the promotion must preserve, so it rides the
+        // last-shape cache like every other site on the foreground id.
+        postForeground(
             createNotification(contentText, progress, maxProgress, indeterminate, durationSeconds, startTimeMillis)
         )
     }
@@ -1086,7 +1231,22 @@ class InferenceService : Service(), TranscriptionListener {
         val timingText = formatTimingText(etaText, durationSeconds)
         joinSubText(queueText, timingText)?.let { builder.setSubText(it) }
 
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
+        postForeground(builder.build())
+    }
+
+    /**
+     * F3 (review round): the LAST shape posted on the foreground id, so the
+     * startForeground promotion can re-post it instead of degrading a live
+     * single-chunk progress view to the bare "Processing audio" form (which
+     * also resets setWhen/chronometer). Cleared at batch end beside the
+     * chunk-nav state; a terminal notification replaces the shape anyway.
+     */
+    @Volatile private var lastForegroundNotification: android.app.Notification? = null
+
+    @Synchronized
+    private fun postForeground(notification: android.app.Notification) {
+        lastForegroundNotification = notification
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun updateNotificationQueueHint(queuedCount: Int) {
@@ -1104,7 +1264,7 @@ class InferenceService : Service(), TranscriptionListener {
                 cancelPendingIntent
             )
 
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
+        postForeground(builder.build())
         Log.i(TAG, "Updated notification with queue hint: $queuedCount queued")
     }
 
@@ -1150,5 +1310,4 @@ class InferenceService : Service(), TranscriptionListener {
 
     private val navPrevPendingIntent by lazy { navPendingIntent(ACTION_NAV_PREV, RC_NAV_PREV) }
     private val navNextPendingIntent by lazy { navPendingIntent(ACTION_NAV_NEXT, RC_NAV_NEXT) }
-    private val navLivePendingIntent by lazy { navPendingIntent(ACTION_NAV_LIVE, RC_NAV_LIVE) }
 }

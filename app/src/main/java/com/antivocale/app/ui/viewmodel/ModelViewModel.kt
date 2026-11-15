@@ -18,9 +18,11 @@ import com.antivocale.app.data.PreferencesManager
 import com.antivocale.app.di.ApplicationScope
 import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
+import com.antivocale.app.data.ExternalModelDeleter
 import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelRecord
+import com.antivocale.app.testing.ExternalImportSpiBridge
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalCatalogRepository
 import com.antivocale.app.data.ExternalModelStore
@@ -69,6 +71,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -78,6 +81,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
+
+/** TASK-965: the external cards' combined state (see
+ * [ModelViewModel.externalModelState]); one emission carries both. */
+data class ExternalModelsState(
+    val records: List<ExternalModelRecord> = emptyList(),
+    val wipedIds: Set<String> = emptySet(),
+)
 
 @HiltViewModel
 class ModelViewModel @Inject constructor(
@@ -91,6 +101,12 @@ class ModelViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val backendRegistry: BackendRegistry,
     private val externalModelStore: ExternalModelStore,
+    // TASK-974: the shared delete semantics this class used to inline. The
+    // default wires the SAME store+preferences pair so manual construction
+    // (the view-model tests) needs no explicit argument; Hilt ignores
+    // defaults and injects the AppModule singleton.
+    private val externalModelDeleter: ExternalModelDeleter =
+        ExternalModelDeleter(externalModelStore, preferencesManager),
     // TASK-801: the hot valid-records snapshot the registry already keeps
     // fresh; collecting it here adds no second decode of the records
     // preference and survives ViewModel re-creation for free.
@@ -283,6 +299,30 @@ class ModelViewModel @Inject constructor(
     val snackbarEvent: SharedFlow<SnackbarEvent> = _snackbarEvent.asSharedFlow()
 
     init {
+        // TASK-989: the debug SPI's bridge to these affordances. Registered
+        // here and cleared in onCleared; the bridge is a dumb handle bag the
+        // debug receiver reads, so a scripted trial can dispatch, observe,
+        // cancel and retry an import without touching the UI (the test
+        // layer's no-tap requirement). Inert in release: nothing reads it.
+        ExternalImportSpiBridge.renderState = {
+            when (val s = externalImportState.value) {
+                is ExternalImportState.Idle -> "idle"
+                is ExternalImportState.Importing ->
+                    "importing file=${s.fileIndex}/${s.fileCount}" +
+                        " name=${s.fileName} bytes=${s.bytes}/${s.totalBytes}"
+                is ExternalImportState.Error -> "error message=${s.message} retry=${s.retry != null}"
+                is ExternalImportState.Cancelled -> "cancelled message=${s.message} retry=${s.retry != null}"
+            }
+        }
+        ExternalImportSpiBridge.importInFlight =
+            { externalImportState.value is ExternalImportState.Importing }
+        ExternalImportSpiBridge.cancel = ::cancelExternalImport
+        ExternalImportSpiBridge.wire(this)
+        ExternalImportSpiBridge.retry = {
+            externalImportState.value.retry?.let { it(); true } ?: false
+        }
+        ExternalImportSpiBridge.dispatchUrlImport =
+            { url -> importExternalFromUrl(url, ModelFamily.TRANSDUCER) }
         // Set up auto-unload callback
         llmManager.setOnAutoUnloadCallback {
             onModelAutoUnloaded()
@@ -1452,6 +1492,11 @@ class ModelViewModel @Inject constructor(
 
     /** Import progress for the external-models section (one import at a time). */
     sealed class ExternalImportState {
+        /** The retry closure when THIS state carries one (Error, Cancelled);
+         *  null everywhere else. One accessor instead of two parallel when
+         *  mappings re-extracting the same property (simplify round). */
+        open val retry: (() -> Unit)? get() = null
+
         data object Idle : ExternalImportState()
 
         /** TASK-398: URL imports report per-file download progress; the folder path
@@ -1465,7 +1510,34 @@ class ModelViewModel @Inject constructor(
             val progress: Float = 0f,
         ) : ExternalImportState()
 
-        data class Error(val message: String) : ExternalImportState()
+        /**
+         * TASK-969 level 2: [retry] re-dispatches the URL import that died
+         * (the ladder is exhausted at this point) with the SAME params the
+         * dialog passed, captured as a lambda AT DISPATCH TIME: the closure
+         * is compiler-forced complete, so a future param added to
+         * importExternalFromUrl can never be silently dropped from the
+         * retry the way a mirrored params data class was twice caught
+         * doing (options and ctcModelType both fell to defaults in review
+         * of the first draft). A retried import that fails again attaches
+         * a fresh closure of the same params, so the affordance re-arms.
+         * Null when the failure was not a URL import (folder, bundle).
+         * Session-scoped: the state dies with the ViewModel and any later
+         * import overwrites it.
+         */
+        data class Error(val message: String, override val retry: (() -> Unit)? = null) : ExternalImportState()
+
+        /**
+         * TASK-979: the user-chosen stop. Same retry closure contract as
+         * [Error], but it is NOT a failure: the renderer shows the bare
+         * message, not the "Import failed: ..." wrapper, and without the
+         * error color (a cancel the user picked must not read as something
+         * breaking). The retry RE-DISPATCHES the same import from scratch:
+         * the cancel's cleanup deletes the partial dir, so this is not a
+         * byte-level resume (review finding; the Range machinery only
+         * resumes within one ladder's attempts). Folder/bundle cancels
+         * (no closure) go straight to [Idle] instead of this state.
+         */
+        data class Cancelled(val message: String, override val retry: (() -> Unit)? = null) : ExternalImportState()
     }
 
     private val _externalImportState = MutableStateFlow<ExternalImportState>(ExternalImportState.Idle)
@@ -1477,9 +1549,23 @@ class ModelViewModel @Inject constructor(
      * so this reads recordsFlow, not the loadability-filtered
      * validRecordsFlow.
      */
-    val externalModels: StateFlow<List<ExternalModelRecord>> =
+    /** TASK-965: the imported cards' ONE state: the record list and the
+     *  wiped-id set derive from a SINGLE records emission, so a repaired
+     *  record cannot flash the wiped line for a frame (two independent
+     *  stateIn chains on the same DataStore key update out of order; the
+     *  code-review round's skew finding). The dir stats run off-main
+     *  (flowOn Default, the records provider's own discipline). */
+    val externalModelState: StateFlow<ExternalModelsState> =
         externalModelStore.recordsFlow
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            .map { records ->
+                ExternalModelsState(
+                    records = records,
+                    wipedIds = records
+                        .filter { !it.quarantined && !externalModelStore.isLoadable(it) }
+                        .mapTo(mutableSetOf()) { it.id })
+            }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ExternalModelsState())
 
     /** Persisted active backend id, for card active-state keyed on identity (not display name). */
     val activeBackendId: StateFlow<String> =
@@ -1709,12 +1795,25 @@ class ModelViewModel @Inject constructor(
         displayName: String? = null,
         licence: String? = null,
         streaming: Boolean = false,
-    ) = runExternalImport("External URL",
+    ): Unit = runExternalImport("External URL",
+        // The explicit Unit breaks the inference recursion the retry
+        // closure creates (the closure calls this function, whose return
+        // type the closure's own type would depend on).
         onProgress = { index, count, name, bytes, total ->
             _externalImportState.value = ExternalImportState.Importing(
                 fileName = name, fileIndex = index, fileCount = count,
                 bytes = bytes, totalBytes = total,
                 progress = if (total > 0) bytes.toFloat() / total else 0f)
+        },
+        // TASK-969 level 2: a failed URL import leaves no record and no
+        // partial dir (the cleanup), so the Retry affordance re-dispatches
+        // through this closure, captured at the one site that holds the
+        // params (see Error.retry for why a lambda, not a params copy).
+        retry = {
+            importExternalFromUrl(
+                url, family, ctcModelType, options,
+                languages = languages, displayName = displayName,
+                licence = licence, streaming = streaming)
         }) { onProgress ->
         ModelBundleTransfer.Outcome.Imported(externalModelImporter.importFromUrlWithMetadata(
             url,
@@ -1740,14 +1839,25 @@ class ModelViewModel @Inject constructor(
      *  covers record safety against deletes and updateDir. */
     private val externalImportMutex = Mutex()
 
+    /** TASK-979: the in-flight import's Job (the cancel handle; null when
+     *  idle). Written ONLY by dispatch (main) and cancelExternalImport
+     *  (main); the terminal arms deliberately never write it (a queued
+     *  import may already hold the field). @Volatile anyway: the IO
+     *  coroutine's cancel machinery reads the job's state cross-thread. */
+    @Volatile
+    private var externalImportJob: kotlinx.coroutines.Job? = null
+
     /** Shared import scaffolding: progress state, IO dispatching, and the failure tail.
      *  [onProgress] is handed to the block so URL imports can stream download telemetry
      *  into the state (TASK-398); null for the folder path (nothing to report).
+     *  [retry] (TASK-969 level 2) rides a URL import's re-dispatch closure
+     *  onto the terminal Error state; null for the non-URL paths.
      *  TASK-924: the success payload is the [ModelBundleTransfer.Outcome] pair:
      *  an external record, or a builtin restore that wrote no record. */
     private fun runExternalImport(
         label: String,
         onProgress: ((Int, Int, String, Long, Long) -> Unit)?,
+        retry: (() -> Unit)? = null,
         block: suspend ((Int, Int, String, Long, Long) -> Unit) -> ModelBundleTransfer.Outcome,
     ) {
         val noop: (Int, Int, String, Long, Long) -> Unit = { _, _, _, _, _ -> }
@@ -1757,7 +1867,33 @@ class ModelViewModel @Inject constructor(
                 runCatching { block(onProgress ?: noop) }
                     .fold(
                         onSuccess = { outcome ->
+                            // TASK-979 review round 2: a cancel landing in the
+                            // suspension-free tail (the multi-GB sha256 pass)
+                            // races a block that COMPLETED and REGISTERED the
+                            // record. Reporting that as cancelled (an earlier
+                            // draft did) hides an installed model behind a
+                            // Retry that would re-download it whole; success
+                            // is the truthful terminal state, at worst a
+                            // "Imported" snackbar the user did not expect.
                             _externalImportState.value = ExternalImportState.Idle
+                            // TASK-979: the job field is deliberately NOT
+                            // cleared by the terminal arms: a queued import
+                            // may already have overwritten it (a fast
+                            // double-dispatch before the buttons' Importing
+                            // gate recomposes), and clearing here would
+                            // wipe the live handle; a stale handle is
+                            // harmless (cancelling a completed job is a
+                            // no-op). Known corner, documented (code-review
+                            // round): with A running on the mutex and B
+                            // queued, the handle points at B, so cancel
+                            // stops B and nulls the field; A then runs to
+                            // its natural end with no remaining cancel
+                            // affordance. Reachable only through that
+                            // double-dispatch window (every UI entry is
+                            // disabled while Importing), and the terminal
+                            // states still land correctly; a per-job cancel
+                            // set would close it at the cost of bookkeeping
+                            // the gate already makes unreachable.
                             // Called from a non-suspend fold callback; TASK-738:
                             // the manager's fire-and-forget entry point is
                             // exactly for scope-less callers.
@@ -1785,6 +1921,36 @@ class ModelViewModel @Inject constructor(
                             }
                         },
                         onFailure = { e ->
+                            // TASK-979: a user cancel is not a failure to
+                            // report. The cooperative seam (971) makes the
+                            // cancel prompt on the DOWNLOAD loop (~1s); the
+                            // post-download tail (the sha256 pass over a
+                            // multi-GB file, the registration) has no
+                            // suspension points, so a cancel landing there
+                            // takes effect at the next suspension (review
+                            // finding: the button looks dead for that
+                            // window; the state is still correct after it).
+                            // A cancelled URL import lands in the dedicated
+                            // Cancelled state carrying the retry closure
+                            // (which re-dispatches from scratch; see the
+                            // Cancelled KDoc), without the failure wrapper
+                            // a real error renders through (review finding:
+                            // "Import failed: Download cancelled" reads as
+                            // breakage the user chose). Folder/bundle
+                            // cancels (no closure) return to Idle with no
+                            // line at all. The exception is rethrown after
+                            // the state write: swallowing it would complete
+                            // the coroutine "normally" inside a cancelled
+                            // scope (review finding; the coroutine rule).
+                            if (e is kotlinx.coroutines.CancellationException) {
+                                if (retry != null) {
+                                    _externalImportState.value = ExternalImportState.Cancelled(
+                                        ctx.getString(R.string.external_import_cancelled), retry)
+                                } else {
+                                    _externalImportState.value = ExternalImportState.Idle
+                                }
+                                throw e
+                            }
                             Log.e(TAG, "$label import failed", e)
                             // The typed restore refusal comes from the shared
                             // transfer core, whose exceptions carry no
@@ -1795,13 +1961,35 @@ class ModelViewModel @Inject constructor(
                                 if (e is ModelBundleTransfer.DownloadActiveException)
                                     ctx.getString(R.string.bundle_restore_download_active)
                                 else e.message ?: "unknown error"
-                            _externalImportState.value = ExternalImportState.Error(message)
+                            _externalImportState.value = ExternalImportState.Error(message, retry)
                             _snackbarEvent.tryEmit(SnackbarEvent.Message(
                                 ctx.getString(R.string.external_import_failed, message)))
                         },
                     )
             }
-        }
+        }.also { externalImportJob = it }
+    }
+
+    /**
+     * TASK-979: cancels the in-flight external import. Prompt on the
+     * download path (the 971 cooperative seam checks the job at every
+     * throttled progress tick, ~1s); the post-download hash/registration
+     * tail and a folder copy between files are the slower bounds (no
+     * suspension points; documented in the task). The partial dir is
+     * cleaned by the import's own failure tail; a URL import's Cancelled
+     * state carries the Retry closure, which re-dispatches the same import
+     * FROM SCRATCH (the cleanup deleted the partial files; review finding).
+     * The handle is nulled HERE rather than in the terminal arms: a queued
+     * import may already hold the field (the double-dispatch race), and a
+     * stale completed-job handle is a harmless cancel no-op either way.
+     */
+    fun cancelExternalImport(): Boolean {
+        // Boolean (review round): the caller can distinguish a real abort
+        // from a no-op on a null or already-terminal handle.
+        val job = externalImportJob
+        externalImportJob = null
+        job?.cancel()
+        return job != null
     }
 
 
@@ -1827,24 +2015,16 @@ class ModelViewModel @Inject constructor(
     }
 
     /**
-     * Deletes a record: store first (so family sync sees the new world), then the files.
-     * When the deleted model is the persisted active backend, reset to the default backend
-     * (otherwise the orchestrator's registry lookup would fall through to the LLM loader).
+     * Deletes a record through the shared [ExternalModelDeleter] semantics
+     * (store row, files, selection resets); this function keeps only the UI
+     * follow-ups: clear the shown model when the active backend was reset,
+     * resync the share aliases, confirm with a snackbar.
      */
     fun deleteExternalModel(record: ExternalModelRecord) {
         viewModelScope.launch(Dispatchers.IO) {
-            externalModelStore.delete(record.id)
-            File(record.dir).deleteRecursively()
-            if (preferencesManager.transcriptionBackend.first() == record.backendId) {
-                preferencesManager.saveTranscriptionBackend(PreferencesManager.DEFAULT_TRANSCRIPTION_BACKEND)
+            val outcome = externalModelDeleter.delete(record)
+            if (outcome.resetActiveBackend) {
                 _uiState.update { it.copy(modelPath = "", modelName = "") }
-            }
-            // TASK-761: a refinement pin on the deleted model would keep
-            // degrading every two-pass run (the orchestrator honors the
-            // pin, the load fails, phase 1 silently skips) while the
-            // dropdown falls back to "Inherit active model".
-            if (preferencesManager.refinementModelBackendId.first() == record.backendId) {
-                preferencesManager.saveRefinementModelBackendId("")
             }
             shareTargetManager.syncAll()
             _snackbarEvent.tryEmit(SnackbarEvent.Message(
@@ -1873,6 +2053,7 @@ class ModelViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        ExternalImportSpiBridge.unwire(this)
         llmManager.setOnAutoUnloadCallback(null)
         llmManager.setOnExternalLoadCallback(null)
     }

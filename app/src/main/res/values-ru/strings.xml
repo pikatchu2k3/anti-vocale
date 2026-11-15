@@ -199,6 +199,14 @@
     <string name="catalog_download_confirm_message">Будет загружено ~%1$d МБ.</string>
     <string name="model_fit_no_fit">Эта модель, скорее всего, не запустится на этом устройстве: RAM ниже необходимого.</string>
     <string name="model_fit_tight">Внимание: эта модель на грани RAM этого устройства; под нагрузкой возможен сбой.</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">ОЗУ устройства: %1$d ГБ, %2$s</string>
+    <string name="device_tier_constrained">начального уровня</string>
+    <string name="device_tier_standard">среднего уровня</string>
+    <string name="device_tier_high">топового уровня</string>
+    <string name="model_fit_chip_tight">Впритык</string>
+    <string name="model_fit_chip_no_fit">Может не подойти</string>
+
     <string name="catalog_extract_confirm_title">Извлечь %1$s?</string>
     <string name="catalog_extract_confirm_message">Файл модели уже загружен. Сейчас он будет извлечён для использования.</string>
 
@@ -394,6 +402,7 @@
     <string name="model_selected_message">Выбрано: %1$s</string>
     <string name="model_use_missing_files">Файлы модели %1$s отсутствуют или неполные. Скачайте этот вариант заново на вкладке «Модель».</string>
     <string name="model_demoted_notice">Не выбирается автоматически: эта модель не выдала текст при наличии речи. Выберите её снова, чтобы дать ей ещё один шанс.</string>
+    <string name="external_model_wiped_notice">Удалено системной очисткой хранилища. Импортируйте его заново действиями импорта выше.</string>
     <string name="delete">Удалить</string>
     <string name="variant_more_actions">Ещё действия</string>
     <string name="download">Скачать</string>
@@ -560,7 +569,15 @@
     <string name="signature_position_title">Положение</string>
     <string name="signature_position_prepend">Перед транскрипцией</string>
     <string name="signature_position_append">После транскрипции</string>
-    <string name="summary_prompt_description">Своя инструкция для ИИ-резюме. Пусто означает встроенный промпт (два-три предложения).</string>
+    <string name="summary_prompt_description">Выберите, что ИИ-проход добавляет к длинным транскрипциям. Своя принимает произвольную инструкцию; пусто использует встроенный промпт.</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">Резюме</string>
+    <string name="summary_preset_action_items">Поручения</string>
+    <string name="summary_preset_meeting_minutes">Протокол встречи</string>
+    <string name="summary_preset_custom">Своя</string>
+    <string name="summary_preset_action_items_prompt">Перечисли поручения из этой транскрипции коротким списком, по одной строке на пункт, на языке транскрипции. Укажи ответственных и сроки, если они названы. Выведи только список.</string>
+    <string name="summary_preset_meeting_minutes_prompt">Составь протокол встречи по этой транскрипции: обсуждённые темы, принятые решения и поручения с ответственными, на языке транскрипции. Сохрани имена и числа. Выведи только протокол.</string>
+
     <string name="punctuation_default_prompt">Добавь пунктуацию и заглавные буквы в эту расшифровку. Сохрани каждое слово точно как написано; ничего не исправляй, не переводи, не добавляй и не удаляй. Выведи только исправленную расшифровку.</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">Резюмировать длинные расшифровки</string>
@@ -991,6 +1008,7 @@
     <string name="external_import">Импортировать</string>
     <string name="external_importing">Импорт модели…</string>
     <string name="external_importing_file">Импорт %1$s (%2$d из %3$d)…</string>
+    <string name="external_import_cancelled">Загрузка отменена</string>
     <string name="external_import_failed">Не удалось импортировать: %1$s</string>
     <string name="external_imported">Импортировано: %1$s</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1346,8 +1364,17 @@
     <string name="backup_import_history_failed">Настройки импортированы, но не удалось добавить историю. Повторить безопасно.</string>
     <string name="backup_disclosure_title">Перед экспортом</string>
     <string name="backup_disclosure_body">Копия содержит каждую расшифровку, имя отправителя и метку говорящего в читаемом виде. Передавайте её только тем, кому доверяете.</string>
-    <string name="keyword_biasing_title">Приоритет ключевых слов (Whistle)</string>
-    <string name="keyword_biasing_description">Имена, места или термины, которые модель Whistle должна предпочитать, по одному в строке. Действует со следующей расшифровки, без перезагрузки.</string>
+    <string name="keyword_biasing_title">Личный словарь</string>
+    <string name="keyword_biasing_description">Имена, места или жаргон, которые приложение должно учитывать, по одному в строке.</string>
+    <string name="keyword_biasing_summary">Имена и термины, которые распознавание должно писать по-вашему.</string>
+    <string name="keyword_biasing_where_title">Где это применяется</string>
+    <string name="keyword_biasing_where_recognition">Распознавание: Whistle, Qwen3, Parakeet, GigaAM и потоковый Nemotron.</string>
+    <string name="keyword_biasing_where_passes">Этапы вычитки и резюме ИИ; консервативная вычитка сохраняет свой фиксированный промпт.</string>
+    <string name="keyword_biasing_where_download">При установке словаря для Parakeet, GigaAM и потокового Nemotron один раз загружается небольшой файл движка.</string>
+    <string name="keyword_biasing_where_qwen3">На Qwen3 применяются только первые термины списка.</string>
+    <string name="keyword_biasing_score_title">Более агрессивное исправление</string>
+    <string name="keyword_biasing_score_note">Более высокие значения могут влиять и на остальную часть расшифровки. Изменение вступает в силу при следующей загрузке модели.</string>
+    <string name="personal_dictionary_prompt_line">Эти имена или термины встречаются в этом материале; сохраняйте это точное написание там, где они появляются: %1$s</string>
     <string name="keyword_biasing_placeholder">Один термин на строку</string>
     <string name="freeze_protection_title">Защита фоновой расшифровки</string>
     <string name="freeze_protection_description">Держит беззвучный аудиопоток активным во время расшифровки, чтобы агрессивные экономии батареи не приостанавливали приложение. Включите, если расшифровка останавливается при выключенном экране (некоторые Oppo, Realme, OnePlus и Vivo).</string>
@@ -1366,4 +1393,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">Что нового</string>
     <string name="whats_new_summary">Что нового в этой версии</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">Восстановление моделей</string>
+    <string name="notification_channel_model_repair_description">Уведомления, когда системная очистка хранилища удаляет импортированную модель, и о результате восстановления.</string>
+    <string name="wiped_imports_title">Системная очистка удалила файлы модели</string>
+    <string name="wiped_imports_text">Системная очистка хранилища удалила файлы импортированных моделей (%1$d шт.): %2$s. Нажмите «Восстановить», чтобы скачать их заново из первоисточника.</string>
+    <string name="wiped_imports_names_overflow">+ ещё %1$d</string>
+    <string name="wiped_imports_recover_action">Восстановить</string>
+    <string name="wiped_imports_recovered_title">Восстановление завершено</string>
+    <string name="wiped_imports_recovered_text">Файлы моделей в количестве %1$d скачаны заново и готовы к использованию.</string>
+    <string name="wiped_imports_failed_title">Не удалось восстановить модели</string>
+    <string name="wiped_imports_failed_text">Повторная загрузка не завершилась. Откройте вкладку Модели и импортируйте модель заново вручную.</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">Источник модели недоступен</string>
+    <string name="wiped_imports_source_failed_text">%1$d модель(и) больше нельзя скачать из первоисточника. Удалите битые записи или импортируйте модель вручную на вкладке «Модели».</string>
+    <string name="wiped_imports_remove_action">Удалить</string>
+    <string name="wiped_imports_removed_text">Из вкладки «Модели» удалено битых записей: %1$d.</string>
+    <string name="wiped_imports_progress_title">Идёт восстановление модели</string>
+    <string name="wiped_imports_progress_text">Файлы удалённой модели загружаются заново. Это может занять несколько минут.</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">Спросить ИИ</string>
+    <string name="ask_transcripts_title">Спросите свои транскрипции</string>
+    <string name="ask_transcripts_no_matches">Транскрипции по этому вопросу не найдены.</string>
+    <string name="ask_transcripts_sources">На основе %1$d транскрипции(й)</string>
+    <string name="ask_transcripts_error">Ошибка: %1$s</string>
+    <string name="ask_transcripts_instruction">Отвечай на вопрос ниже, опираясь ТОЛЬКО на эти транскрипции. Если ответа в них нет, так и скажи. Отвечай на языке вопроса.</string>
+<string name="ask_transcripts_working">Спрашиваем модель на устройстве…</string>
 </resources>

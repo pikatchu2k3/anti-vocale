@@ -53,11 +53,13 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.antivocale.app.R
 import com.antivocale.app.ui.AppNavigation
+import com.antivocale.app.ui.DeepLinkImport
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.ExternalCatalogRepository
 import com.antivocale.app.data.ModelDownloader
 import com.antivocale.app.data.ExternalCatalog
+import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelRecord
 import com.antivocale.app.data.ModelFamily
 import com.antivocale.app.data.catalog.BundledCatalog
@@ -601,31 +603,19 @@ fun ModelTab(
             onLanguageSelected = { viewModel.setModelFilterLanguage(it) }
         )
 
+        // TASK-996: the device RAM-class line, one honest frame for every
+        // fit chip below (curated and full views share this header).
+        DeviceTierLine()
+
         // TASK-786: states the active model once, right under the filter;
         // the dot pairs with the external cards' badge (catalog cards carry
         // the "Active" pill).
         activeModelLabel?.let { name ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(
-                    Icons.Default.RadioButtonChecked,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp),
-                )
-                Text(
-                    text = stringResource(R.string.models_active_model_line, name),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            MetaLineRow(
+                icon = Icons.Default.RadioButtonChecked,
+                tint = MaterialTheme.colorScheme.primary,
+                text = stringResource(R.string.models_active_model_line, name),
+            )
         }
 
         // GH #70: curated "For your language" elevation. The language comes
@@ -1196,23 +1186,43 @@ private fun CuratedWhyLine(@StringRes whyResId: Int) {
  * renders nothing.
  */
 @Composable
-private fun ExternalImportStateView(state: ModelViewModel.ExternalImportState) {
+private fun ExternalImportStateView(
+    state: ModelViewModel.ExternalImportState,
+    // TASK-969 level 2: the Retry affordance renders at the ONE canonical
+    // home (the import section) so a shared error state cannot stack N
+    // identical buttons under every community card that also shows it.
+    allowRetry: Boolean = false,
+    // TASK-979: the in-flight import's cancel handle.
+    onCancel: () -> Unit = {},
+) {
     when (state) {
         is ModelViewModel.ExternalImportState.Importing -> Column(
             modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()
         ) {
-            Text(
-                if (state.fileCount > 0)
-                    stringResource(
-                        R.string.external_importing_file,
-                        state.fileName, state.fileIndex + 1, state.fileCount)
-                else
-                    stringResource(R.string.external_importing),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (state.fileCount > 0)
+                        stringResource(
+                            R.string.external_importing_file,
+                            state.fileName, state.fileIndex + 1, state.fileCount)
+                    else
+                        stringResource(R.string.external_importing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                // TASK-979: the missing abort. Built-in downloads always
+                // had one; a multi-GB community import on mobile data was
+                // unstoppable except by killing the app. Prompt on the
+                // download path (the 971 cooperative seam); the cancelled
+                // URL import then offers the SAME Retry a failed one does
+                // (a from-scratch re-dispatch; see cancelExternalImport).
+                TextButton(onClick = onCancel) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
             if (state.fileCount > 0) {
                 DownloadProgressView(
                     downloadState = DownloadState.Downloading(
@@ -1225,13 +1235,72 @@ private fun ExternalImportStateView(state: ModelViewModel.ExternalImportState) {
                 )
             }
         }
-        is ModelViewModel.ExternalImportState.Error -> Text(
-            stringResource(R.string.external_import_failed, state.message),
-            style = MaterialTheme.typography.bodySmall,
+        is ModelViewModel.ExternalImportState.Error -> TerminalImportLine(
+            // Unbounded on purpose: this line is the failure detail a user
+            // debugging the flaky-network scenario needs in full (the
+            // review pass caught a maxLines cap sneaking in with the row
+            // layout; the button goes BELOW instead).
+            text = stringResource(R.string.external_import_failed, state.message),
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(vertical = 8.dp)
+            retry = if (allowRetry) state.retry else null,
+        )
+        is ModelViewModel.ExternalImportState.Cancelled -> TerminalImportLine(
+            // TASK-979: the bare cancelled line, NOT the "Import failed:"
+            // wrapper or the error color (the review pass caught the
+            // failure template swallowing the cancel: the user chose to
+            // stop, nothing broke).
+            text = state.message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            retry = if (allowRetry) state.retry else null,
         )
         else -> {}
+    }
+}
+
+/**
+ * TASK-969/979: the ONE terminal shape both import end-states render (the
+ * review pass caught the two near-duplicate Columns drifting): an
+ * unbounded line in the state's color, with the shared retry button
+ * below when the state carries one.
+ */
+@Composable
+private fun TerminalImportLine(text: String, color: Color, retry: (() -> Unit)?) {
+    Column(modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = color,
+        )
+        if (retry != null) {
+            RetryTextButton(retry, Modifier.align(Alignment.End))
+        }
+    }
+}
+
+/**
+ * TASK-969/979: the ONE retry button both terminal import states render
+ * (Error and Cancelled share it; the review pass caught the two inline
+ * copies drifting into near-duplicate territory). The dispatch window
+ * between tap and the Importing flip still reads the terminal state, so a
+ * second tap would enqueue a duplicate multi-GB import; the state-keyed
+ * flag disables the button until the state actually moves (review
+ * finding). The label reuses the tab's existing localized Retry string
+ * (a fifth near-copy retry string was a review finding).
+ */
+@Composable
+private fun RetryTextButton(retry: () -> Unit, modifier: Modifier) {
+    var retryDispatched by androidx.compose.runtime.remember(retry) {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+    TextButton(
+        onClick = {
+            retryDispatched = true
+            retry()
+        },
+        enabled = !retryDispatched,
+        modifier = modifier,
+    ) {
+        Text(stringResource(R.string.external_catalog_retry))
     }
 }
 
@@ -1270,7 +1339,13 @@ private fun CuratedCommunityCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.external_import))
             }
-            ExternalImportStateView(importState)
+            // TASK-979: the card wires its own cancel too; the review pass
+            // caught the default no-op here, a dead Cancel button on exactly
+            // the multi-GB download the card itself started. Unlike Retry
+            // (allowRetry: N cards must not stack N identical retry
+            // buttons), cancel renders wherever the progress renders: the
+            // abort matters at the surface the user is looking at.
+            ExternalImportStateView(importState, onCancel = viewModel::cancelExternalImport)
         }
     }
 }
@@ -1524,8 +1599,11 @@ private fun CatalogModelSection(
                         }
                     ),
                     downloadButtonTextResId = R.string.download,
-                    extraBadges = variant.badgeKey?.let { badgeKey ->
-                        {
+                    extraBadges = {
+                        // TASK-996: the fit chip rides the same badge row as
+                        // the catalog badge (same verdict the download dialog
+                        // hints with; fits-comfortably renders nothing).
+                        variant.badgeKey?.let { badgeKey ->
                             Surface(
                                 color = MaterialTheme.colorScheme.secondary,
                                 shape = MaterialTheme.shapes.small
@@ -1538,6 +1616,7 @@ private fun CatalogModelSection(
                                 )
                             }
                         }
+                        FitBadge(variant.estimatedSizeMB)
                     },
                     cancelTextExtractor = { downloadState ->
                         if (downloadState is DownloadState.Extracting)
@@ -1687,6 +1766,98 @@ private fun variantFitHint(
     DeviceCompatibility.ModelFit.DoesNotFit ->
         R.string.model_fit_no_fit to MaterialTheme.colorScheme.error
     else -> null to null
+}
+
+/**
+ * TASK-996: the device RAM-class line. One honest frame ("this is the
+ * machine every chip below is judged against"); ONE cached binder read
+ * yields tier and GB together (review E1/E2); fail-open renders nothing
+ * when total RAM is unreadable. Purely informational, like the chips.
+ */
+@Composable
+private fun DeviceTierLine() {
+    val context = LocalContext.current
+    val totalBytes = com.antivocale.app.audio.MemoryReadings.totalRamBytesCached(context) ?: return
+    val tier = DeviceCompatibility.ramTier(context) ?: return
+    val label = stringResource(
+        when (tier) {
+            DeviceCompatibility.RamTier.CONSTRAINED -> R.string.device_tier_constrained
+            DeviceCompatibility.RamTier.STANDARD -> R.string.device_tier_standard
+            DeviceCompatibility.RamTier.HIGH -> R.string.device_tier_high
+        })
+    MetaLineRow(
+        icon = Icons.Default.Storage,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        // DECIMAL GB, rounded: totalMem reports binary bytes but the spec
+        // sheet says decimal, and the bands are calibrated to the marketing
+        // classes - a 4GB-marketed phone reporting 3.6GiB is 3.87 decimal GB
+        // (reads "4 GB, mid-range") and an 8GB-marketed one reporting
+        // 7.2GiB is 7.73 (reads "8 GB, high-end"). Binary GiB flooring
+        // showed "7 GB" beside "high-end", the contradiction the review
+        // caught twice.
+        text = stringResource(
+            R.string.device_tier_line,
+            Math.round(totalBytes / 1e9).toInt(), label),
+    )
+}
+
+/**
+ * TASK-996 extraction (review R1): the header meta-line recipe the
+ * active-model line and the tier line share (icon + one bodySmall line,
+ * 14dp icon, single line, ellipsized).
+ */
+@Composable
+private fun MetaLineRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * TASK-996: the per-row fit chip, the SAME one-definition verdict the
+ * download dialog hints with. Tight/DoesNotFit only (the dialog's own
+ * convention): a model that fits comfortably needs no warning, and the
+ * chip INFORMS, never hides. The PROCESS-cached RAM read feeds the pure,
+ * already-tested core (one binder round trip per process, never per row);
+ * null (unreadable) renders nothing, fail-open.
+ */
+@Composable
+private fun FitBadge(sizeMB: Long) {
+    // The PROCESS-cached read (MemoryReadings.totalRamBytesCached: totalMem
+    // is a device constant) feeds the pure, already-tested core: one binder
+    // round trip per process for every chip on screen, never per row.
+    // Null (unreadable) renders nothing, fail-open.
+    val deviceRamBytes = com.antivocale.app.audio.MemoryReadings.totalRamBytesCached(LocalContext.current) ?: return
+    when (DeviceCompatibility.modelFitForRam(deviceRamBytes, sizeMB)) {
+        DeviceCompatibility.ModelFit.Tight ->
+            FitChip(R.string.model_fit_chip_tight, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+        DeviceCompatibility.ModelFit.DoesNotFit ->
+            FitChip(R.string.model_fit_chip_no_fit, MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+        else -> {}
+    }
+}
+
+@Composable
+private fun FitChip(textRes: Int, container: Color, content: Color) {
+    Surface(color = container, shape = MaterialTheme.shapes.small) {
+        Text(
+            text = stringResource(textRes),
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
 }
 
 // ==================== External models section (v2a) ====================
@@ -1917,11 +2088,17 @@ private fun ExternalModelsSection(
      *  has an external-record branch building ExternalConfig). */
     onBenchmark: ((ExternalModelRecord) -> Unit)? = null,
 ) {
-    val records by viewModel.externalModels.collectAsState()
+    val externalModelState by viewModel.externalModelState.collectAsState()
+    val records = externalModelState.records
     // TASK-675: the honest one-line reason travels to external cards too.
     val demotedBackendIds by viewModel.demotedBackendIds.collectAsState()
     val importState by viewModel.externalImportState.collectAsState()
     var urlDialogOpen by remember { mutableStateOf(false) }
+    // TASK-995: the deep-link prefill riding an open dialog request. The
+    // dialog content is keyed on this value, so a link arriving while the
+    // dialog is open re-initializes it with the new URL, and a manual open
+    // (which sets it to null first) can never resurrect a consumed link.
+    var urlDialogPrefill by remember { mutableStateOf<String?>(null) }
     // TASK-486: op=nav models:import opens the catalog dialog directly.
     // This effect OWNS consumption (the ModelTab-level effect only expands
     // the section and must stay re-fire-free); consuming here means a later
@@ -1931,13 +2108,16 @@ private fun ExternalModelsSection(
         if (request.destination is AppNavigation.Destination.ModelTarget) {
             onNavConsumed()
             if (request.destination.key == AppNavigation.MODEL_KEY_IMPORT) {
+                // TASK-995 review: EVERY deep link opens the dialog with the
+                // URL pre-filled (the dialog is the consent surface; a link
+                // never dispatches an import on its own, so the busy gate and
+                // the mobile-data cost stay under the user's tap). Entry and
+                // repo URLs part ways INSIDE the dialog (family selector).
+                urlDialogPrefill = request.destination.importUrl
                 urlDialogOpen = true
             }
         }
     }
-    var dropdownExpanded by remember { mutableStateOf(false) }
-    var ctcExpanded by remember { mutableStateOf(false) }
-
     // Outer section Card matching the curated sections (GigaAM, Nemotron):
     // surfaceVariant background, shared card-title header, 16dp padding.
     Card(
@@ -1985,7 +2165,11 @@ private fun ExternalModelsSection(
             // featured path (the only filled button, first); folder and
             // the phone-transfer bundle are outlined equals below.
             Button(
-                onClick = { urlDialogOpen = true },
+                onClick = {
+                    // A manual open never inherits a consumed link's prefill.
+                    urlDialogPrefill = null
+                    urlDialogOpen = true
+                },
                 enabled = importState !is ModelViewModel.ExternalImportState.Importing,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -2022,110 +2206,17 @@ private fun ExternalModelsSection(
                 Text(stringResource(R.string.external_family_advanced))
             }
             if (familyAdvanced) {
-                // Family selector visible for BOTH import paths (folder and URL). Each
-                // entry carries a help line listing the expected files, mirroring the
-                // label + description pattern of the advanced-section button.
-                ExposedDropdownMenuBox(
-                    expanded = dropdownExpanded,
-                    onExpandedChange = { dropdownExpanded = it },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) {
-                    ReadOnlyDropdownField(
-                        value = familyLabel(selection.family),
-                        label = { Text(stringResource(R.string.external_family)) },
-                        expanded = dropdownExpanded,
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-                        FAMILY_OPTIONS.forEach { (value, labelRes, helpRes) ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(stringResource(labelRes))
-                                        Text(
-                                            stringResource(helpRes),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    onSelectionChange(selection.withFamily(value))
-                                    dropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Conditional options panel below the selector.
-                when (selection.family) {
-                    ModelFamily.CANARY -> CanaryLanguageDropdown(
-                        selected = selection.decodeLanguage,
-                        onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    )
-                    ModelFamily.WHISPER -> LanguageEndonymDropdown(
-                        selected = selection.decodeLanguage,
-                        onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
-                        label = stringResource(R.string.external_decode_language),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        blankText = stringResource(R.string.external_decode_auto)
-                    )
-                    ModelFamily.SENSE_VOICE -> {
-                        LanguageEndonymDropdown(
-                            selected = selection.decodeLanguage,
-                            onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
-                            label = stringResource(R.string.external_decode_language),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            blankText = stringResource(R.string.external_decode_auto)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                stringResource(R.string.external_option_itn),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Switch(
-                                checked = selection.sensevoiceItn,
-                                onCheckedChange = { onSelectionChange(selection.copy(sensevoiceItn = it)) }
-                            )
-                        }
-                    }
-                    ModelFamily.CTC -> ExposedDropdownMenuBox(
-                        expanded = ctcExpanded,
-                        onExpandedChange = { ctcExpanded = it },
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        ReadOnlyDropdownField(
-                            value = stringResource(
-                                CTC_SUBTYPE_LABELS.firstOrNull { it.first == selection.ctcModelType }
-                                    ?.second ?: R.string.external_ctc_subtype_nemo),
-                            label = { Text(stringResource(R.string.external_ctc_subtype)) },
-                            expanded = ctcExpanded,
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(expanded = ctcExpanded, onDismissRequest = { ctcExpanded = false }) {
-                            CTC_SUBTYPE_LABELS.forEach { (subtype, labelRes) ->
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(labelRes)) },
-                                    onClick = {
-                                        onSelectionChange(selection.copy(ctcModelType = subtype))
-                                        ctcExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    else -> {}
-                }
+                // TASK-995: the selector body lives in FamilySelectorPanel
+                // (shared with the import dialog, where a deep-linked repo
+                // URL must expose the family choice inside the modal).
+                FamilySelectorPanel(
+                    selection = selection,
+                    onSelectionChange = onSelectionChange,
+                )
             }
 
 
-        ExternalImportStateView(importState)
+        ExternalImportStateView(importState, allowRetry = true, onCancel = viewModel::cancelExternalImport)
 
         // Gap between the import buttons/state and the first card
         if (records.isNotEmpty()) Spacer(modifier = Modifier.height(8.dp))
@@ -2143,6 +2234,7 @@ private fun ExternalModelsSection(
                 record = record,
                 isActive = activeBackendId == record.backendId,
                 demoted = record.backendId in demotedBackendIds,
+                wiped = record.id in externalModelState.wipedIds,
                 onUse = { viewModel.useExternalModel(record) },
                 onDelete = { onDeleteRequest(record) },
                 // A quarantined record can never resolve a benchmark: hide
@@ -2177,17 +2269,27 @@ private fun ExternalModelsSection(
         }
     }
 
+    // TASK-995: keyed on the prefill so a deep link arriving while the
+    // dialog is already open re-initializes the LINK fields with the new
+    // URL (remember blocks re-run inside a key change), and a manual open
+    // (prefill set to null first) starts from a blank dialog. The
+    // catalog-pick state stays OUTSIDE the key (review round 3): a second
+    // link re-targets the link fields, it must not silently discard the
+    // user's in-progress catalog selection or override form.
     if (urlDialogOpen) {
-        val catalogState by viewModel.catalogUiState.collectAsState()
-        LaunchedEffect(urlDialogOpen) {
-            if (urlDialogOpen) viewModel.loadExternalCatalog()
-        }
         var catalogLanguage by remember { mutableStateOf("") }
         var selectedEntry by remember { mutableStateOf<ExternalCatalog.CatalogEntry?>(null) }
         var overrideMode by remember { mutableStateOf(false) }
         var overrideUrl by remember { mutableStateOf("") }
-        var linkMode by remember { mutableStateOf(false) }
-        var linkUrl by remember { mutableStateOf("") }
+        key(urlDialogPrefill) {
+        val catalogState by viewModel.catalogUiState.collectAsState()
+        LaunchedEffect(urlDialogOpen) {
+            if (urlDialogOpen) viewModel.loadExternalCatalog()
+        }
+        // TASK-995: a deep-link URL pre-fills the advanced link field; the
+        // key(urlDialogPrefill) above re-runs these initializers per link.
+        var linkMode by remember { mutableStateOf(urlDialogPrefill != null) }
+        var linkUrl by remember { mutableStateOf(urlDialogPrefill.orEmpty()) }
 
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { urlDialogOpen = false },
@@ -2345,12 +2447,31 @@ private fun ExternalModelsSection(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                         )
+                        // TASK-995: a link URL that is not an entry document
+                        // cannot declare its family, and the section's
+                        // selector sits behind this modal, so the choice
+                        // renders HERE, visible where the import is confirmed
+                        // (a hidden default is the GH #93 wrong-family crash
+                        // class). Keyed on the LIVE field, not the prefill:
+                        // editing an entry URL into a repo URL (or typing
+                        // one) must expose the choice; entry/manifest URLs
+                        // hide it (their document drives family, a picker
+                        // would override it).
+                        if (!ExternalModelImporter.isCatalogEntryUrl(linkUrl.trim())) {
+                            FamilySelectorPanel(
+                                selection = selection,
+                                onSelectionChange = onSelectionChange,
+                            )
+                        }
                     }
                 }
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(
-                    enabled = selectedEntry != null || (linkMode && linkUrl.isNotBlank()),
+                    // TASK-995: the busy gate every section button honors; a
+                    // deep link may open this dialog while an import runs.
+                    enabled = (selectedEntry != null || (linkMode && linkUrl.isNotBlank())) &&
+                        importState !is ModelViewModel.ExternalImportState.Importing,
                     onClick = {
                         val entry = selectedEntry
                         val manual = if (linkMode) linkUrl.trim().isNotBlank() else false
@@ -2373,7 +2494,126 @@ private fun ExternalModelsSection(
                 }
             }
         )
+        } // key(urlDialogPrefill)
     }
+}
+
+/**
+ * TASK-995 extraction: the import family selector (dropdown + per-family
+ * option panels), shared by the Advanced disclosure in the models section
+ * and the import dialog's link branch. A deep-linked repo URL cannot
+ * declare its family, so the dialog renders this panel in place: the
+ * choice must be visible where the import is confirmed, never a hidden
+ * default (the GH #93 wrong-family crash class).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FamilySelectorPanel(
+    selection: ExternalImportUiState,
+    onSelectionChange: (ExternalImportUiState) -> Unit,
+) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    var ctcExpanded by remember { mutableStateOf(false) }
+
+    // Each entry carries a help line listing the expected files, mirroring
+    // the label + description pattern of the advanced-section button.
+    ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    ReadOnlyDropdownField(
+                        value = familyLabel(selection.family),
+                        label = { Text(stringResource(R.string.external_family)) },
+                        expanded = dropdownExpanded,
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                    )
+                    ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
+                        FAMILY_OPTIONS.forEach { (value, labelRes, helpRes) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(stringResource(labelRes))
+                                        Text(
+                                            stringResource(helpRes),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    onSelectionChange(selection.withFamily(value))
+                                    dropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Conditional options panel below the selector.
+                when (selection.family) {
+                    ModelFamily.CANARY -> CanaryLanguageDropdown(
+                        selected = selection.decodeLanguage,
+                        onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    )
+                    ModelFamily.WHISPER -> LanguageEndonymDropdown(
+                        selected = selection.decodeLanguage,
+                        onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
+                        label = stringResource(R.string.external_decode_language),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        blankText = stringResource(R.string.external_decode_auto)
+                    )
+                    ModelFamily.SENSE_VOICE -> {
+                        LanguageEndonymDropdown(
+                            selected = selection.decodeLanguage,
+                            onSelect = { onSelectionChange(selection.copy(decodeLanguage = it)) },
+                            label = stringResource(R.string.external_decode_language),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            blankText = stringResource(R.string.external_decode_auto)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                stringResource(R.string.external_option_itn),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = selection.sensevoiceItn,
+                                onCheckedChange = { onSelectionChange(selection.copy(sensevoiceItn = it)) }
+                            )
+                        }
+                    }
+                    ModelFamily.CTC -> ExposedDropdownMenuBox(
+                        expanded = ctcExpanded,
+                        onExpandedChange = { ctcExpanded = it },
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        ReadOnlyDropdownField(
+                            value = stringResource(
+                                CTC_SUBTYPE_LABELS.firstOrNull { it.first == selection.ctcModelType }
+                                    ?.second ?: R.string.external_ctc_subtype_nemo),
+                            label = { Text(stringResource(R.string.external_ctc_subtype)) },
+                            expanded = ctcExpanded,
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(expanded = ctcExpanded, onDismissRequest = { ctcExpanded = false }) {
+                            CTC_SUBTYPE_LABELS.forEach { (subtype, labelRes) ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(labelRes)) },
+                                    onClick = {
+                                        onSelectionChange(selection.copy(ctcModelType = subtype))
+                                        ctcExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    else -> {}
+                }
 }
 
 /** One pickable catalog row: name + declared languages; tapping SELECTS it. */
@@ -2416,6 +2656,9 @@ private fun ExternalModelCard(
     isActive: Boolean,
     /** TASK-675: renders the honest silent-decode reason; Use stays available. */
     demoted: Boolean = false,
+    /** TASK-965: renders the storage-cleaner cause; the recovery
+     *  notification (TASK-963) and the import actions restore it. */
+    wiped: Boolean = false,
     onUse: () -> Unit,
     onDelete: () -> Unit,
     onBenchmark: (() -> Unit)? = null,
@@ -2444,13 +2687,23 @@ private fun ExternalModelCard(
                     // name rides the semantics: TalkBack must not read regional
                     // indicators (the TASK-386 class).
                     Column {
-                        Text(
-                            LanguageFlags.titled(record.displayName, record.languages),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.semantics {
-                                contentDescription = record.displayName
-                            })
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                LanguageFlags.titled(record.displayName, record.languages),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.semantics {
+                                    contentDescription = record.displayName
+                                })
+                            // TASK-996: the fit chip rides beside the title
+                            // (the catalog badge-row pattern) and judges the
+                            // REAL on-disk size (better truth than the
+                            // catalog's estimates).
+                            FitBadge(record.sizeBytes / (1024L * 1024))
+                        }
                         // TASK-386: plain comma join instead of the middot chain:
                         // " · " was announced as "middle dot" by TalkBack in some locales.
                         Text(
@@ -2491,6 +2744,16 @@ private fun ExternalModelCard(
             if (demoted) {
                 Text(
                     text = stringResource(R.string.model_demoted_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // TASK-965: the storage-cleaner cause on a wiped card (the
+            // bare "the model is gone" was the reporter's complaint).
+            if (wiped) {
+                Text(
+                    text = stringResource(R.string.external_model_wiped_notice),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -2640,7 +2903,7 @@ private fun SpeedComparisonDialog(onDismiss: () -> Unit) {
                             ?: error("bundled catalog is missing qwen3-asr")
                         ComparisonRow(
                             name = stringResource(R.string.speed_comparison_qwen3_name),
-                            size = catalogSpeedSize("qwen3-asr", "0.6b-int8"),
+                            size = catalogSpeedSize("qwen3-asr", "0.6b-int4"),
                             speed = stringResource(R.string.speed_comparison_qwen3_speed),
                             quality = stringResource(
                                 R.string.speed_comparison_qwen3_quality, qwen3LanguageCount)

@@ -191,6 +191,14 @@
     <string name="catalog_download_confirm_message">इससे ~%1$dMB डाउनलोड होगा।</string>
     <string name="model_fit_no_fit">यह मॉडल शायद इस डिवाइस पर नहीं चलेगा: RAM आवश्यकता से कम है।</string>
     <string name="model_fit_tight">चेतावनी: यह मॉडल इस डिवाइस RAM में मुश्किल भर पूरा होता है; मेमरी दबाव में निष्फल हो सकता है।</string>
+    <!-- TASK-996: the device RAM-class line and the fit chips' tier labels. -->
+    <string name="device_tier_line">डिवाइस RAM: %1$d GB, %2$s</string>
+    <string name="device_tier_constrained">एंट्री-लेवल</string>
+    <string name="device_tier_standard">मिड-रेंज</string>
+    <string name="device_tier_high">हाई-एंड</string>
+    <string name="model_fit_chip_tight">टाइट फिट</string>
+    <string name="model_fit_chip_no_fit">फिट नहीं हो सकता</string>
+
     <string name="catalog_extract_confirm_title">%1$s निकालें?</string>
     <string name="catalog_extract_confirm_message">मॉडल फ़ाइल पहले से डाउनलोड है। इससे इसे इस्तेमाल के लिए निकाला जाएगा।</string>
 
@@ -378,6 +386,7 @@
     <string name="model_selected_message">%1$s चुना गया</string>
     <string name="model_use_missing_files">%1$s की मॉडल फ़ाइलें ग़ायब या अधूरी हैं। मॉडल टैब से उस वैरिएंट को फिर से डाउनलोड करें।</string>
     <string name="model_demoted_notice">अब यह मॉडल अपने आप नहीं चुना जाता: भाषण मौजूद होने पर भी इसने कोई टेक्स्ट नहीं बनाया। इसे फिर से चुनकर इसे एक और मौका दें।</string>
+    <string name="external_model_wiped_notice">सिस्टम स्टोरेज सफ़ाई द्वारा हटाया गया। इसे ऊपर दी गई आयात क्रियाओं से दुबारा आयात करें।</string>
     <string name="delete">मिटाएं</string>
     <string name="variant_more_actions">और कार्य</string>
     <string name="download">डाउनलोड करें</string>
@@ -538,7 +547,15 @@
     <string name="signature_position_title">स्थिति</string>
     <string name="signature_position_prepend">ट्रांसक्रिप्ट से पहले</string>
     <string name="signature_position_append">ट्रांसक्रिप्ट के बाद</string>
-    <string name="summary_prompt_description">AI सारांश के निर्देश बदलें। खाली छोड़ने पर अंतर्निहित (दो-तीन वाक्य) प्रॉम्प्ट चलेगा।</string>
+    <string name="summary_prompt_description">चुनें कि AI चरण लंबी प्रतिलिपियों में क्या जोड़े। कस्टम मुफ़्त निर्देश लेता है; खाली छोड़ने पर अंतर्निहित प्रॉम्प्ट चलेगा।</string>
+    <!-- TASK-993: named presets over the summary pass; the Custom entry keeps the free prompt field. -->
+    <string name="summary_preset_summary">सार</string>
+    <string name="summary_preset_action_items">कार्य बिंदु</string>
+    <string name="summary_preset_meeting_minutes">बैठक कार्यवाही</string>
+    <string name="summary_preset_custom">कस्टम</string>
+    <string name="summary_preset_action_items_prompt">इस प्रतिलिपि के कार्य बिंदुओं को छोटी सूची के रूप में लिखें, प्रत्येक पंक्ति में एक मद, प्रतिलिपि की भाषा में। बताए गए हों तो ज़िम्मेदार और समय-सीमा शामिल करें। केवल सूची ही लिखें।</string>
+    <string name="summary_preset_meeting_minutes_prompt">इस प्रतिलिपि से बैठक कार्यवाही लिखें: चर्चित विषय, लिए गए निर्णय और ज़िम्मेदारों सहित कार्य बिंदु, प्रतिलिपि की भाषा में। नाम और संख्याएँ बनाए रखें। केवल कार्यवाही लिखें।</string>
+
     <string name="punctuation_default_prompt">इस ट्रांसक्रिप्शन में विराम चिह्न और बड़े अक्षर जोड़ें। हर शब्द बिल्कुल वैसा ही रखें जैसा लिखा है; कुछ भी ठीक न करें, अनुवाद न करें, जोड़ें नहीं या हटाएँ नहीं। केवल सुधारी हुई ट्रांसक्रिप्शन ही लिखें।</string>
     <!-- Settings Tab - Smart Summary (TASK-121.4) -->
     <string name="summarize_title">लंबी ट्रांसक्रिप्शन का सारांश बनाएं</string>
@@ -947,6 +964,7 @@
     <string name="external_import">इंपोर्ट करें</string>
     <string name="external_importing">मॉडल इंपोर्ट हो रहा है…</string>
     <string name="external_importing_file">%1$s इंपोर्ट हो रहा है (%2$d/%3$d)…</string>
+    <string name="external_import_cancelled">डाउनलोड रद्द किया गया</string>
     <string name="external_import_failed">इंपोर्ट विफल: %1$s</string>
     <string name="external_imported">%1$s इंपोर्ट हुआ</string>
     <!-- TASK-924: the builtin-restore arm of the offline bundle transfer -->
@@ -1318,8 +1336,17 @@
     <string name="backup_import_history_failed">सेटिंग्स आयात हो गईं, लेकिन इतिहास जोड़ा नहीं जा सका। दोबारा कोशिश करना सुरक्षित है।</string>
     <string name="backup_disclosure_title">निर्यात से पहले</string>
     <string name="backup_disclosure_body">बैकअप में हर ट्रांसक्रिप्शन, भेजने वाले का नाम और वक्ता लेबल पढ़ने योग्य पाठ में होते हैं। इसे केवल भरोसेमंद जगहों पर साझा करें।</string>
-    <string name="keyword_biasing_title">कीवर्ड पक्षपात (Whistle)</string>
-    <string name="keyword_biasing_description">नाम, स्थान या शब्दावली जिन्हें Whistle मॉडल को प्राथमिकता देनी चाहिए, प्रति पंक्ति एक। अगली ट्रांसक्रिप्शन से लागू, बिना पुनः लोड।</string>
+    <string name="keyword_biasing_title">व्यक्तिगत शब्दकोश</string>
+    <string name="keyword_biasing_description">नाम, स्थान या शब्दावली जिन्हें ऐप्प को मानना चाहिए, प्रति पंक्ति एक।</string>
+    <string name="keyword_biasing_summary">नाम और शब्द जिन्हें पहचान आपकी शैली में लिखे।</string>
+    <string name="keyword_biasing_where_title">यह कहाँ लागू होता है</string>
+    <string name="keyword_biasing_where_recognition">पहचान: Whistle, Qwen3, Parakeet, GigaAM और स्ट्रीमिंग Nemotron।</string>
+    <string name="keyword_biasing_where_passes">AI परिष्कार और सारांश चरण; रूढ़िवादी परिष्कार अपना निश्चित प्रॉम्पट बनाए रखता है।</string>
+    <string name="keyword_biasing_where_download">शब्दकोश सेट करने पर Parakeet, GigaAM और स्ट्रीमिंग Nemotron के लिए एक बार एक छोटी इंजन फ़ाइल डाउनलोड होती है।</string>
+    <string name="keyword_biasing_where_qwen3">Qwen3 पर सूची के केवल पहले शब्द लागू होते हैं।</string>
+    <string name="keyword_biasing_score_title">ज़्यादा सख़्त सुधार</string>
+    <string name="keyword_biasing_score_note">उच्च मान ट्रांसक्रिप्ट के बाकी हिस्से को भी प्रभावित कर सकते हैं। बदलाव मॉडल के अगले लोड होने पर लागू होता है।</string>
+    <string name="personal_dictionary_prompt_line">ये नाम या शब्द इस सामग्री में आते हैं; जहाँ आएँ वहीं यह सटीक वर्तनी बनाए रखें: %1$s</string>
     <string name="keyword_biasing_placeholder">प्रति पंक्ति एक शब्द</string>
     <string name="freeze_protection_title">बैकग्राउंड ट्रांस्क्रिप्शन सुरक्षा</string>
     <string name="freeze_protection_description">ट्रांस्क्रिप्शन के दौरान एक मौन ऑडियो स्ट्रीम सक्रिय रखता है ताकि आक्रामक बैटरी सेवर ऐप को निलंबित न कर सकें। यदि स्क्रीन बंद होने पर ट्रांस्क्रिप्शन रुकता है तो इसे चालू करें (कुछ Oppo, Realme, OnePlus और Vivo फ़ोन)।</string>
@@ -1336,4 +1363,31 @@
     <!-- TASK-929: the What's-New dialog (the update auto-popup and its About hub card) -->
     <string name="whats_new_title">नया क्या है</string>
     <string name="whats_new_summary">इस वर्शन में नया क्या है</string>
+
+    <!-- TASK-963: wiped-import recovery notice (platform storage cleaners) -->
+    <string name="notification_channel_model_repair">मॉडल पुनर्प्राप्ति</string>
+    <string name="notification_channel_model_repair_description">जब सिस्टम स्टोरेज क्लीनर आयातित मॉडल हटाता है और पुनर्प्राप्ति के नतीजे के बारे में सूचनाएँ।</string>
+    <string name="wiped_imports_title">सिस्टम क्लीनर ने मॉडल फ़ाइलें हटाईं</string>
+    <string name="wiped_imports_text">सिस्टम स्टोरेज क्लीनर ने %1$d आयातित मॉडल की फ़ाइलें हटा दीं: %2$s. मूल स्रोत से दोबारा डाउनलोड करने के लिए "पुनर्प्राप्त करें" पर टैप करें।</string>
+    <string name="wiped_imports_names_overflow">+ %1$d और</string>
+    <string name="wiped_imports_recover_action">पुनर्प्राप्त करें</string>
+    <string name="wiped_imports_recovered_title">पुनर्प्राप्ति पूरी हुई</string>
+    <string name="wiped_imports_recovered_text">%1$d मॉडल की फ़ाइलें दोबारा डाउनलोड कर दी गई हैं और वे उपयोग के लिए तैयार हैं।</string>
+    <string name="wiped_imports_failed_title">मॉडल पुनर्प्राप्ति विफल</string>
+    <string name="wiped_imports_failed_text">दोबारा डाउनलोड पूरा नहीं हुआ। मॉडल को दोबारा हाथ से आयात करने के लिए मॉडल्स टैब खोलें।</string>
+    <!-- TASK-973 -->
+    <string name="wiped_imports_source_failed_title">मॉडल स्रोत उपलब्ध नहीं</string>
+    <string name="wiped_imports_source_failed_text">%1$d मॉडल अब अपने मूल स्रोत से डाउनलोड नहीं हो सकते। टूटी प्रविष्टियाँ हटाएँ या मॉडल को मॉडल्स टैब से मैन्युअल रूप से फिर आयात करें।</string>
+    <string name="wiped_imports_remove_action">हटाएँ</string>
+    <string name="wiped_imports_removed_text">मॉडल्स टैब से %1$d टूटी मॉडल प्रविष्टियाँ हटाई गईं।</string>
+    <string name="wiped_imports_progress_title">मॉडल पुनर्प्राप्ति जारी है</string>
+    <string name="wiped_imports_progress_text">हटाई गई मॉडल फ़ाइलें फिर से डाउनलोड हो रही हैं। इसमें कुछ मिनट लग सकते हैं।</string>
+    <!-- TASK-992: on-device Q&A over history (Gemma-gated). -->
+    <string name="ask_transcripts_chip">AI से पूछें</string>
+    <string name="ask_transcripts_title">अपनी प्रतिलिपियों से पूछें</string>
+    <string name="ask_transcripts_no_matches">इस प्रश्न के लिए कोई प्रतिलिपि नहीं मिली।</string>
+    <string name="ask_transcripts_sources">%1$d प्रतिलिपि(यों) पर आधारित</string>
+    <string name="ask_transcripts_error">त्रुटि: %1$s</string>
+    <string name="ask_transcripts_instruction">नीचे दिए गए प्रश्न का उत्तर केवल इन प्रतिलिपियों के आधार पर दें। यदि प्रतिलिपियों में उत्तर नहीं है, तो ऐसा कहें। प्रश्न की भाषा में उत्तर दें।</string>
+<string name="ask_transcripts_working">ऑन-डिवाइस मॉडल से पूछ रहे हैं…</string>
 </resources>

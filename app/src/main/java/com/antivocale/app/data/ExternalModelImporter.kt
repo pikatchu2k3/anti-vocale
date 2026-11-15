@@ -5,14 +5,19 @@ import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 
 import com.antivocale.app.transcription.Language
 import com.antivocale.app.data.download.DownloadConfig
+import com.antivocale.app.data.download.DownloadException
 import com.antivocale.app.data.download.DownloadedModelIntegrity
 import com.antivocale.app.data.download.details
 import com.antivocale.app.data.download.HashVerifier
 import com.antivocale.app.data.download.ResumeDownloadHelper
+import com.antivocale.app.data.download.downloadWithRetry
 import com.antivocale.app.transcription.ModelFamilyDetector
 import com.antivocale.app.transcription.ModelFamilySupport
 import com.antivocale.app.transcription.SherpaBackend
@@ -141,6 +146,16 @@ class ExternalModelImporter(
          */
         fun isCatalogEntryUrl(url: String): Boolean = url.trim().endsWith(".json")
 
+        /** TASK-969: the connection-class retry ladder (5s/15s/30s/45s).
+         *  Attempts start at roughly t=0/5/20/50/95s, so the last attempt
+         *  clears the observed DNS-churn window (~1min on the RMX3853)
+         *  with margin; a 3-rung 5/15/30 ladder's final attempt would
+         *  land at t=50s, still INSIDE that window (review finding). The
+         *  values ride the [transientDownloadRetryMs] seam in tests, and
+         *  the resume machinery continues every attempt from the partial
+         *  file where the server honors Range. */
+        internal val TRANSIENT_DOWNLOAD_RETRY_MS = longArrayOf(5_000, 15_000, 30_000, 45_000)
+
         /** TASK-924: moves a verified staging dir into an arbitrary target
          *  the caller has already clean-replaced (the builtin bundle
          *  restore; the same landing discipline [freshTargetDir] applies
@@ -209,8 +224,20 @@ class ExternalModelImporter(
      * family support table ([ModelFamilySupport.forFamily], single definition shared
      * with the engine); this delegate keeps the import call sites unchanged.
      */
-    internal fun buildCopyPlan(files: List<String>, family: ModelFamily = ModelFamily.TRANSDUCER): Map<String, String>? =
-        ModelFamilySupport.forFamily(family).buildCopyPlan(files)
+/**
+ * The role plan PLUS the optional hotwords vocab when the source declares
+ * it (TRANSDUCER only). The vocab rides the BUILDER, not a per-site
+ * augmentation: a future import path forgetting a call was exactly the
+ * dropped-file bug this folds shut (the manifest's bpe.vocab pin was
+ * accepted at parse and silently never landed in the record dir).
+ */
+internal fun buildCopyPlan(files: List<String>, family: ModelFamily = ModelFamily.TRANSDUCER): Map<String, String>? {
+    val plan = ModelFamilySupport.forFamily(family).buildCopyPlan(files) ?: return null
+    if (family != ModelFamily.TRANSDUCER) return plan
+    return files.firstOrNull { it.equals(BIASING_VOCAB_FILE, ignoreCase = true) }
+        ?.let { plan + (BIASING_VOCAB_FILE to it) }
+        ?: plan
+}
 
     /** Human spelling of a family for diagnostic messages ("SenseVoice" and
      *  "CTC", not the raw "SENSE_VOICE" enum name; the UI layer's
@@ -413,6 +440,7 @@ class ExternalModelImporter(
         family: ModelFamily = ModelFamily.TRANSDUCER,
         languages: List<String> = emptyList(),
         streaming: Boolean = false,
+        options: Map<String, String> = emptyMap(),
         onProgress: ExternalImportProgress = NOOP_PROGRESS,
     ): ExternalModelRecord {
         val text = repoListing.fetchText(entryUrl)
@@ -424,6 +452,7 @@ class ExternalModelImporter(
                 overrideLanguages = languages,
                 overrideLicence = licence,
                 overrideStreaming = streaming,
+                overrideOptions = options,
             )
         } else {
             ExternalModelEntryJson.parse(text)
@@ -443,6 +472,9 @@ class ExternalModelImporter(
                     it.copy(
                         name = displayName ?: it.name,
                         licence = licence ?: it.licence,
+                        // Caller-declared options win over the entry's own
+                        // (mirroring the name/licence merge semantics).
+                        options = it.options + options,
                         streaming = mergedStreaming,
                         // A merge that flips streaming on MUST also clear the
                         // modelType (mirroring the synthesis arm): a record
@@ -456,7 +488,8 @@ class ExternalModelImporter(
         val plan = buildCopyPlan(entry.files.map { it.name }, entry.family)
             ?: throw missingRolesError(entry.family, entry.files.map { it.name })
         val byName = entry.files.associateBy { it.name }
-        val triples = withSidecars(plan, entry.files.map { it.name }).map { (canonical, sourceName) ->
+        val triples = withSidecars(plan, entry.files.map { it.name })
+            .map { (canonical, sourceName) ->
             val f = byName[sourceName]
                 // The map cannot contain a name absent from the entry's file list
                 // (withSidecars only plans declared names), but a silent drop here
@@ -525,6 +558,7 @@ class ExternalModelImporter(
             family = family,
             languages = languages,
             streaming = streaming,
+            options = options,
             onProgress = onProgress,
         )
     }
@@ -620,26 +654,54 @@ class ExternalModelImporter(
         val targetDir = freshTargetDir(root, displayName)
         val declaredNames = triples.map { it.canonicalName }.toSet()
 
+        // TASK-971: captured ONCE in the suspend body; the progress lambda
+        // below is a plain (non-suspend) callback inside a blocking loop,
+        // so this is the handle it uses to make cancellation prompt.
+        val downloadJob = currentCoroutineContext().job
         return importCleaningUpOnFailure(targetDir) {
             val pins = HashMap<String, FilePin>()
             for ((fileIndex, triple) in triples.withIndex()) {
                 val target = File(targetDir, triple.canonicalName)
-                val result = ResumeDownloadHelper.downloadWithResume(
+                // TASK-969: the connection-level retry rides the SHARED
+                // ladder (downloadWithRetry) with this caller's strict
+                // taxonomy and a fixed 5s/15s/30s/45s backoff; the resume
+                // machinery makes every attempt continue from the partial
+                // file WHERE THE SERVER HONORS Range (a 200 answer to the
+                // Range request restarts from byte 0; correct, but the
+                // seconds-not-gigabytes promise is conditional on the
+                // server, review finding), so a DNS-churn window or a CDN
+                // reset costs seconds, not the whole download. The typed
+                // failures unbox INSIDE the call (the helper boxes them in
+                // its Result; unwrapping outside would hide them from the
+                // ladder - caught by the e2e test).
+                val file = downloadWithRetry(
                     DownloadConfig(
                         url = triple.url,
                         tempFile = target,
                         targetFile = target,
                         estimatedSizeBytes = triple.size,
                     ),
+                    tag = "ExternalModelImporter",
                     onProgress = { bytes, total, _ ->
+                        // TASK-971: the download loop is a blocking read/write
+                        // cycle with no suspension points; the throttled
+                        // progress callback (~1/s) is the one place a cancel
+                        // can take effect promptly, so the cooperative cancel
+                        // of the repair's service surfaces HERE instead of at
+                        // the end of a multi-GB file.
+                        if (downloadJob.isCancelled) {
+                            throw kotlinx.coroutines.CancellationException(
+                                "repair cancelled during download")
+                        }
                         onProgress(fileIndex, triples.size, triple.canonicalName, bytes, total)
                     },
-                )
+                    delaysMs = transientDownloadRetryMs,
+                    isRetryable = { it is DownloadException && isTransientDownloadFailure(it) },
+                ).getOrThrow()
                 // The resume machinery leaves a .size sidecar next to the target; model
                 // directories must stay clean (the engine walks them for size and users
                 // browse them), so drop it once the file is complete and verified.
                 ResumeDownloadHelper.sizeSidecar(target).delete()
-                val file = result.getOrThrow()
                 // Split-ONNX completeness rides the hash-verification pass (the
                 // same streamed chunks feed the sidecar scanner): an
                 // external-data reference inside a downloaded .onnx whose sidecar
@@ -666,6 +728,40 @@ class ExternalModelImporter(
                 licence = licence)
         }
     }
+
+    /**
+     * TASK-969: the retry seam (the catchUpDelayMs precedent): the live
+     * ladder is [TRANSIENT_DOWNLOAD_RETRY_MS]; tests shrink it to keep the
+     * suite fast. Volatile because the repair service reads the importer
+     * from IO threads. Passed to the shared downloadWithRetry as its
+     * delaysMs (attempts = ladder size + 1). Copy-on-init: a test's
+     * element-level write must never reach the companion's shared array
+     * (review finding).
+     */
+    @androidx.annotation.VisibleForTesting
+    @Volatile
+    internal var transientDownloadRetryMs: LongArray = TRANSIENT_DOWNLOAD_RETRY_MS.copyOf()
+
+    /**
+     * The retryable half of the download error taxonomy, handed to the
+     * shared ladder as its isRetryable filter: network-shaped failures and
+     * the server-side transient codes (the connect/read phases box their
+     * IOExceptions as NetworkError since this task, so this arm is the DNS
+     * churn, timeout, and reset shapes). 429 rides the ladder (rate limits
+     * clear); other 4xx do not (the bytes are simply not there; aligned
+     * with the TASK-973 dead-source classifier, which also refuses to
+     * retire a source on these). A raw non-Download exception is not
+     * retryable either: after the boxing, one of those is not a
+     * connection shape.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun isTransientDownloadFailure(e: DownloadException): Boolean =
+        when (e) {
+            is DownloadException.NetworkError -> true
+            is DownloadException.HttpError ->
+                e.statusCode == 429 || e.statusCode >= 500
+            else -> false
+        }
 
     /** Shared registration tail: metadata validation, same-hash dedupe, store.add. */
     private suspend fun registerImported(
@@ -705,12 +801,12 @@ class ExternalModelImporter(
         support.validateImportedModel(metadataValue)
 
         // TASK-720: streaming flag vs the actual encoder graph (family-routed;
-        // plain zipformers). The wrong combination aborts the process at first
-        // decode, so it dies HERE instead. No second scan: this modelType
-        // maps to no required keys, so the metadata scan above short-circuited
-        // without reading; this probe is the file's only head+tail read.
-        ModelFamilySupport.forFamily(family)
-            .streamingFlagMismatch(metadataFile, streaming)
+        // plain zipformers; a NeMo export fails open inside the gate, its
+        // model_type value starts with "EncDec"). The wrong combination aborts
+        // the process at first decode, so it dies HERE instead. The metadata
+        // scan above short-circuited without reading for this modelType; the
+        // gate's own model_type and graph probes are bounded head+tail reads.
+        support.streamingFlagMismatch(metadataFile, streaming)
             ?.let { throw IllegalArgumentException(it) }
 
         // TASK-304: cheap header/magic integrity at registration, before the
@@ -757,6 +853,11 @@ class ExternalModelImporter(
                 modelType = modelType,
                 languages = effectiveLanguages,
                 options = options,
+                // TASK-968: the streaming flag rides the re-import (an
+                // index entry re-importing the same files with streaming
+                // flipped to true must upgrade the record, not keep the
+                // stale offline import's flag).
+                streaming = streaming || existing.streaming,
                 // Licence: a fresh declaration refreshes, an absent one
                 // PRESERVES the existing value (the sourceUrl/linkedCatalog
                 // carry-preservation rule: a plain re-import must not erase

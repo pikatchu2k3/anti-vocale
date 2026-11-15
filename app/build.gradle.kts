@@ -275,6 +275,33 @@ android {
         aidl = true
     }
 
+    androidResources {
+        // The AAB carries every LIBRARY locale (AndroidX and friends ship
+        // dozens, values-te among them); Play's translation validation
+        // started rejecting bundles with languages it cannot translate
+        // (v1.16.0's first publish: "languages are not supported for
+        // translation: te"). The filter is DERIVED from the res tree, so a
+        // new values-XX locale rides along automatically instead of rotting
+        // as a third hand-maintained list beside the picker and
+        // locales_config.xml; the assert keeps a non-locale values-* folder
+        // (a future values-night) from poisoning the list with a build
+        // error instead of a silent strip. Base-language LIBRARY resources
+        // of listed entries still ride along (generic pt beside pt-rBR):
+        // the strip drops languages ABSENT from the list, and every
+        // survivor is a language Play can translate. Deliberately
+        // module-wide, so the F-Droid APK and nightly match: library
+        // locales outside the app's own picker were never a feature.
+        val resLocales = file("src/main/res")
+            .listFiles { f -> f.isDirectory && f.name.startsWith("values-") }
+            .orEmpty()
+            .map { it.name.removePrefix("values-") }
+            .filter { it.isNotBlank() }
+        require(resLocales.all { Regex("[a-z]{2}(-r[A-Z]{2})?").matches(it) }) {
+            "non-locale values-* folder in src/main/res would poison localeFilters: $resLocales"
+        }
+        localeFilters += resLocales + "en"
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -297,6 +324,29 @@ android {
         unitTests {
             isReturnDefaultValues = true
             isIncludeAndroidResources = true
+            all { test ->
+                // TASK-960 incident #4 (2026-11-09, run 42550173620): with
+                // no maxHeapSize set, AGP leaves the fork ceiling to the
+                // JVM default (physical RAM / 4: ~4g on the 16g CI
+                // runner), and the single test fork died on CI with an
+                // observed instrument-time OutOfMemoryError ("can't
+                // create byte array" at JPLISAgent.c:844) cascading
+                // through every remaining class for 45 minutes while the
+                // same suite ran green on roomier hosts. WORKING
+                // HYPOTHESIS (no heap dump survived): per-classloader
+                // Robolectric accumulation in one fork (the suite runs
+                // four SDK configs: ~242 default-36, 52x sdk=34, 15x
+                // sdk=31, 1x sdk=28). The containment, valid under any
+                // accumulation reading: periodic forking. forkEvery counts
+                // TEST CLASSES (the suite runs ~311 per flavor), so 100
+                // replaces the fork 3-4 times per run and releases the
+                // accumulated classspaces for a few JVM cold starts. Do
+                // NOT cap maxHeapSize here instead: any fixed cap below
+                // the runner's own RAM-derived ceiling just moves the OOM
+                // earlier. The deeper fix (unifying the SDK pins so fewer
+                // classspaces exist at all) is tracked in its own task.
+                test.forkEvery = 100
+            }
         }
     }
 }

@@ -32,6 +32,9 @@ import org.json.JSONObject
  */
 object ExternalManifestV1 {
 
+    /** TASK-994: the hotwords vocab (optional; consumed when the manifest declares it). */
+    private const val VOCAB_FILE = com.antivocale.app.data.BIASING_VOCAB_FILE
+
     /** The four files a transducer manifest must carry, in canonical role order. */
     private val REQUIRED_FILES = listOf(
         "encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
@@ -79,6 +82,7 @@ object ExternalManifestV1 {
         overrideLanguages: List<String> = emptyList(),
         overrideLicence: String? = null,
         overrideStreaming: Boolean = false,
+        overrideOptions: Map<String, String> = emptyMap(),
     ): ExternalModelEntryJson.Entry {
         val o = JSONObject(text)
         val filesJson = o.optJSONObject("files")
@@ -125,6 +129,16 @@ object ExternalManifestV1 {
                     "manifest file $sidecar must declare both a sha256 pin and a size, like every other file")
             }
             files.add(ExternalModelEntryJson.EntryFile(sidecar, baseUrl + sidecar, sha, f.getLong("size")))
+        }
+        // TASK-994: the hotwords vocab rides as an OPTIONAL file when the
+        // publisher ships one (Daniel's Fritter CDN already does); without
+        // it the import stays exactly as today. Same pin+size contract.
+        if (filesJson.has(VOCAB_FILE)) {
+            val f = filesJson.getJSONObject(VOCAB_FILE)
+            val sha = f.optString("sha256", "")
+            if (SHA256_RE.matches(sha) && f.optLong("size", -1L) > 0L) {
+                files.add(ExternalModelEntryJson.EntryFile(VOCAB_FILE, baseUrl + VOCAB_FILE, sha, f.getLong("size")))
+            }
         }
 
         val name = overrideName?.takeIf { it.isNotBlank() }
@@ -190,7 +204,11 @@ object ExternalManifestV1 {
             family = family,
             modelType = modelType,
             languages = overrideLanguages,
-            options = emptyMap(),
+            // Caller-declared options win: manifests do not declare options
+            // today, and the repair's carrier must restore what the user's
+            // record had (a code-review finding 2026-11-09: the streaming
+            // fix addressed the flag but options were the same drop class).
+            options = overrideOptions,
             files = files,
             streaming = streaming,
             licence = licence,
