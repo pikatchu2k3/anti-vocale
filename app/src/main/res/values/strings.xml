@@ -1394,6 +1394,10 @@
     <string name="notification_channel_model_repair_description">Notices when a system storage cleaner deletes an imported model, and about the outcome of a recovery.</string>
     <string name="wiped_imports_title">System cleaner deleted model files</string>
     <string name="wiped_imports_text">%1$d imported model(s) had their files deleted by a system storage cleaner: %2$s. Tap Recover to download them again from the original source.</string>
+    <string name="wiped_banner_title">Imported models lost their files</string>
+    <string name="wiped_banner_text">A system storage cleaner deleted %1$d of your imported models. Recover downloads them again; Remove forgets them.</string>
+    <string name="wiped_forgot_title">Imported models removed</string>
+    <string name="wiped_forgot_text">Removed %1$d imported model(s). You can import them again any time.</string>
     <string name="wiped_imports_names_overflow">+ %1$d more</string>
     <string name="wiped_imports_recover_action">Recover</string>
     <string name="wiped_imports_recovered_title">Model recovery finished</string>
@@ -1415,6 +1419,13 @@
     <string name="ask_transcripts_no_matches">No matching transcripts found for this question.</string>
     <string name="ask_transcripts_sources">Based on %1$d transcript(s)</string>
     <string name="ask_transcripts_error">Error: %1$s</string>
+    <string name="audio_swept_explanation">The original audio was cleaned up by the system\'s temporary storage sweep (about 24 hours). The transcript is preserved.</string>
     <string name="ask_transcripts_instruction">Answer the question below based ONLY on these transcripts. If the transcripts do not contain the answer, say so. Answer in the language of the question.</string>
 <string name="ask_transcripts_working">Asking the on-device model…</string>
+    <string name="models_fit_filter_all">All models</string>
+    <string name="models_fit_filter_suggested">Suggested for your phone</string>
+    <string name="models_fit_summary_on">Models that fit your phone: %1$d · the rest sit behind "All models"</string>
+    <string name="models_fit_summary_off">Models that fit your phone: %1$d of %2$d</string>
+    <string name="models_fit_badge_heavy">Heavy</string>
+    <string name="models_header_toggle_title">Filters and device fit</string>
 </resources>

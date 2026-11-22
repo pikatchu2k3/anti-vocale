@@ -1369,6 +1369,10 @@
     <string name="notification_channel_model_repair_description">जब सिस्टम स्टोरेज क्लीनर आयातित मॉडल हटाता है और पुनर्प्राप्ति के नतीजे के बारे में सूचनाएँ।</string>
     <string name="wiped_imports_title">सिस्टम क्लीनर ने मॉडल फ़ाइलें हटाईं</string>
     <string name="wiped_imports_text">सिस्टम स्टोरेज क्लीनर ने %1$d आयातित मॉडल की फ़ाइलें हटा दीं: %2$s. मूल स्रोत से दोबारा डाउनलोड करने के लिए "पुनर्प्राप्त करें" पर टैप करें।</string>
+    <string name="wiped_banner_title">इंपोर्ट किए गए मॉडल की फ़ाइलें गायब हैं</string>
+    <string name="wiped_banner_text">सिस्टम स्टोरेज क्लीनर ने आपके %1$d इंपोर्ट किए गए मॉडल हटा दिए हैं। पुनर्प्राप्त करें उन्हें फिर से डाउनलोड करता है; हटाएं उन्हें भुला देता है।</string>
+    <string name="wiped_forgot_title">इंपोर्ट किए गए मॉडल हटाए गए</string>
+    <string name="wiped_forgot_text">%1$d इंपोर्ट किए गए मॉडल हटाए गए। आप इन्हें किसी भी समय फिर से इंपोर्ट कर सकते हैं।</string>
     <string name="wiped_imports_names_overflow">+ %1$d और</string>
     <string name="wiped_imports_recover_action">पुनर्प्राप्त करें</string>
     <string name="wiped_imports_recovered_title">पुनर्प्राप्ति पूरी हुई</string>
@@ -1388,6 +1392,13 @@
     <string name="ask_transcripts_no_matches">इस प्रश्न के लिए कोई प्रतिलिपि नहीं मिली।</string>
     <string name="ask_transcripts_sources">%1$d प्रतिलिपि(यों) पर आधारित</string>
     <string name="ask_transcripts_error">त्रुटि: %1$s</string>
+    <string name="audio_swept_explanation">मूल ऑडियो सिस्टम की अस्थायी स्टोरेज सफाई से हटा दिया गया था (लगभग 24 घंटे)। प्रतिलिपि सुरक्षित है।</string>
     <string name="ask_transcripts_instruction">नीचे दिए गए प्रश्न का उत्तर केवल इन प्रतिलिपियों के आधार पर दें। यदि प्रतिलिपियों में उत्तर नहीं है, तो ऐसा कहें। प्रश्न की भाषा में उत्तर दें।</string>
 <string name="ask_transcripts_working">ऑन-डिवाइस मॉडल से पूछ रहे हैं…</string>
+    <string name="models_fit_filter_all">सभी मॉडल</string>
+    <string name="models_fit_filter_suggested">आपके फ़ोन के लिए सुझाए गए</string>
+    <string name="models_fit_summary_on">आपके फ़ोन के लिए उपयुक्त मॉडल: %1$d · बाकी «सभी मॉडल» में</string>
+    <string name="models_fit_summary_off">आपके फ़ोन के लिए उपयुक्त मॉडल: %2$d में से %1$d</string>
+    <string name="models_fit_badge_heavy">भारी</string>
+    <string name="models_header_toggle_title">फ़िल्टर और अनुकूलता</string>
 </resources>

@@ -1,0 +1,6 @@
+• Yeni: Yapay zekâya sor, deşifreleriniz hakkında yanıtlar (Gemma gerekir)
+• Yeni: kişisel sözlük deşifreyi terimlerinize yönlendirir
+• Yeni: "Telefonunuz için önerilen" cihazınızın rahat çalıştırdığı modelleri seçer
+• Yeni: temizleyicinin sildiği modellere kurtarma bandı
+• Yeni: özet şablonları: özet, görevler, tutanak, özel
+• Katalogda yeni: akışlı Farsça, Fince; Qwen3 daha küçük

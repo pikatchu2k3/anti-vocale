@@ -55,6 +55,7 @@ class InferenceService : Service(), TranscriptionListener {
     @Inject lateinit var preferencesManager: PreferencesManager
     @Inject lateinit var perAppPreferencesManager: PerAppPreferencesManager
     @Inject lateinit var orchestrator: TranscriptionOrchestrator
+    @Inject lateinit var backendManager: TranscriptionBackendManager
     @Inject lateinit var logDao: LogDao
     @Inject lateinit var shareShortcutManager: ShareShortcutManager
 
@@ -76,6 +77,33 @@ class InferenceService : Service(), TranscriptionListener {
         // (the slot-band comment in InferenceEnqueue documents the same class).
 
         const val EXTRA_SOURCE = "source"
+
+        /**
+         * TASK-1010: the dictionary-change re-arm gate. The supplement pass
+         * and the collector may unload the active backend to re-arm biasing;
+         * unloading under a request that is still PREPROCESSING kills it (the
+         * TASK-1008 class: the 789 drain safety brackets decodes, not the
+         * audio-prep that precedes them). The service owns the truth about
+         * in-flight work, so re-arm requests land here as a pending flag
+         * while a service instance is alive, and the drain checkpoints
+         * perform the unload only once the batch is idle. A flag left set by
+         * a dying service is moot: the next construction reads the vocab
+         * file from disk anyway.
+         */
+        @Volatile
+        var alive: Boolean = false
+            internal set
+
+        private val pendingRearm = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** Defer a backend re-arm unload to the next idle drain (TASK-1010). */
+        fun requestRearm() {
+            pendingRearm.set(true)
+        }
+
+        /** True when a re-arm was pending; the caller performs the unload under its own idle check. */
+        fun takePendingRearm(): Boolean = pendingRearm.getAndSet(false)
+
         /** TASK-889: the cold-start catch-up sweep's flag (the per-note
          *  SUCCESS notification is suppressed; the digest replaces it). */
         const val EXTRA_CATCHUP = "catchup"
@@ -161,6 +189,19 @@ class InferenceService : Service(), TranscriptionListener {
         const val ACTION_NAV_NEXT = "com.antivocale.app.NAV_CHUNK_NEXT"
         const val ACTION_NAV_LIVE = "com.antivocale.app.NAV_CHUNK_LIVE"
 
+        /**
+         * TASK-1030: the ONE delivery-kind predicate, for the failure arm's
+         * preserve decision. It mirrors onStartCommand's control arms
+         * exactly: anything that is not a control action falls through to
+         * the request parse there, so here it is preservable. Keep it in
+         * sync with those arms (the arms own the constants; this owns the
+         * membership question).
+         */
+        fun isControlDelivery(intent: Intent): Boolean = intent.action in setOf(
+            ACTION_CANCEL, ACTION_CANCEL_TASK,
+            ACTION_NAV_PREV, ACTION_NAV_NEXT, ACTION_NAV_LIVE,
+        )
+
         private val _isTranscribing = MutableStateFlow(false)
         val isTranscribing: kotlinx.coroutines.flow.StateFlow<Boolean> = _isTranscribing.asStateFlow()
     }
@@ -214,6 +255,19 @@ class InferenceService : Service(), TranscriptionListener {
     @Volatile private var latestEtaText = ""
     @Volatile private var latestDurationSeconds = 0
     @Volatile private var latestQueuedCount = 0
+
+    /**
+     * TASK-1032 A: the startId of the most recent delivery, consulted by
+     * every teardown stopSelf. The plain stopSelf() is UNCONDITIONAL in
+     * ActiveServices (stopServiceTokenLocked with startId -1), so an IO
+     * teardown could bring the service down while a startForegroundService
+     * delivery that re-armed fgRequired was still in flight: the same
+     * ForegroundServiceDidNotStartInTimeException, window of milliseconds,
+     * no non-fatal alongside. stopSelf(lastStartId) makes the system's own
+     * compare-and-stop close the race atomically: a newer delivery (its own
+     * promotion and its own teardown duties) survives ours.
+     */
+    @Volatile private var lastStartId = -1
     // Signature of the last rendered nav notification; when unchanged we skip the rebuild+notify
     // to avoid re-posting on every 200ms progress tick while the viewed chunk is stable.
     @Volatile private var lastNavSignature: String? = null
@@ -249,54 +303,114 @@ class InferenceService : Service(), TranscriptionListener {
 
     // ---- Android Lifecycle ----
 
+    /**
+     * TASK-978/1014: satisfy the system's fgRequired expectation with the
+     * best-shape notification. The NAV shape wins when a chunk view is live
+     * (F3: a single-chunk job's file/progress/ETA/chronometer survives the
+     * promotion instead of degrading to the bare form), then the last
+     * foreground notification, then the bare "Processing audio" form.
+     *
+     * The failure arm records through CrashReporter (TASK-1014): the review
+     * round's warning that "a silent swallow would turn an OEM FGS
+     * restriction into an unattributable ForegroundServiceDidNotStartInTime
+     * kill" proved out in the field (1.16.1, two Samsung issue groups,
+     * TASK-1014), where Log.w alone left the swallow undiscriminable from a
+     * pre-delivery process stall. A REQUIRED delivery that throws here still
+     * ends in that kill class ten seconds later; the report is what makes
+     * the next event attributable.
+     */
+    private fun promoteToForeground(origin: String): Boolean =
+        runCatching {
+            foregroundPromotion(
+                deriveChunkNavView()?.let { assembleChunkNavNotification(it) }
+                    ?: lastForegroundNotification
+                    ?: createNotification(getString(R.string.processing_audio)))
+        }.onFailure {
+            Log.w(TAG, "startForeground promotion failed ($origin)", it)
+            // The failure arm runs OUTSIDE the catch: reporting infra (the
+            // playStore Firebase path during early process start) throwing
+            // here must not convert a promotion failure into a service
+            // crash from onCreate.
+            runCatching { CrashReporter.report(it, "InferenceService.startForeground/$origin") }
+        }.isSuccess
+
+    /**
+     * Test seam (the progressNotifyThrottler precedent): production always
+     * calls the real [android.app.Service.startForeground]; tests substitute
+     * a recorder (to observe the promotion's interleaving with the re-arm
+     * drain) or a throwing form (to drive the failed-promotion arm).
+     */
+    internal var foregroundPromotion: (android.app.Notification) -> Unit = {
+        startForeground(NOTIFICATION_ID, it)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        alive = true
         createNotificationChannel()
         createResultNotificationChannel()
+        // TASK-1014: promote before the delivery. The onStartCommand
+        // promotion covers every delivery that RUNS; it cannot cover the gap
+        // between service construction and that delivery, where the 1.16.1
+        // events landed. The promotion below upgrades the shape when a live
+        // chunk-nav view exists.
+        promoteToForeground("onCreate")
         Log.i(TAG, "Service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         Log.i(TAG, "onStartCommand called, action=${intent?.action}")
 
-        // TASK-978: the foreground promotion is the FIRST statement, before
-        // every early-return arm. Every startForegroundService delivery
-        // re-arms the system's fgRequired expectation, and the 1.16.0 crash
-        // (LogsViewModel.continueBrowseIntake's enqueue; map e0234b8f,
-        // deobfuscated) was exactly that window expiring. On a live service
-        // the call is an idempotent same-id refresh; on a cold start it
-        // closes the window at the earliest runnable moment. The control
-        // actions below arrive from TWO sources (review round): notification
-        // buttons through getService PendingIntents (no expectation), and
-        // in-app callers through direct startService (HistoryTab.cancelTask);
-        // both are safe today because both run with the app foreground, and
-        // the runCatching below absorbs a lapsed-allowlist delivery on the
-        // PendingIntent side. Promoting for them costs only a same-id
-        // repost; a control tap that revived a dead service gets a brief
-        // honest notification before the idle stop. PROMOTING WITH THE NAV
-        // SHAPE when one is live (altitude round): the bare form would
-        // overwrite the pinned chunk view, and no-op nav taps plus the
-        // signature dedup could never restore it.
-        // The guard (F4 of the release review, restored here after the
-        // merge dropped it): on a REQUIRED delivery the allowance existed at
-        // startForegroundService time so this cannot throw; on a getService
-        // control delivery with a lapsed temporary-allowlist window it can
-        // throw ForegroundServiceStartNotAllowedException on API 31+, and
-        // swallowing that one is strictly safe (no fgRequired window exists
-        // for a startService command).
-        runCatching {
-            startForeground(
-                NOTIFICATION_ID,
-                deriveChunkNavView()?.let { assembleChunkNavNotification(it) }
-                    // F3: a single-chunk job's live progress shape (file,
-                    // progress, ETA, chronometer) survives the promotion
-                    // instead of degrading to the bare form.
-                    ?: lastForegroundNotification
-                    ?: createNotification(getString(R.string.processing_audio)))
-        }.onFailure {
-            // Review round: a silent swallow would turn an OEM FGS restriction
-            // into an unattributable ForegroundServiceDidNotStartInTime kill.
-            Log.w(TAG, "startForeground promotion failed", it)
+        // TASK-978: the promotion is the delivery's FIRST statement,
+        // because every startForegroundService delivery re-arms the system's
+        // fgRequired expectation and must be answered before ANY other work
+        // or early return (the 1.16.0 crash:
+        // LogsViewModel.continueBrowseIntake's re-entrant start; map
+        // e0234b8f, deobfuscated). onCreate promotes too (TASK-1014), but a
+        // re-delivery to a LIVE service re-arms without re-running onCreate,
+        // so this call cannot be folded away. TASK-1030 restored the
+        // absolute first position: TASK-1010 had parked the re-arm drain
+        // ahead of it (the 1.17.0 recurrence, mechanism C). The
+        // control actions below arrive from TWO sources (review round):
+        // notification buttons through getService PendingIntents (no
+        // expectation), and in-app callers through direct startService
+        // (HistoryTab.cancelTask); both run with the app foreground, and a
+        // lapsed-allowlist PendingIntent delivery on API 31+ only produces a
+        // recorded failure (no fgRequired window exists for a startService
+        // command). Promoting for them costs only a same-id repost; a control
+        // tap that revived a dead service gets a brief honest notification
+        // before the idle stop. PROMOTING WITH THE NAV SHAPE when one is live
+        // (altitude round): the bare form would overwrite the pinned chunk
+        // view, and no-op nav taps plus the signature dedup could never
+        // restore it.
+        if (!promoteToForeground("onStartCommand") && batchIdle()) {
+            // TASK-1030 mechanism A, EMPTY instance only (fable review
+            // round): AOSP sendServiceArgsLocked arms the per-delivery
+            // fgRequired timeout only when the service is not already
+            // foreground, so a failed promotion on a LIVE batch (an earlier
+            // promotion answered the service-level expectation) is not a
+            // doomed delivery; 1.17.0's report-and-carry-on stands there.
+            // An idle instance has nothing that will ever answer the
+            // expectation: see [preserveFailedDelivery].
+            preserveFailedDelivery(intent, startId)
+            return START_NOT_STICKY
+        }
+
+        // TASK-1010 intake serialization, BELOW the promotion since TASK-1030
+        // (mechanism C: the unload is native model teardown on the intake
+        // thread and can take seconds on a loaded device, so the fgRequired
+        // answer must never sit behind it). The drain still runs BEFORE this
+        // request joins the queue (main thread = the intake point; the
+        // drain-tail check below can otherwise race a request enqueued
+        // between its batchIdle read and its unload). Operand order is
+        // load-bearing (fable review round): batchIdle() FIRST, exactly as
+        // the drain tail orders it, because takePendingRearm() CONSUMES the
+        // flag - the old order ate a pending re-arm whenever a delivery
+        // arrived mid-batch and the stale vocabulary stayed loaded.
+        if (batchIdle() && takePendingRearm()) {
+            backendManager.unloadActiveBackend()
+            Log.i(TAG, "deferred dictionary re-arm drained at intake")
         }
 
         if (intent?.action == ACTION_CANCEL) {
@@ -393,9 +507,67 @@ class InferenceService : Service(), TranscriptionListener {
         return START_NOT_STICKY
     }
 
+    /**
+     * TASK-1030 mechanism A, reached only with the batch idle: the
+     * delivery-time promotion failed (the OEM/OS restriction class TASK-1014
+     * records) and nothing else will ever answer this delivery's fgRequired
+     * expectation. The exception itself cannot be prevented (fable review,
+     * from AOSP bringDownServiceLocked: a teardown with fgRequired set
+     * raises it immediately, and the window expiry raises it otherwise; the
+     * AOSP default window is 30s, our 1.16.1 field events measured about
+     * 10s), so what is saved is the REQUEST: an identity-carrying delivery
+     * rides the SAME fallback notification the enqueue path posts for
+     * restricted starts ([InferenceEnqueue.postFallbackNotification]); its
+     * tap is user-initiated, which satisfies the FGS restriction, and the
+     * trampoline forwards the full extras set unchanged. Control deliveries
+     * are dropped, as before. The failure itself was already reported by
+     * [promoteToForeground]'s failure arm, with the origin key.
+     *
+     * The stop keeps the retireIfIdle discipline with the idleness re-check:
+     * a tap on the just-posted fallback can legally re-promote and start a
+     * batch during the join window, which the re-check then spares exactly
+     * as retireIfIdle spares the burst-share race. The
+     * nothing-tracked-and-idle case stops synchronously, so the common empty
+     * case stays deterministic (both checks run on the delivery thread,
+     * which serializes against any later delivery).
+     */
+    private fun preserveFailedDelivery(intent: Intent?, bailStartId: Int) {
+        if (intent != null && !isControlDelivery(intent)) {
+            when (val outcome = InferenceEnqueue.postFallbackNotification(this, intent)) {
+                is InferenceEnqueue.Outcome.FallbackNotificationPosted ->
+                    Log.w(TAG, "Promotion failed; delivery preserved via the fallback notification")
+                else ->
+                    Log.e(TAG, "Promotion failed and preservation failed too ($outcome); delivery lost")
+            }
+        }
+        if (pendingResultNotifications.isEmpty()) {
+            stopSelf(bailStartId)
+        } else {
+            // TASK-1032 A (simplify round): capture THIS delivery's startId,
+            // not the live field. A delivery landing in the join window owns
+            // the service; a stale stopSelf is ignored by the system, so the
+            // captured form can never stop a newer delivery's work. (The
+            // drain tail reads the field instead: its re-kick loop processes
+            // any delivery that arrived mid-drain, so at true completion the
+            // field equals the last processed id.)
+            serviceScope.launch {
+                joinPendingResultJobs()
+                if (batchIdle()) stopSelf(bailStartId)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        alive = false
+        // TASK-1010: an edit landing between the drain tail's check and the
+        // stopSelf must not carry a stale recognizer into the next service
+        // instance; at teardown nothing is in flight, so drain here.
+        if (takePendingRearm()) {
+            backendManager.unloadActiveBackend()
+            Log.i(TAG, "deferred dictionary re-arm drained at teardown")
+        }
         silentKeepalive.stop()
         super.onDestroy()
         serviceScope.cancel()
@@ -563,6 +735,15 @@ class InferenceService : Service(), TranscriptionListener {
                 if (batchIdle()) silentKeepalive.stop()
             }
 
+            // TASK-1010: a dictionary-change re-arm deferred while the batch
+            // ran (the supplement pass routes its unload here when a service
+            // is alive). batchIdle re-checked: work enqueued during the join
+            // below owns the backend until ITS drain.
+            if (batchIdle() && takePendingRearm()) {
+                backendManager.unloadActiveBackend()
+                Log.i(TAG, "deferred dictionary re-arm: backend unloaded at batch drain")
+            }
+
             // Wait for any pending result-notification jobs before teardown:
             // stopSelf -> onDestroy cancels serviceScope, which would kill a
             // not-yet-run notification coroutine (the TASK-336 race).
@@ -573,7 +754,9 @@ class InferenceService : Service(), TranscriptionListener {
             // would kill it via onDestroy's scope cancel.
             if (batchIdle()) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                // TASK-1032 A: conditional stop; a delivery that landed in
+                // the join window owns the service now.
+                stopSelf(lastStartId)
             }
 
             // Re-kick: a request landing in the window between the while
@@ -676,7 +859,8 @@ class InferenceService : Service(), TranscriptionListener {
             if (batchIdle()) {
                 silentKeepalive.stop()
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                // TASK-1032 A: conditional stop, same as the drain tail.
+                stopSelf(lastStartId)
             }
         }
     }

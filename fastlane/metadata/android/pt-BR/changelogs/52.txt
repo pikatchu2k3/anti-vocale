@@ -1,0 +1,6 @@
+• Novo: Pergunte à AI responde sobre suas transcrições (precisa de Gemma)
+• Novo: o dicionário pessoal direciona a transcrição para seus termos
+• Novo: "Sugeridos para o seu telefone" escolhe modelos que o aparelho roda bem
+• Novo: banner de recuperação para modelos apagados por limpadores
+• Novo: predefinições de resumo: pontos, ações, ata, personalizado
+• Novo no catálogo: persa em streaming, finlandês, Qwen3 menor

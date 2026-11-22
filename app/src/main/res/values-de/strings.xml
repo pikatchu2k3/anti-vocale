@@ -1370,6 +1370,10 @@
     <string name="notification_channel_model_repair_description">Hinweise, wenn ein System-Speicherbereiniger ein importiertes Modell löscht, und zum Ergebnis der Wiederherstellung.</string>
     <string name="wiped_imports_title">Systembereinigung hat Modelldateien gelöscht</string>
     <string name="wiped_imports_text">Ein System-Speicherbereiniger hat die Dateien von %1$d importierten Modell(en) gelöscht: %2$s. Tippe auf Wiederherstellen, um sie erneut von der ursprünglichen Quelle herunterzuladen.</string>
+    <string name="wiped_banner_title">Importierte Modelle haben ihre Dateien verloren</string>
+    <string name="wiped_banner_text">Ein System-Speicherbereiniger hat %1$d Ihrer importierten Modelle gelöscht. Wiederherstellen lädt sie erneut herunter; Entfernen verwirft sie.</string>
+    <string name="wiped_forgot_title">Importierte Modelle entfernt</string>
+    <string name="wiped_forgot_text">%1$d importierte Modelle wurden entfernt. Sie können sie jederzeit wieder importieren.</string>
     <string name="wiped_imports_names_overflow">+ %1$d weitere</string>
     <string name="wiped_imports_recover_action">Wiederherstellen</string>
     <string name="wiped_imports_recovered_title">Wiederherstellung abgeschlossen</string>
@@ -1389,6 +1393,13 @@
     <string name="ask_transcripts_no_matches">Keine passenden Transkripte gefunden.</string>
     <string name="ask_transcripts_sources">Basierend auf %1$d Transkript(en)</string>
     <string name="ask_transcripts_error">Fehler: %1$s</string>
+    <string name="audio_swept_explanation">Die ursprüngliche Audiodatei wurde durch die temporäre Speicherbereinigung des Systems entfernt (nach etwa 24 Stunden). Das Transkript bleibt erhalten.</string>
     <string name="ask_transcripts_instruction">Beantworte die folgende Frage NUR auf Grundlage dieser Transkripte. Wenn die Transkripte die Antwort nicht enthalten, sage das. Antworte in der Sprache der Frage.</string>
 <string name="ask_transcripts_working">Frage das Modell auf dem Gerät…</string>
+    <string name="models_fit_filter_all">Alle Modelle</string>
+    <string name="models_fit_filter_suggested">Vorschläge für dein Handy</string>
+    <string name="models_fit_summary_on">Modelle, die zu deinem Handy passen: %1$d · die übrigen über „Alle Modelle“</string>
+    <string name="models_fit_summary_off">Modelle, die zu deinem Handy passen: %1$d von %2$d</string>
+    <string name="models_fit_badge_heavy">Schwer</string>
+    <string name="models_header_toggle_title">Filter und Gerätetauglichkeit</string>
 </resources>

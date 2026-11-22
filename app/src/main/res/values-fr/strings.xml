@@ -1238,6 +1238,10 @@
     <string name="notification_channel_model_repair_description">Avis quand un nettoyeur de stockage système supprime un modèle importé, et sur le résultat de la récupération.</string>
     <string name="wiped_imports_title">Un nettoyeur système a supprimé des fichiers de modèle</string>
     <string name="wiped_imports_text">Un nettoyeur de stockage système a supprimé les fichiers de %1$d modèle(s) importé(s) : %2$s. Touchez Récupérer pour les télécharger à nouveau depuis la source d\'origine.</string>
+    <string name="wiped_banner_title">Modèles importés sans fichiers</string>
+    <string name="wiped_banner_text">Un nettoyeur de stockage système a supprimé %1$d de vos modèles importés. Récupérer les retélécharge ; Supprimer les oublie.</string>
+    <string name="wiped_forgot_title">Modèles importés supprimés</string>
+    <string name="wiped_forgot_text">%1$d modèles importés ont été supprimés. Vous pouvez les réimporter à tout moment.</string>
     <string name="wiped_imports_names_overflow">+ %1$d autres</string>
     <string name="wiped_imports_recover_action">Récupérer</string>
     <string name="wiped_imports_recovered_title">Récupération terminée</string>
@@ -1257,6 +1261,13 @@
     <string name="ask_transcripts_no_matches">Aucune transcription trouvée pour cette question.</string>
     <string name="ask_transcripts_sources">Basé sur %1$d transcription(s)</string>
     <string name="ask_transcripts_error">Erreur : %1$s</string>
+    <string name="audio_swept_explanation">L\'audio original a été supprimé par le nettoyage du stockage temporaire du système (environ 24 heures). La transcription est conservée.</string>
     <string name="ask_transcripts_instruction">Réponds à la question ci-dessous en te basant UNIQUEMENT sur ces transcriptions. Si les transcriptions ne contiennent pas la réponse, dis-le. Réponds dans la langue de la question.</string>
 <string name="ask_transcripts_working">Interrogation du modèle sur l’appareil…</string>
+    <string name="models_fit_filter_all">Tous les modèles</string>
+    <string name="models_fit_filter_suggested">Suggestions pour votre téléphone</string>
+    <string name="models_fit_summary_on">Modèles adaptés à votre téléphone : %1$d · les autres via « Tous les modèles »</string>
+    <string name="models_fit_summary_off">Modèles adaptés à votre téléphone : %1$d sur %2$d</string>
+    <string name="models_fit_badge_heavy">Lourd</string>
+    <string name="models_header_toggle_title">Filtres et compatibilité</string>
 </resources>

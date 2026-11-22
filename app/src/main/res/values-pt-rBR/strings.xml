@@ -1238,6 +1238,10 @@
     <string name="notification_channel_model_repair_description">Avisos quando um limpador de armazenamento do sistema apaga um modelo importado e sobre o resultado da recuperação.</string>
     <string name="wiped_imports_title">Limpador do sistema apagou arquivos do modelo</string>
     <string name="wiped_imports_text">Um limpador de armazenamento do sistema apagou os arquivos de %1$d modelo(s) importado(s): %2$s. Toque em Recuperar para baixá-los de novo da fonte original.</string>
+    <string name="wiped_banner_title">Modelos importados perderam os arquivos</string>
+    <string name="wiped_banner_text">Um limpador de armazenamento do sistema excluiu %1$d dos seus modelos importados. Recuperar baixa novamente; Remover esquece.</string>
+    <string name="wiped_forgot_title">Modelos importados removidos</string>
+    <string name="wiped_forgot_text">%1$d modelos importados foram removidos. Você pode importá-los novamente a qualquer momento.</string>
     <string name="wiped_imports_names_overflow">+ %1$d mais</string>
     <string name="wiped_imports_recover_action">Recuperar</string>
     <string name="wiped_imports_recovered_title">Recuperação concluída</string>
@@ -1257,6 +1261,13 @@
     <string name="ask_transcripts_no_matches">Nenhuma transcrição encontrada para esta pergunta.</string>
     <string name="ask_transcripts_sources">Baseado em %1$d transcrição(ções)</string>
     <string name="ask_transcripts_error">Erro: %1$s</string>
+    <string name="audio_swept_explanation">O áudio original foi removido pela limpeza de armazenamento temporário do sistema (após cerca de 24 horas). A transcrição foi preservada.</string>
     <string name="ask_transcripts_instruction">Responda à pergunta abaixo com base APENAS nestas transcrições. Se as transcrições não contiverem a resposta, diga isso. Responda no idioma da pergunta.</string>
 <string name="ask_transcripts_working">Perguntando ao modelo no dispositivo…</string>
+    <string name="models_fit_filter_all">Todos os modelos</string>
+    <string name="models_fit_filter_suggested">Sugestões para o seu telefone</string>
+    <string name="models_fit_summary_on">Modelos adequados ao seu telefone: %1$d · os demais em «Todos os modelos»</string>
+    <string name="models_fit_summary_off">Modelos adequados ao seu telefone: %1$d de %2$d</string>
+    <string name="models_fit_badge_heavy">Pesado</string>
+    <string name="models_header_toggle_title">Filtros e compatibilidade</string>
 </resources>

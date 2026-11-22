@@ -1382,6 +1382,10 @@
     <string name="notification_channel_model_repair_description">התראות כשמנקה אחסון של המערכת מוחק מודל מיובא, ועל תוצאת השחזור.</string>
     <string name="wiped_imports_title">מנקה של המערכת מחק קובצי מודל</string>
     <string name="wiped_imports_text">מנקה אחסון של המערכת מחק את הקבצים של %1$d מהמודלים המיובאים: %2$s. הקש על "שחזר" כדי להוריד אותם שוב מהמקור המקורי.</string>
+    <string name="wiped_banner_title">מודלים מיובאים איבדו את הקבצים שלהם</string>
+    <string name="wiped_banner_text">מנקה אחסון של המערכת מחק %1$d מהמודלים המיובאים שלך. שחזור יוריד אותם שוב; הסרה תשכח אותם.</string>
+    <string name="wiped_forgot_title">מודלים מיובאים הוסרו</string>
+    <string name="wiped_forgot_text">%1$d מודלים מיובאים הוסרו. ניתן לייבא אותם שוב בכל עת.</string>
     <string name="wiped_imports_names_overflow">+ %1$d נוספים</string>
     <string name="wiped_imports_recover_action">שחזר</string>
     <string name="wiped_imports_recovered_title">השחזור הסתיים</string>
@@ -1401,6 +1405,13 @@
     <string name="ask_transcripts_no_matches">לא נמצאו תמלילים לשאלה זו.</string>
     <string name="ask_transcripts_sources">על בסיס %1$d תמליל(ים)</string>
     <string name="ask_transcripts_error">שגיאה: %1$s</string>
+    <string name="audio_swept_explanation">האודיו המקורי נמחק על ידי ניקוי האחסון הזמני של המערכת (כ-24 שעות). התמליל נשמר.</string>
     <string name="ask_transcripts_instruction">ענה על השאלה שלהלן רק על סמך התמלילים האלה. אם התמלילים לא מכילים את התשובה, כתוב זאת. ענה בשפת השאלה.</string>
 <string name="ask_transcripts_working">שואל את המודל במכשיר…</string>
+    <string name="models_fit_filter_all">כל הדגמים</string>
+    <string name="models_fit_filter_suggested">מומלץ לטלפון שלך</string>
+    <string name="models_fit_summary_on">דגמים המתאימים לטלפון שלך: %1$d · השאר ב«כל הדגמים»</string>
+    <string name="models_fit_summary_off">דגמים המתאימים לטלפון שלך: %1$d מתוך %2$d</string>
+    <string name="models_fit_badge_heavy">כבד</string>
+    <string name="models_header_toggle_title">מסננים והתאמה</string>
 </resources>

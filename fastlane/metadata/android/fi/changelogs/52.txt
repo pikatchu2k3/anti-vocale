@@ -1,0 +1,7 @@
+• Uutta: Kysy tekoälyltä vastaa transkriptioistasi (vaatii Gemman)
+• Uutta: henkilökohtainen sanasto ohjaa transkriptiota termeihisi
+• Uutta: "Suositellut puhelimellesi" valitsee sopivat mallit
+• Uutta: siivoojan poistamat mallit saavat palautusbannerin
+• Uutta: yhteenvetovalmiit: tiivistelma, tehtavat, muistio, oma
+• Uutta luettelossa: suoratoisto-persia, suomi; Qwen3 pienempi
+• Parannettu: samankaltaisten sanojen haku venajaksi ja kreikaksi

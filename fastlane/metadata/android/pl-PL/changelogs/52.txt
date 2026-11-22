@@ -1,0 +1,6 @@
+• Nowość: Zapytaj AI odpowiada o Twoje transkrypcje (wymaga Gemma)
+• Nowość: osobisty słownik kieruje transkrypcję na Twoje terminy
+• Nowość: „Sugerowane dla telefonu” wybiera modele, które urządzenie udźwignie
+• Nowość: baner odzyskiwania dla modeli usuniętych przez czyściciel
+• Nowość: szablony podsumowań: streszczenie, zadania, protokół, własny
+• Nowość w katalogu: perski strumieniowy, fiński; Qwen3 mniejszy

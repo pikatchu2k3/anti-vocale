@@ -26,6 +26,17 @@ import com.antivocale.app.util.AppNotificationChannel
  */
 object InferenceEnqueue {
 
+    /**
+     * TASK-1032 G (code-review round): the free-slot scan and the notify are
+     * serialized on this lock because the fallback posts from IO dispatchers
+     * too (ScheduledFolderWorker's withContext(IO), the voice-note
+     * coordinator): two concurrent posts could both observe the same first
+     * free slot and the second notify would silently replace the first
+     * request, the exact loss class the scan exists to close.
+     */
+    private val postLock = Any()
+
+
     sealed interface Outcome {
         /** The service started directly. */
         data object Started : Outcome
@@ -57,8 +68,14 @@ object InferenceEnqueue {
      * Mirrors [TaskerRequestReceiver]'s fallback: sequential id in the
      * reserved Tasker band (two concurrent posts never share a slot; the
      * notification's contentIntent is the sole carrier of the request).
+     *
+     * TASK-1030 mechanism A: also the preservation path. InferenceService's
+     * failed-promotion arm re-posts a delivery here when its own
+     * startForeground threw: the request then survives the process kill the
+     * failed promotion guarantees, and the notification tap re-enqueues it
+     * legally.
      */
-    private fun postFallbackNotification(context: Context, serviceIntent: Intent): Outcome =
+    internal fun postFallbackNotification(context: Context, serviceIntent: Intent): Outcome =
         runCatching {
             postFallbackNotificationUnchecked(context, serviceIntent)
         }.getOrElse { e ->
@@ -66,7 +83,10 @@ object InferenceEnqueue {
             Outcome.Failed(e)
         }
 
-    private fun postFallbackNotificationUnchecked(context: Context, serviceIntent: Intent): Outcome {
+    private fun postFallbackNotificationUnchecked(context: Context, serviceIntent: Intent): Outcome =
+        synchronized(postLock) { postFallbackNotificationLocked(context, serviceIntent) }
+
+    private fun postFallbackNotificationLocked(context: Context, serviceIntent: Intent): Outcome {
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         // create() first: the channel must exist before its importance can
         // be read. Then the two silent-drop cases: app-level denial
@@ -93,7 +113,20 @@ object InferenceEnqueue {
         // starts with colliding hashes overwrite one PendingIntent while the
         // two notifications stayed distinct, silently losing the first request
         // (the band comment's exact failure class, closed here).
-        val slot = TaskerRequestReceiver.fallbackNotificationId()
+        // TASK-1032 G: the slot must also be FREE. The sequential counter
+        // resets with the process, and the TASK-1030 preservation arm
+        // guarantees the process dies right after each post, so a second
+        // preservation on the same device reused slot one and silently
+        // replaced the earlier preserved request. Take the first idle slot
+        // in the reserved band; the counter stays the overflow path. The
+        // caller holds postLock across scan and notify, so a concurrent
+        // fallback post cannot observe this slot free before it is live.
+        val activeIds = notificationManager.activeNotifications.map { it.id }.toSet()
+        val slot = (TaskerRequestReceiver.FALLBACK_NOTIFICATION_ID_BASE until
+            TaskerRequestReceiver.FALLBACK_NOTIFICATION_ID_BASE +
+            TaskerRequestReceiver.FALLBACK_NOTIFICATION_ID_RANGE)
+            .firstOrNull { it !in activeIds }
+            ?: TaskerRequestReceiver.fallbackNotificationId()
         val pendingIntent = PendingIntent.getActivity(
             context,
             slot,

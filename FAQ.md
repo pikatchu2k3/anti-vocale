@@ -8,6 +8,10 @@ Yes, if you have the recording: share the audio file with the app (your recorder
 
 ## Models and their limits
 
+### What is "Suggested for your phone" in the Models tab?
+
+On phones with 4 GB of RAM or less (and, with a higher bar, on 4-8 GB phones) the Models tab carries a suggestion filter. Off by default, it never hides anything until you ask: with the filter off you see the whole catalog, and models that are demanding for your device carry a small "Heavy" tag. One tap on the "Suggested for your phone" chip narrows the list to the models your phone sustains comfortably, ordered for you: the ones covering your language first (the system language, or the one you picked with the language filter), then by measured accuracy, then by size. The bar sits under "Filters and device fit", a row you can collapse to get the model list right away; it starts expanded and remembers your choice for the session. The tags and the filter are advice only: any model can still be downloaded and run on any phone, exactly as before.
+
 ### How long can an audio file be?
 
 There is no app-level limit. Each model has its own **per-segment** limit, and the app transparently splits longer audio into chunks and concatenates the transcripts:
@@ -125,8 +129,30 @@ Yes, if the app supports the open Open Transcribe contract (Forkgram and Forkgra
 ### Can the app transcribe files automatically as they appear in a folder?
 Yes: the scheduled folder watch. You pick the folders (Settings, Scheduled folder watch), and periodic scans transcribe every new audio file with the currently selected model; on Android 11+ the picker can open shared-storage locations such as a messaging app's media folder. Scans run when the system allows them, so aggressive battery savers can delay them; the manual Scan now always works. Every run lands in the History tab like a normal transcription.
 
+When a file name comes from a call recorder and carries the caller's number or name (for example Cube ACR's "Call from ..." names or the BCR recorder's templates), the transcribed entry gets that caller as its label, the same way WhatsApp voice notes get the sender's name. This is best effort and stays conservative: only file names matching known recorder formats get a label, anything unrecognized is transcribed with no attribution, and nothing is ever parsed out of the audio itself.
+
 ### What is Remote offload, and where does my audio go?
 Remote offload (experimental, off by default) delegates long or heavy transcriptions to a server YOU configure: any OpenAI-compatible endpoint speaking the /v1/audio/transcriptions API (OmniVoice, the whisper.cpp server, and others). When enabled, the audio of the transcriptions you delegate is sent only to the server address you entered, wherever that server is (home network or internet); everything else stays on-device, and you can turn the feature off at any time.
+
+## The personal dictionary
+
+### Can I make the app transcribe names and technical terms correctly?
+
+Often, yes. Settings, "Personal dictionary": list the names or terms you care about, separated by commas, and the models that support biasing steer their decoding toward them. Parakeet, GigaAM and the streaming Nemotron re-rank their search with your terms; Qwen3 receives them as part of its prompt. Whisper-family models have no biasing hook and ignore the list. The strength slider's default is the safe end: it fixes clearly mis-heard spellings without touching the rest of the transcript. Pushing it higher can also flip words that merely sound similar.
+
+### The dictionary fixes a name, but now some word endings come out wrong. Why?
+
+Two things can cause it. The strength slider set high makes corrections aggressive everywhere, not only on your terms; lowering it back toward the default stops that. And in heavily inflected languages like Russian the dictionary itself can cause it: a list of base forms only pulls inflected endings toward the base, so a spoken inflected surname can come out in its nominative form. List the forms you actually hear spoken, not just the base form; with the spoken forms listed, even aggressive settings kept every ending intact in our tests on GigaAM v3.
+
+### Does the dictionary work with every model?
+
+No, and the dictionary page says so per model family: Parakeet, GigaAM, the streaming Nemotron and Qwen3 support it, Whisper-family models ignore it. On the Farsi streaming model the dictionary works after the vocabulary file it needs lands on your phone: the app downloads it once, about 20KB, the first time it starts with a dictionary set, and retries on later starts if the download cannot get through.
+
+## Ask your transcripts
+
+### Can I ask questions about my saved transcripts?
+
+With a Gemma model installed, yes. In History, tap "Ask AI", type a question, and the app retrieves the transcripts whose content matches the question's terms and answers using them as context, all on your device: the question, the matching transcripts, and the answer never leave the phone. The answer states how many transcripts it is based on, and when nothing matches the question's terms it says so instead of inventing an answer.
 
 ## Results and metadata
 

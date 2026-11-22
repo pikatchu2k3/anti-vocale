@@ -1,0 +1,6 @@
+• Nouveau : Demander à l'AI répond sur vos transcriptions (nécessite Gemma)
+• Nouveau : le dictionnaire personnel oriente la transcription vers vos termes
+• Nouveau : « Suggérés pour votre téléphone » choisit les modèles adaptés
+• Nouveau : bannière pour récupérer les modèles supprimés par un nettoyeur
+• Nouveau : modèles de résumé : points, actions, compte rendu, perso
+• Nouveau au catalogue : persan en streaming, finnois, Qwen3 allégé

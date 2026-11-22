@@ -25,6 +25,12 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     // TASK-908: see reportingReplaceCorruptionHandler.
     corruptionHandler = reportingReplaceCorruptionHandler("preferences"))
 
+// TASK-1009 convention for every preference flow below: DataStore re-emits
+// on EVERY write to ANY key, so a flow feeding a change-reactive collector
+// MUST carry .distinctUntilChanged() (see keywordBiasing/biasingScore for
+// the shape, and the TASK-1008 regression test for what happens without
+// it). Flows feeding only stateIn(WhileSubscribed) UI collectors are
+// exempt (the terminal dedupe covers them).
 class PreferencesManagerImpl(
     private val context: Context,
     injectedDataStore: DataStore<Preferences>? = null,
@@ -231,6 +237,7 @@ class PreferencesManagerImpl(
         val compactResultActions: Boolean = PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         val languageChipEnabled: Boolean = PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         val externalModelsJson: String? = null,
+        val wipedRepairDeadSources: Set<String> = emptySet(),
         val scheduledFoldersJson: String? = null,
         val whatsNewLastShownVersion: Int = PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION
     )
@@ -312,6 +319,7 @@ class PreferencesManagerImpl(
         compactResultActions = this[COMPACT_RESULT_ACTIONS] ?: PreferencesManager.DEFAULT_COMPACT_RESULT_ACTIONS,
         languageChipEnabled = this[LANGUAGE_CHIP_ENABLED] ?: PreferencesManager.DEFAULT_LANGUAGE_CHIP_ENABLED,
         externalModelsJson = this[EXTERNAL_MODELS_JSON],
+        wipedRepairDeadSources = this[WIPED_REPAIR_DEAD_SOURCES] ?: emptySet(),
         scheduledFoldersJson = this[SCHEDULED_FOLDERS_JSON],
         whatsNewLastShownVersion =
             this[WHATS_NEW_LAST_SHOWN_VERSION] ?: PreferencesManager.DEFAULT_WHATS_NEW_LAST_SHOWN_VERSION
@@ -501,12 +509,25 @@ class PreferencesManagerImpl(
         dataStore.data.map { preferences ->
             preferences[WIPED_REPAIR_DEAD_SOURCES] ?: emptySet()
         }
+            // The warm cache first (same discipline as externalModelsJson:
+            // the external-models state chain combines this flow with the
+            // records, and must not wait a cold DataStore read to show the
+            // imported cards), then the same-value skip: DataStore re-emits
+            // the whole map on every unrelated write and downstream would
+            // re-derive on each.
+            .onStart { emit(cache.get().wipedRepairDeadSources) }
+            .distinctUntilChanged()
 
     override suspend fun saveWipedRepairDeadSources(ids: Set<String>) {
         dataStore.edit { preferences ->
             if (ids.isEmpty()) preferences.remove(WIPED_REPAIR_DEAD_SOURCES)
             else preferences[WIPED_REPAIR_DEAD_SOURCES] = ids
         }
+        // Cache refresh, the sibling saves' rule: the flow's onStart warm
+        // emit makes every in-process first() read the CACHE, so a save
+        // without this would leave the repairer's next scan and Remove
+        // tap reading a stale dead-set (the review round's finding).
+        cache.updateAndGet { it.copy(wipedRepairDeadSources = ids) }
     }
 
     override val wipedRepairCapturedPin: Flow<String> =
@@ -766,10 +787,21 @@ class PreferencesManagerImpl(
 
     override val keywordBiasing: Flow<String> = dataStore.data.map { it[KEYWORD_BIASING] ?: "" }
         .onStart { emit(cache.get().keywordBiasing) }
+        // TASK-1008: every DataStore write re-runs the map above and without
+        // this guard the unchanged value re-emits; the 994.1 collector read
+        // that as a dictionary edit and unloaded the active backend 2s after
+        // every activation (the footprint write), killing long-audio runs
+        // mid-preprocessing. New preference flows feeding change-reactive
+        // collectors need the same guard (see transcriptionBackend above).
+        .distinctUntilChanged()
 
     override val biasingScore: Flow<Float> =
         dataStore.data.map { it[BIASING_SCORE] ?: PreferencesManager.DEFAULT_BIASING_SCORE }
             .onStart { emit(cache.get().biasingScore) }
+            // Same TASK-1008 class, closed for the feature pair: a future
+            // change-reactive collector on the knob must not fire on
+            // unrelated writes either.
+            .distinctUntilChanged()
 
     override suspend fun saveBiasingScore(value: Float) {
         val clamped = value.coerceIn(PreferencesManager.MIN_BIASING_SCORE, PreferencesManager.MAX_BIASING_SCORE)

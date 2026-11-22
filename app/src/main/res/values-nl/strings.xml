@@ -1386,6 +1386,10 @@
     <string name="notification_channel_model_repair_description">Meldingen wanneer een opschoontool van het systeem een geïmporteerd model verwijdert, en over de uitkomst van het herstel.</string>
     <string name="wiped_imports_title">Opschoontool van het systeem verwijderde modelbestanden</string>
     <string name="wiped_imports_text">Een opschoontool van de systeemopslag heeft de bestanden van %1$d geïmporteerd model(len) verwijderd: %2$s. Tik op Herstellen om ze opnieuw te downloaden van de oorspronkelijke bron.</string>
+    <string name="wiped_banner_title">Geïmporteerde modellen zijn hun bestanden kwijt</string>
+    <string name="wiped_banner_text">Een systeemopschoner heeft %1$d van je geïmporteerde modellen verwijderd. Herstellen downloadt ze opnieuw; Verwijderen vergeet ze.</string>
+    <string name="wiped_forgot_title">Geïmporteerde modellen verwijderd</string>
+    <string name="wiped_forgot_text">%1$d geïmporteerde modellen zijn verwijderd. Je kunt ze op elk moment opnieuw importeren.</string>
     <string name="wiped_imports_names_overflow">+ %1$d extra</string>
     <string name="wiped_imports_recover_action">Herstellen</string>
     <string name="wiped_imports_recovered_title">Herstel voltooid</string>
@@ -1405,6 +1409,13 @@
     <string name="ask_transcripts_no_matches">Geen transcripties gevonden voor deze vraag.</string>
     <string name="ask_transcripts_sources">Gebaseerd op %1$d transcriptie(s)</string>
     <string name="ask_transcripts_error">Fout: %1$s</string>
+    <string name="audio_swept_explanation">De originele audio is verwijderd door de tijdelijke opslagruimte-schoonmaak van het systeem (na ongeveer 24 uur). De transcriptie is bewaard.</string>
     <string name="ask_transcripts_instruction">Beantwoord de onderstaande vraag ALLEEN op basis van deze transcripties. Zijn de antwoorden er niet in te vinden, zeg dat dan. Antwoord in de taal van de vraag.</string>
 <string name="ask_transcripts_working">Bezig met vragen aan het model op het apparaat…</string>
+    <string name="models_fit_filter_all">Alle modellen</string>
+    <string name="models_fit_filter_suggested">Aanbevolen voor je telefoon</string>
+    <string name="models_fit_summary_on">Geschikt voor je telefoon: %1$d · de rest via ‘Alle modellen’</string>
+    <string name="models_fit_summary_off">Modellen die geschikt zijn voor je telefoon: %1$d van %2$d</string>
+    <string name="models_fit_badge_heavy">Zwaar</string>
+    <string name="models_header_toggle_title">Filters en apparaatgeschiktheid</string>
 </resources>

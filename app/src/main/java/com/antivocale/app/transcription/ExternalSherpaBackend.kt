@@ -115,6 +115,11 @@ class ExternalSherpaBackend @Inject constructor(
      *  notifications, auto-copy) sees the lowered text with no per-site
      *  edits. */
     @Volatile private var lowercaseOutput: Boolean = false
+    /** TASK-1007: streaming biasing gate (vocab presence at construction, the
+     *  SherpaBackend.initOnline shape); the per-request hotwords read THIS,
+     *  never a fresh file stat (hotwords on a recognizer built without
+     *  bpeVocab is the native exit-255 class). */
+    @Volatile private var streamingBiasingArmed = false
 
     /** The loaded external record's family, for memory-policy dispatch (TASK-475). */
     val memoryFamily: ModelFamily? get() = configuredFamily
@@ -297,10 +302,25 @@ class ExternalSherpaBackend @Inject constructor(
                         decoder = "${record.dir}/${SherpaBackend.CANONICAL_DECODER}",
                         joiner = "${record.dir}/${SherpaBackend.CANONICAL_JOINER}",
                     )
+                    // TASK-1007: the SherpaBackend.initOnline biasing shape.
+                    // The vocab lands via the entry's supplements (the
+                    // BiasingVocabSupplement external lane) or rides the
+                    // import's files (the Fritter lane); either way its
+                    // presence at construction arms the engine.
+                    val streamingVocab = java.io.File(record.dir, com.antivocale.app.data.BIASING_VOCAB_FILE)
+                    // Dictionary-gated like the offline arm (biasingCsv != null):
+                    // a vocab without terms would beam every decode for nothing.
+                    streamingBiasingArmed = streamingVocab.isFile &&
+                        PersonalDictionary.promptTerms(preferences.keywordBiasing.first()) != null
+                    if (streamingBiasingArmed) {
+                        Log.i(TAG, "External streaming biasing armed ($configuredId): vocab=${streamingVocab.name}")
+                    }
                     val onlineConfig = OnlineRecognizerConfig(
                         modelConfig = OnlineModelConfig(
                             transducer = transducerConfig,
                             tokens = "${record.dir}/${SherpaBackend.CANONICAL_TOKENS}",
+                            bpeVocab = if (streamingBiasingArmed) streamingVocab.absolutePath else "",
+                            modelingUnit = if (streamingBiasingArmed) "bpe" else "",
                             numThreads = externalConfig.numThreads,
                             debug = false,
                             provider = externalConfig.provider,
@@ -311,12 +331,18 @@ class ExternalSherpaBackend @Inject constructor(
                             modelType = "",
                         ),
                         featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
-                        // TASK-874: deliberately GREEDY, unlike the built-in
-                        // streaming entry's beam (see SherpaBackend
-                        // STREAMING_DECODING_METHOD): the desktop A/B measured the
-                        // bundled Nemotron artifact only, and these user
-                        // imports are unmeasured per-model; flipping them to
-                        // beam is a per-family measurement, not a free ride.
+                        // TASK-874: UNARMED stays deliberately GREEDY (the
+                        // desktop A/B measured the bundled Nemotron artifact
+                        // only; flipping unmeasured user imports to beam is a
+                        // per-family measurement, not a free ride). ARMED must
+                        // switch to beam: the native greedy branch never
+                        // constructs the bpe encoder (only the beam branch
+                        // does), so hotwords on a greedy+vocab recognizer is
+                        // a NULL-deref SIGSEGV inside createStream (TASK-1011,
+                        // the tombstone puts the fault at bpe_encoder->Encode).
+                        decodingMethod = if (streamingBiasingArmed) SherpaBackend.STREAMING_DECODING_METHOD else "greedy_search",
+                        maxActivePaths = if (streamingBiasingArmed) SherpaBackend.STREAMING_MAX_ACTIVE_PATHS else 1,
+                        hotwordsScore = if (streamingBiasingArmed) preferences.biasingScore.first() else 0f,
                     )
                     onlineRecognizer = OnlineRecognizer(config = onlineConfig)
                     modelDir = record.dir
@@ -414,9 +440,16 @@ class ExternalSherpaBackend @Inject constructor(
             // unload mid-bracket still trims its loop tail.
             val lower = lowercaseOutput
             val trimLoops = trimsDegenerateRepetition
+            val biasingArmed = streamingBiasingArmed
             onlineRecognizer?.let { rec ->
                 return@withWork withContext(Dispatchers.IO) {
-                    transcribeStreamingBatch(rec, samples, sampleRate, lower)
+                    // TASK-1007: per-request hotwords gated on the
+                    // construction-time arming flag (the SherpaBackend
+                    // createStream(String) contract).
+                    val hotwords = if (biasingArmed) {
+                        PersonalDictionary.promptTerms(preferences.keywordBiasing.first()) ?: ""
+                    } else ""
+                    transcribeStreamingBatch(rec, samples, sampleRate, lower, hotwords)
                 }
             }
             val rec = recognizer
@@ -489,10 +522,11 @@ class ExternalSherpaBackend @Inject constructor(
         samples: FloatArray,
         sampleRate: Int,
         lower: Boolean,
+        hotwords: String,
     ): Result<TranscriptionResult> {
         var stream: OnlineStream? = null
         try {
-            stream = rec.createStream()
+            stream = if (hotwords.isNotEmpty()) rec.createStream(hotwords) else rec.createStream()
             stream.acceptWaveform(samples, sampleRate)
             stream.acceptWaveform(FloatArray(sampleRate), sampleRate) // streaming flush pad (TASK-715: the streaming verdict was the opposite; without it trailing words are lost)
             while (rec.isReady(stream)) rec.decode(stream)
@@ -561,6 +595,7 @@ class ExternalSherpaBackend @Inject constructor(
         configuredId = PLACEHOLDER_ID
         configuredFamily = null
         lowercaseOutput = false
+        streamingBiasingArmed = false
     }
 
     override fun setKeepAliveTimeout(minutes: Int) {

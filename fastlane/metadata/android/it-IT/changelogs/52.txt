@@ -1,0 +1,6 @@
+• Nuovo: Chiedi all'AI risponde sulle tue trascrizioni (richiede Gemma)
+• Nuovo: il dizionario personale orienta la trascrizione verso i tuoi termini
+• Nuovo: "Suggeriti per il tuo telefono" sceglie i modelli che il device regge bene
+• Nuovo: banner di recupero per i modelli cancellati dai pulitori: un tocco
+• Nuovo: preset di riepilogo: punti, azioni, verbali, personalizzato
+• Nuovo nel catalogo: persiano in streaming, finlandese, Qwen3 leggero

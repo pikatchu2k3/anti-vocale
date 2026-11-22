@@ -71,14 +71,57 @@ fi
 # must match the srclib-commit in .sherpa-version. The recipe has one
 # srclibs line per historical version; only the FIRST (newest) is checked.
 marker_srclib=$(grep '^srclib-commit ' .sherpa-version | awk '{print $2}')
-fdroid_srclib=$(grep -A1 'srclibs:' metadata/com.antivocale.app.yml \
-    | head -2 | tail -1 | sed 's/.*sherpa_onnx@//;s/[[:space:]]*$//')
-if [ "$fdroid_srclib" != "$marker_srclib" ]; then
-    echo "FAIL: F-Droid recipe srclib pin out of sync:"
+# The recent-era recipe blocks (the newest 9 versionCodes) all track the
+# CURRENT marker; older blocks are frozen at their ANCIENT pins. A bump
+# that repoints only the first entry leaves the previous era's commit in
+# the recent run and fails here (the GH#175 drift class at smaller scale).
+# Update ANCIENT_SRCLIBS only when an era rolls off (the previous marker
+# joins nothing: recent blocks MOVE, they do not freeze - f6e08261).
+ANCIENT_SRCLIBS="3dc7c569f31ca2cd4a20ed6f7db780327e6714c5 11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf"
+stale=$(grep -o 'sherpa_onnx@[0-9a-f]*' metadata/com.antivocale.app.yml \
+    | sed 's/sherpa_onnx@//' | sort -u | grep -v -F "$marker_srclib" \
+    | grep -v -f <(printf '%s\n' $ANCIENT_SRCLIBS) || true)
+if [ -n "$stale" ] || ! grep -q "sherpa_onnx@$marker_srclib" metadata/com.antivocale.app.yml; then
+    echo "FAIL: F-Droid recipe srclib pins out of sync:"
     echo "  .sherpa-version:            $marker_srclib"
-    echo "  metadata (first srclibs):   $fdroid_srclib"
-    echo "Update metadata/com.antivocale.app.yml to sherpa_onnx@$marker_srclib"
+    echo "  recipe pins not marker/ancient:"
+    echo "$stale"
+    echo "Repoint every recent-era block to sherpa_onnx@$marker_srclib"
     exit 1
+fi
+
+# 7th and 8th legs (LIVE STATE, dev host only; the 2026-11-20 venv lesson:
+# a check that verifies FILES cannot see an environment that drifted past
+# its pin). Both SKIP cleanly where the artifact does not exist (CI: no
+# venv, no fetched AAR - CI refetches from the URL pin, which leg 4/5
+# already verify) and FAIL where it exists but disagrees with the marker.
+marker_ver_num="${marker_ver#v}"
+VENV_PY="$REPO_DIR/eval/.venv/bin/python"
+if [ -x "$VENV_PY" ]; then
+    venv_ver=$("$VENV_PY" -c "import sherpa_onnx; print(sherpa_onnx.__version__)" 2>/dev/null || echo "")
+    if [ -z "$venv_ver" ]; then
+        echo "FAIL: eval/.venv exists but sherpa_onnx does not import (recreate: pip install -r eval/requirements.txt)"
+        exit 1
+    fi
+    if [ "$venv_ver" != "$marker_ver_num" ]; then
+        echo "FAIL: eval/.venv sherpa-onnx $venv_ver != marker $marker_ver_num"
+        echo "  pip install -U sherpa-onnx==$marker_ver_num in eval/.venv"
+        exit 1
+    fi
+else
+    echo "skip: eval/.venv absent (not a dev host)"
+fi
+
+AAR_STAMP="$REPO_DIR/app/libs/sherpa-onnx.aar.version"
+if [ -f "$AAR_STAMP" ]; then
+    stamp_ver=$(tr -d '[:space:]' < "$AAR_STAMP")
+    if [ "$stamp_ver" != "$marker_ver_num" ]; then
+        echo "FAIL: fetched AAR stamp $stamp_ver != marker $marker_ver_num"
+        echo "  the marker moved without a re-fetch: run ./scripts/fetch-sherpa-aar.sh"
+        exit 1
+    fi
+else
+    echo "skip: no AAR fetch stamp (fresh clone pre-fetch, or CI)"
 fi
 
 echo "OK: sherpa $marker_ver in sync across marker, script, build file, workflow URL, eval pin, and F-Droid recipe"

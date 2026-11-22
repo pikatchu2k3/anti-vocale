@@ -1,0 +1,6 @@
+• Neu: KI-Befragung beantwortet Fragen zu Ihren Transkripten (benötigt Gemma)
+• Neu: das persönliche Wörterbuch lenkt die Transkription auf Ihre Begriffe
+• Neu: „Empfohlen für Ihr Telefon“ wählt Modelle, die Ihr Gerät gut schafft
+• Neu: Wiederherstellungs-Banner für vom Cleaner gelöschte Modelle
+• Neu: Zusammenfassungs-Vorlagen: Kurzinfo, Aufgaben, Protokoll, eigene
+• Neu im Katalog: Persisch streaming, Finnisch; Qwen3 kleiner

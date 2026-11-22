@@ -1398,6 +1398,10 @@
     <string name="notification_channel_model_repair_description">Powiadomienia, gdy systemowe narzędzie do czyszczenia pamięci usuwa zaimportowany model, oraz o wyniku przywracania.</string>
     <string name="wiped_imports_title">Narzędzie systemowe usunęło pliki modeli</string>
     <string name="wiped_imports_text">Systemowe narzędzie do czyszczenia pamięci usunęło pliki zaimportowanych modeli (%1$d szt.): %2$s. Dotknij Przywróć, aby pobrać je ponownie z pierwotnego źródła.</string>
+    <string name="wiped_banner_title">Zaimportowane modele utraciły swoje pliki</string>
+    <string name="wiped_banner_text">Cleaner pamięci systemowej usunął %1$d z Twoich zaimportowanych modeli. Odzyskaj pobiera je ponownie; Usuń porzuca je.</string>
+    <string name="wiped_forgot_title">Usunięto zaimportowane modele</string>
+    <string name="wiped_forgot_text">Usunięto %1$d zaimportowanych modeli. Możesz zaimportować je ponownie w dowolnym momencie.</string>
     <string name="wiped_imports_names_overflow">+ %1$d więcej</string>
     <string name="wiped_imports_recover_action">Przywróć</string>
     <string name="wiped_imports_recovered_title">Przywracanie zakończone</string>
@@ -1417,6 +1421,13 @@
     <string name="ask_transcripts_no_matches">Nie znaleziono transkrypcji dla tego pytania.</string>
     <string name="ask_transcripts_sources">Na podstawie %1$d transkrypcji</string>
     <string name="ask_transcripts_error">Błąd: %1$s</string>
+    <string name="audio_swept_explanation">Oryginalny dźwięk został usunięty przez czyszczenie pamięci tymczasowej systemu (po około 24 godzinach). Transkrypcja została zachowana.</string>
     <string name="ask_transcripts_instruction">Odpowiedz na poniższe pytanie, opierając się WYŁĄCZNIE na tych transkrypcjach. Jeśli transkrypcje nie zawierają odpowiedzi, tak napisz. Odpowiedz w języku pytania.</string>
 <string name="ask_transcripts_working">Pytam model na urządzeniu…</string>
+    <string name="models_fit_filter_all">Wszystkie modele</string>
+    <string name="models_fit_filter_suggested">Polecane dla twojego telefonu</string>
+    <string name="models_fit_summary_on">Modele pasujące do twojego telefonu: %1$d · pozostałe w „Wszystkie modele”</string>
+    <string name="models_fit_summary_off">Modele pasujące do twojego telefonu: %1$d z %2$d</string>
+    <string name="models_fit_badge_heavy">Ciężki</string>
+    <string name="models_header_toggle_title">Filtry i dopasowanie</string>
 </resources>

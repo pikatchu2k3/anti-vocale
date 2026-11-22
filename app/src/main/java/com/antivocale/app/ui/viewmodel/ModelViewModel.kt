@@ -19,6 +19,7 @@ import com.antivocale.app.di.ApplicationScope
 import com.antivocale.app.data.ShareShortcutManager
 import com.antivocale.app.data.ShareTargetManager
 import com.antivocale.app.data.ExternalModelDeleter
+import com.antivocale.app.data.ExternalImportRepairer
 import com.antivocale.app.data.ExternalModelImportOperations
 import com.antivocale.app.data.ExternalModelImporter
 import com.antivocale.app.data.ExternalModelRecord
@@ -51,7 +52,9 @@ import com.antivocale.app.data.download.DownloadConfig
 import com.antivocale.app.data.download.DownloadState
 import com.antivocale.app.data.download.ResumeDownloadHelper
 import com.antivocale.app.manager.LlmManager
+import com.antivocale.app.receiver.WipedImportRepairReceiver
 import com.antivocale.app.service.ExtractionService
+import com.antivocale.app.service.WipedImportRepairService
 import com.antivocale.app.transcription.TranscriptionBackendManager
 import com.antivocale.app.util.DeviceCompatibility
 import com.antivocale.app.util.formatFileSize
@@ -68,6 +71,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
@@ -87,6 +91,13 @@ import javax.inject.Inject
 data class ExternalModelsState(
     val records: List<ExternalModelRecord> = emptyList(),
     val wipedIds: Set<String> = emptySet(),
+    /** TASK-1023: the display names of the records the recover-or-forget
+     *  machinery sees (the notification's own predicate, the pure
+     *  [ExternalImportRepairer.isRecoverCandidate] plus the dir stat): the
+     *  recovery banner's list, count derived as size. Deliberately narrower
+     *  than [wipedIds], which also carries folder imports and dead-marked
+     *  records for their per-card lines. */
+    val recoverableNames: List<String> = emptyList(),
 )
 
 @HiltViewModel
@@ -123,6 +134,10 @@ class ModelViewModel @Inject constructor(
     // IPCs) killed the enablement and the affected model stayed MISSING from
     // share sheets until the next cold start. The application scope survives.
     @ApplicationScope private val applicationScope: CoroutineScope,
+    // TASK-1012: the biasing supplement pass fires at external-import
+    // completion (parity with the built-in download hook). Default-null so
+    // the view-model tests construct without it; Hilt ignores defaults.
+    private val biasingVocabSupplement: com.antivocale.app.data.download.BiasingVocabSupplement? = null,
 ) : ViewModel() {
 
     val tokenState = tokenManager.tokenState
@@ -1549,21 +1564,34 @@ class ModelViewModel @Inject constructor(
      * so this reads recordsFlow, not the loadability-filtered
      * validRecordsFlow.
      */
-    /** TASK-965: the imported cards' ONE state: the record list and the
-     *  wiped-id set derive from a SINGLE records emission, so a repaired
-     *  record cannot flash the wiped line for a frame (two independent
-     *  stateIn chains on the same DataStore key update out of order; the
-     *  code-review round's skew finding). The dir stats run off-main
+    /** TASK-965/TASK-1023: the imported cards' ONE state: the record list,
+     *  the wiped-id set, and the recover-or-forget names all derive from a
+     *  SINGLE emission (two independent stateIn chains on the same
+     *  DataStore key update out of order). The names apply the repairer's
+     *  PURE candidate predicate, never the public scan whose dead-set
+     *  pruning WRITE does not belong in a UI derivation. Stats run off-main
      *  (flowOn Default, the records provider's own discipline). */
     val externalModelState: StateFlow<ExternalModelsState> =
-        externalModelStore.recordsFlow
-            .map { records ->
-                ExternalModelsState(
-                    records = records,
-                    wipedIds = records
-                        .filter { !it.quarantined && !externalModelStore.isLoadable(it) }
-                        .mapTo(mutableSetOf()) { it.id })
+        combine(
+            externalModelStore.recordsFlow,
+            preferencesManager.wipedRepairDeadSources,
+        ) { records, dead ->
+            // ONE loadability stat per record derives both sets.
+            val wiped = mutableSetOf<String>()
+            val recoverableNames = mutableListOf<String>()
+            for (record in records) {
+                if (externalModelStore.isLoadable(record)) continue
+                if (!record.quarantined) wiped += record.id
+                if (ExternalImportRepairer.isRecoverCandidate(record, dead)) {
+                    recoverableNames += record.displayName
+                }
             }
+            ExternalModelsState(
+                records = records,
+                wipedIds = wiped,
+                recoverableNames = recoverableNames,
+            )
+        }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ExternalModelsState())
 
@@ -1902,6 +1930,17 @@ class ModelViewModel @Inject constructor(
                                 is ModelBundleTransfer.Outcome.Imported -> {
                                     _snackbarEvent.tryEmit(SnackbarEvent.Message(
                                         ctx.getString(R.string.external_imported, outcome.record.displayName)))
+                                    // TASK-1012: the supplement pass parity the
+                                    // built-in download hook has: an entry whose
+                                    // supplements are missing lands them THIS
+                                    // session, so biasing arms on the first
+                                    // transcription after the import.
+                                    biasingVocabSupplement?.let { supplement ->
+                                        applicationScope.launch {
+                                            runCatching { supplement.run(ctx) }
+                                                .onFailure { Log.w("ModelViewModel", "supplement pass failed", it) }
+                                        }
+                                    }
                                     // First-run behavior: auto-select when nothing
                                     // is active. TASK-675: a demoted external model
                                     // is skipped by that auto-selection.
@@ -2030,6 +2069,25 @@ class ModelViewModel @Inject constructor(
             _snackbarEvent.tryEmit(SnackbarEvent.Message(
                 ctx.getString(R.string.external_deleted, record.displayName)))
         }
+    }
+
+    /** TASK-1023: the banner's Forget button rides the SAME broadcast the
+     *  notification's Forget PendingIntent carries (the receiver's
+     *  forgetIntent factory): one pipeline, no second orchestration. The
+     *  in-app origin extra makes the outcome stay on screen (the banner
+     *  disappearing) instead of posting a system notification. */
+    fun forgetWipedImports() {
+        ctx.sendBroadcast(
+            WipedImportRepairReceiver.forgetIntent(ctx)
+                .putExtra(WipedImportRepairReceiver.EXTRA_IN_APP_ORIGIN, true))
+    }
+
+    /** TASK-1023: the banner's Recover button rides the notification's
+     *  Recover action (the service's repairIntent factory). ContextCompat
+     *  form per the ExtractionService download-start convention. */
+    fun recoverWipedImports() {
+        ContextCompat.startForegroundService(
+            ctx, WipedImportRepairService.repairIntent(ctx))
     }
 
     /**

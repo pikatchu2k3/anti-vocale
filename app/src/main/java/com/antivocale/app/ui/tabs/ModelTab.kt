@@ -23,6 +23,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.net.Uri
@@ -40,7 +42,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -52,11 +56,13 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.antivocale.app.R
+import com.antivocale.app.ui.DeviceFitSuggestion
 import com.antivocale.app.ui.AppNavigation
 import com.antivocale.app.ui.DeepLinkImport
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.antivocale.app.data.ExternalCatalogRepository
+import com.antivocale.app.data.ModelAccuracy
 import com.antivocale.app.data.ModelDownloader
 import com.antivocale.app.data.ExternalCatalog
 import com.antivocale.app.data.ExternalModelImporter
@@ -597,27 +603,29 @@ fun ModelTab(
             }
         }
 
-        // Language filter
-        LanguageFilterBar(
-            selectedLanguageCode = filterLanguageCode,
-            onLanguageSelected = { viewModel.setModelFilterLanguage(it) }
-        )
-
-        // TASK-996: the device RAM-class line, one honest frame for every
-        // fit chip below (curated and full views share this header).
-        DeviceTierLine()
-
-        // TASK-786: states the active model once, right under the filter;
-        // the dot pairs with the external cards' badge (catalog cards carry
-        // the "Active" pill).
-        activeModelLabel?.let { name ->
-            MetaLineRow(
-                icon = Icons.Default.RadioButtonChecked,
-                tint = MaterialTheme.colorScheme.primary,
-                text = stringResource(R.string.models_active_model_line, name),
+        // TASK-1023: the recovery banner, FIRST thing in the tab body: it
+        // is effectively a notification and outranks the controls
+        // (maintainer direction). Renders in the curated view too: it
+        // repairs imports, it does not browse the catalog.
+        val wipedState by viewModel.externalModelState.collectAsState()
+        if (wipedState.recoverableNames.isNotEmpty()) {
+            WipedImportsBanner(
+                names = wipedState.recoverableNames,
+                onRecover = { viewModel.recoverWipedImports() },
+                onForget = { viewModel.forgetWipedImports() },
             )
         }
 
+        // TASK-1021 (trial round 2): the header stack (language filter,
+        // tier line, active model, fit chips, summary) grew taller than one
+        // screen-third on small phones; the whole block is now COLLAPSIBLE.
+        // Collapsed leaves this one toggle row; expanded is everything as
+        // before. The state survives tab switches and process death like
+        // the filter itself.
+        var modelsHeaderExpanded by rememberSaveable { mutableStateOf(true) }
+        ModelHeaderCollapseToggle(expanded = modelsHeaderExpanded) {
+            modelsHeaderExpanded = !modelsHeaderExpanded
+        }
         // GH #70: curated "For your language" elevation. The language comes
         // from the UI configuration (the per-app locale when one is set, else
         // the system one): the reactive equivalent of
@@ -637,6 +645,109 @@ fun ModelTab(
         // sections hide behind "Browse all languages" (their installed models
         // still surface as fully functional cards inside the recommendations).
         val catalogEntriesVisible = if (showCuratedSection) emptyList() else viewModel.catalogEntries
+
+        // TASK-1021: the device-fit suggestion filter, derived ONCE here
+        // (outside the collapse guard: the list and the badge must react
+        // with the header collapsed; an earlier edit kept a second copy
+        // inside the expanded header whose shadowed fitFilterOn left the
+        // chips toggling a state nothing read). Advisory only: it hides
+        // nothing the user cannot reach ("Tutti i modelli" restores the
+        // full catalog); on the HIGH band it does not exist at all. The
+        // quality axis reads ModelAccuracy internally and NEVER renders
+        // inline (TASK-658).
+        val fitContext = LocalContext.current
+        val fitTier = remember(fitContext) {
+            DeviceCompatibility.ramTier(fitContext)
+        }
+        val fitBudgetMb = fitTier?.let { DeviceFitSuggestion.budgetMb[it] }
+        // Default OFF (maintainer, trial round 2): the suggestion is an
+        // opt-in discovery tool, never a pre-emptive limit - the TASK-631
+        // principle applied to what the user SEES. At start the catalog is
+        // whole (heavy models carry the badge); one tap on the chip narrows it.
+        var fitFilterOn by rememberSaveable { mutableStateOf(false) }
+        // The review round's rule, enforced at the DERIVATION instead of at
+        // each consumer: everything below runs ONLY when a budget exists
+        // (never on the HIGH band) AND the catalog view is on screen (in
+        // curated mode the toggle would filter nothing and the summary
+        // would count a list that is not rendered). The derivation is
+        // remembered on its inputs so download progress ticks never
+        // re-derive it; the asset parses once per process (ModelAccuracy's
+        // own cache). Eligibility = the language filter AND the budget cut,
+        // the same two gates the visible cards apply, so the counts match
+        // the rendered entries by construction; the language is modern-coded
+        // (iw->he) so it matches the catalog's codes.
+        val fitActive = fitBudgetMb != null && !showCuratedSection
+        val fitLanguageRaw = filterLanguageCode
+            ?: LocalConfiguration.current.locales[0]?.language.orEmpty()
+        val fitLanguage = DeviceFitSuggestion.orderingLanguage(fitLanguageRaw)
+        val fitEligible: ((CatalogEntry) -> List<CatalogVariantUi>)? =
+            if (!fitActive) null
+            else remember(fitBudgetMb, fitLanguageRaw, filterLanguageCode) {
+                { entry: CatalogEntry ->
+                    filterVariants(
+                        CatalogVariantUi.forEntry(entry.id), filterLanguageCode
+                    ) { it.supportedLanguageCodes }
+                        .filter { DeviceFitSuggestion.fits(it.estimatedSizeMB, fitBudgetMb) }
+                }
+            }
+        val fitMeasurements = if (fitEligible == null) null
+            else remember(fitContext) { ModelAccuracy.load(fitContext) }
+        // Both counts mirror the render loop's entry gates: the language
+        // filter (the review finding: raw entry size counted
+        // language-hidden entries) and the stub-build hide (the whistle
+        // card absent from a stub build must not inflate the summary; the
+        // rare orphan-cleanup card that still renders stays uncounted).
+        val fitVisibleTotal = if (!fitActive) 0
+            else remember(viewModel.catalogEntries, filterLanguageCode) {
+                viewModel.catalogEntries.count { entry ->
+                    !BuiltInBackendIds.hiddenOnStubBuild(entry.id) &&
+                        filterVariants(
+                            CatalogVariantUi.forEntry(entry.id), filterLanguageCode
+                        ) { it.supportedLanguageCodes }.isNotEmpty()
+                }
+            }
+        val fitEligibleCount = remember(viewModel.catalogEntries, fitEligible) {
+            if (fitEligible == null) 0
+            else viewModel.catalogEntries.count {
+                !BuiltInBackendIds.hiddenOnStubBuild(it.id) && fitEligible(it).isNotEmpty()
+            }
+        }
+
+        if (modelsHeaderExpanded) {
+            LanguageFilterBar(
+                selectedLanguageCode = filterLanguageCode,
+                onLanguageSelected = { viewModel.setModelFilterLanguage(it) }
+            )
+
+            // TASK-996: the device RAM-class line, one honest frame for every
+            // fit chip below (curated and full views share this header).
+            DeviceTierLine()
+
+            // TASK-786: states the active model once, right under the filter;
+            // the dot pairs with the external cards' badge (catalog cards carry
+            // the "Active" pill).
+            activeModelLabel?.let { name ->
+                MetaLineRow(
+                    icon = Icons.Default.RadioButtonChecked,
+                    tint = MaterialTheme.colorScheme.primary,
+                    text = stringResource(R.string.models_active_model_line, name),
+                )
+            }
+
+            // TASK-1021 (review): the chips render only when the derivation
+            // is live; fitEligible is nulled in curated mode and on HIGH.
+            if (fitEligible != null) {
+                DeviceFitFilterRow(
+                    suggested = fitFilterOn,
+                    onToggle = { fitFilterOn = it },
+                )
+                DeviceFitSummaryLine(
+                    suggested = fitFilterOn,
+                    inBandCount = fitEligibleCount,
+                    totalCount = fitVisibleTotal,
+                )
+            }
+        }
         val hasToken by viewModel.hasHuggingFaceToken.collectAsState()
         if (showCuratedSection) {
             CuratedLanguageSection(
@@ -664,7 +775,24 @@ fun ModelTab(
         // Catalog-driven model sections (Parakeet, Whisper, Qwen3-ASR, Nemotron, GigaAM).
         // One generic section per catalog entry — all model-specific behavior lives in the
         // catalog, never in hard-coded per-model UI.
-        catalogEntriesVisible.forEach { entry ->
+        // TASK-1021: with the suggestion filter on, entries whose variants
+        // ALL sit outside the device budget leave the view (reachable via
+        // "Tutti i modelli"); the remaining entries order by the suggestion
+        // rule. fitEligible being live already implies the catalog view is
+        // on screen (fitActive), so the curated conjunct folded into the
+        // derivation; the measurements check stays because the type cannot
+        // carry the implication.
+        val catalogEntriesShown =
+            if (fitEligible != null && fitFilterOn && fitMeasurements != null) {
+                remember(viewModel.catalogEntries, fitLanguage, fitMeasurements, fitEligible) {
+                    DeviceFitSuggestion.orderEntries(
+                        viewModel.catalogEntries, fitLanguage, fitMeasurements, fitEligible,
+                    )
+                }
+            } else {
+                catalogEntriesVisible
+            }
+        catalogEntriesShown.forEach { entry ->
             // TASK-865/C: stub builds hide the Whistle card, EXCEPT when
             // on-disk cleanup work keeps the card on stub builds: the
             // variant card is the only removal surface (the startup cleaner
@@ -676,8 +804,16 @@ fun ModelTab(
             // hits Idle; there the re-download is loadable, so benign.)
             if (BuiltInBackendIds.hiddenOnStubBuild(entry.id)
                 && !catalogStates[entry.id].hasCleanupWork()) return@forEach
-            val visibleVariants = remember(entry.id, filterLanguageCode) {
-                filterVariants(CatalogVariantUi.forEntry(entry.id), filterLanguageCode) { it.supportedLanguageCodes }
+            val visibleVariants = remember(entry.id, filterLanguageCode, fitFilterOn, fitBudgetMb) {
+                val afterLanguage = filterVariants(CatalogVariantUi.forEntry(entry.id), filterLanguageCode) { it.supportedLanguageCodes }
+                // One predicate with the eligibility lambda above (the
+                // counts-match-by-construction invariant); a null budget
+                // (HIGH band) fits everything, which is the advisory
+                // contract, and the chips that could set fitFilterOn
+                // there do not render.
+                if (fitFilterOn) {
+                    afterLanguage.filter { DeviceFitSuggestion.fits(it.estimatedSizeMB, fitBudgetMb) }
+                } else afterLanguage
             }
             if (visibleVariants.isNotEmpty()) {
                 CatalogModelSection(
@@ -698,6 +834,10 @@ fun ModelTab(
                         Modifier.onPlaced { coords -> gemmaRevealCoords[0] = coords }
                     } else Modifier,
                     state = catalogStates[entry.id] ?: ModelViewModel.ModelEntryUiState(),
+                    // TASK-1021: the heavy-model badge budget; null (HIGH
+                    // band, curated mode, or the filter ON: the out-of-band
+                    // card is simply absent then) renders no badge.
+                    heavyFitBudgetMb = if (fitFilterOn) null else fitBudgetMb,
                     activeBackendId = activeBackendId,
                     isTranscribing = isTranscribing,
                     visibleVariants = visibleVariants,
@@ -1441,6 +1581,8 @@ private fun CatalogModelSection(
     activeBackendId: String,
     isTranscribing: Boolean,
     visibleVariants: List<CatalogVariantUi>,
+    /** TASK-1021: the tier budget the heavy-model badge compares against; null = no badge. */
+    heavyFitBudgetMb: Long? = null,
     guardedModelSwitch: (() -> Unit) -> Unit,
     onInfoClick: (ModelVariant) -> Unit,
     hasToken: Boolean = true,
@@ -1600,6 +1742,19 @@ private fun CatalogModelSection(
                     ),
                     downloadButtonTextResId = R.string.download,
                     extraBadges = {
+                        // TASK-1021: the advisory heavy-model badge, only when
+                        // the suggestion filter is OFF (with the filter on the
+                        // out-of-band card is simply not shown) and a real
+                        // budget exists (a null budget fits everything, so
+                        // the badge is simply !fits). Same badge row as the
+                        // catalog badge.
+                        if (!DeviceFitSuggestion.fits(variant.estimatedSizeMB, heavyFitBudgetMb)) {
+                            FitChip(
+                                R.string.models_fit_badge_heavy,
+                                MaterialTheme.colorScheme.tertiaryContainer,
+                                MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                        }
                         // TASK-996: the fit chip rides the same badge row as
                         // the catalog badge (same verdict the download dialog
                         // hints with; fits-comfortably renders nothing).
@@ -1807,13 +1962,13 @@ private fun DeviceTierLine() {
  * 14dp icon, single line, ellipsized).
  */
 @Composable
-private fun MetaLineRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, text: String) {
+private fun MetaLineRow(icon: androidx.compose.ui.graphics.vector.ImageVector?, tint: Color, text: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+        icon?.let { Icon(it, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp)) }
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
@@ -3007,3 +3162,178 @@ private fun entryDirFor(
 
 private fun exportFileName(entryId: String, variantName: String?): String =
     "antivocale-model-$entryId-${variantName ?: "default"}.zip"
+
+/**
+ * TASK-1021 (trial round 2): the header stack's collapse toggle. Collapsed
+ * leaves only this row so the model cards start one tap earlier; expanded
+ * restores the full controls. The chevron announces expand/collapse.
+ */
+@Composable
+private fun ModelHeaderCollapseToggle(expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.models_header_toggle_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onToggle, modifier = Modifier.size(28.dp)) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = stringResource(
+                    if (expanded) R.string.a11y_collapse else R.string.a11y_expand),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * TASK-1023: the Models-tab recovery banner (the wiped-imports notice's
+ * landing context; the friction story lives on
+ * [com.antivocale.app.data.ExternalImportRepairer.forgetWipedImports]).
+ * The title row EXPANDS to name every missing model (the maintainer's
+ * trial finding: with five gone, "which ones?" is the decision's other
+ * half); collapsed keeps the card one line tall. No confirm dialog on
+ * Forget: the notification's own Remove action already deletes without
+ * one and the records are re-importable. Recover is the filled button:
+ * recovery, not removal, is the happy path.
+ */
+@Composable
+private fun WipedImportsBanner(names: List<String>, onRecover: () -> Unit, onForget: () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val expandStateText = stringResource(
+        if (expanded) R.string.a11y_collapse else R.string.a11y_expand)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // The whole title row toggles the list (TASK-382's idiom:
+            // whole-target clickable, Role.Button, and the expanded state
+            // announced on the ROW, which is the focus target, not the
+            // chevron).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .semantics { stateDescription = expandStateText },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.wiped_banner_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = stringResource(
+                        if (expanded) R.string.a11y_collapse else R.string.a11y_expand),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Text(
+                text = stringResource(R.string.wiped_banner_text, names.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            if (expanded) {
+                // Bullet as its own column with a hanging indent: a long
+                // unbroken name (an id-like displayName) wraps under
+                // ITSELF, never orphaning the bullet on a line of its own
+                // (the in-text 'bullet space' prefix breaks only at the
+                // space). The Row mirrors with the layout direction; the
+                // bullet itself is invisible to TalkBack.
+                names.forEach { name ->
+                    Row {
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier
+                                .clearAndSetSemantics { }
+                                .padding(top = 1.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                TextButton(onClick = onForget) {
+                    Text(stringResource(R.string.wiped_imports_remove_action))
+                }
+                Button(onClick = onRecover) {
+                    Text(stringResource(R.string.wiped_imports_recover_action))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * TASK-1021: the suggestion filter's two chips. "Tutti i modelli" and the
+ * suggestion chip are one segmented pair (never both off); the marker
+ * signals curation, not a mere filter, per the maintainer's copy direction.
+ */
+@Composable
+private fun DeviceFitFilterRow(
+    suggested: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = !suggested,
+            onClick = { onToggle(false) },
+            label = { Text(stringResource(R.string.models_fit_filter_all)) },
+        )
+        FilterChip(
+            selected = suggested,
+            onClick = { onToggle(true) },
+            label = { Text(stringResource(R.string.models_fit_filter_suggested)) },
+            leadingIcon = { Text("✦", style = MaterialTheme.typography.labelMedium) },
+        )
+    }
+}
+
+/**
+ * TASK-1021: the dynamic summary above the list. Filtered: what fits and
+ * where the rest went; unfiltered: how many fit and what the filter does.
+ */
+@Composable
+private fun DeviceFitSummaryLine(
+    suggested: Boolean,
+    inBandCount: Int,
+    totalCount: Int,
+) {
+    MetaLineRow(
+        icon = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        text = if (suggested) {
+            stringResource(R.string.models_fit_summary_on, inBandCount)
+        } else {
+            stringResource(R.string.models_fit_summary_off, inBandCount, totalCount)
+        },
+    )
+}

@@ -1,0 +1,6 @@
+• New: Ask AI answers questions about your transcripts (needs Gemma)
+• New: a personal dictionary steers transcription toward your terms
+• New: "Suggested for your phone" picks models your device handles well
+• New: cleaner-deleted models get a recovery banner: recover or forget in one tap
+• New: summary presets: recap, actions, minutes, custom
+• New: catalog: Persian streaming, Finnish, lighter Qwen3

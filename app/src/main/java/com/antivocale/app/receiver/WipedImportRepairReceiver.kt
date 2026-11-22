@@ -42,20 +42,40 @@ class WipedImportRepairReceiver : BroadcastReceiver() {
     @Inject @ApplicationScope lateinit var applicationScope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
-        // TASK-973: the Remove action has its own arm (it never downloads:
-        // it deletes the records the last repair proved dead).
+        // TASK-973: the Remove action deletes the records the last repair
+        // proved dead (it never downloads).
         if (intent.action == ACTION_REMOVE_DEAD_WIPED_IMPORTS) {
-            runCatching {
-                applicationScope.launch(Dispatchers.IO) {
-                    val removed = runCatching { repairer.removeDeadSources() }
-                        .onFailure { e -> Log.e(TAG, "Dead-source removal failed", e) }
-                        .getOrDefault(emptyList())
-                    runCatching {
-                        WipedImportRepairNotifications.postRemoved(context, removed.size)
-                    }
+            launchRemoval(context, "dead-source removal",
+                post = WipedImportRepairNotifications::postRemoved) { repairer.removeDeadSources() }
+            return
+        }
+        // TASK-1023: the wiped notice's Forget action (the user decides
+        // against recovery): deletes the currently dangling set. A repair
+        // in flight is CANCELLED first (the forget would otherwise queue on
+        // the single-flight mutex for the whole multi-GB download); the
+        // in-app origin extra swaps the outcome post for a quiet retire of
+        // the actionable notice (the banner's disappearance is the
+        // on-screen acknowledgment).
+        if (intent.action == ACTION_FORGET_WIPED_IMPORTS) {
+            if (repairer.isRepairInFlight()) {
+                runCatching {
+                    context.startService(
+                        android.content.Intent(
+                            context,
+                            com.antivocale.app.service.WipedImportRepairService::class.java
+                        ).apply {
+                            action = com.antivocale.app.service.WipedImportRepairService.ACTION_CANCEL
+                        })
+                }.onFailure { e -> Log.e(TAG, "Failed to cancel the in-flight repair", e) }
+            }
+            val post: (Context, Int) -> Unit =
+                if (intent.getBooleanExtra(EXTRA_IN_APP_ORIGIN, false)) {
+                    { c, _ -> WipedImportRepairNotifications.cancelActionable(c) }
+                } else {
+                    WipedImportRepairNotifications::postForgot
                 }
-            }.onFailure { e ->
-                Log.e(TAG, "Failed to launch the dead-source removal", e)
+            launchRemoval(context, "wiped-import forget", post = post) {
+                repairer.forgetWipedImports()
             }
             return
         }
@@ -67,10 +87,31 @@ class WipedImportRepairReceiver : BroadcastReceiver() {
         // tap on a current notice addresses the service directly.
         runCatching {
             context.startForegroundService(
-                android.content.Intent(
-                    context, com.antivocale.app.service.WipedImportRepairService::class.java))
+                com.antivocale.app.service.WipedImportRepairService.repairIntent(context))
         }.onFailure { e ->
             Log.e(TAG, "Failed to start the wiped-import repair service", e)
+        }
+    }
+
+    /** The shared shape of the two deletion arms: run the removal on the
+     * application scope (the receiver's process lifetime, never goAsync),
+     * then post the arm's own outcome notice on the family's fixed id (the
+     * dead-source arm and the Forget arm assert different facts). */
+    private fun launchRemoval(
+        context: Context,
+        label: String,
+        post: (Context, Int) -> Unit,
+        remove: suspend () -> List<String>,
+    ) {
+        runCatching {
+            applicationScope.launch(Dispatchers.IO) {
+                val removed = runCatching { remove() }
+                    .onFailure { e -> Log.e(TAG, "$label failed", e) }
+                    .getOrDefault(emptyList())
+                runCatching { post(context, removed.size) }
+            }
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to launch the $label", e)
         }
     }
 
@@ -80,6 +121,23 @@ class WipedImportRepairReceiver : BroadcastReceiver() {
         /** TASK-973: the failed notice's Remove action (dead sources only). */
         const val ACTION_REMOVE_DEAD_WIPED_IMPORTS =
             "com.antivocale.app.REMOVE_DEAD_WIPED_IMPORTS"
+        /** TASK-1023: the wiped notice's Forget action (the dangling set). */
+        const val ACTION_FORGET_WIPED_IMPORTS =
+            "com.antivocale.app.FORGET_WIPED_IMPORTS"
+
+        /** TASK-1023: the ONE forget dispatch, the notification's Forget
+         *  PendingIntent and the banner's button both ride it (the sibling
+         *  of WipedImportRepairService.repairIntent; explicit component,
+         *  the receiver is not exported). */
+        fun forgetIntent(context: Context): Intent =
+            Intent(context, WipedImportRepairReceiver::class.java).apply {
+                action = ACTION_FORGET_WIPED_IMPORTS
+            }
+
+        /** TASK-1023: the banner's button sets this so the outcome stays
+         *  on screen (the notice quietly retires) instead of posting a
+         *  system notification for a tap the user is watching. */
+        const val EXTRA_IN_APP_ORIGIN = "com.antivocale.app.EXTRA_IN_APP_ORIGIN"
     }
 }
 
@@ -106,6 +164,10 @@ object WipedImportRepairNotifications {
     private const val RC_RECOVER = 1
     private const val RC_REMOVE_DEAD = 3
     private const val RC_CANCEL = 4
+    /** TASK-1023: the wiped state's Forget action (distinct request code
+     *  from the failed state's Remove: different actions, no PendingIntent
+     *  reuse). */
+    private const val RC_FORGET = 5
 
     /** State 1, posted at startup when the scan found dangling candidates:
      * what the cleaner deleted, with the Recover action that alone decides
@@ -173,7 +235,9 @@ object WipedImportRepairNotifications {
                 .addAction(
                     android.R.drawable.ic_menu_delete,
                     context.getString(R.string.wiped_imports_remove_action),
-                    removePendingIntent(context))
+                    receiverBroadcast(
+                        context, RC_REMOVE_DEAD,
+                        WipedImportRepairReceiver.ACTION_REMOVE_DEAD_WIPED_IMPORTS))
         } else {
             builder
                 .setContentTitle(context.getString(R.string.wiped_imports_failed_title))
@@ -188,9 +252,34 @@ object WipedImportRepairNotifications {
         return builder.build()
     }
 
+    /** TASK-1023: the Forget outcome, on the same id, in NEUTRAL copy:
+     *  unlike the Remove outcome nothing proved these sources dead (the
+     *  user simply declined recovery), so the dead-source title would
+     *  assert a fact never established. Same no-op-on-zero discipline. */
+    fun postForgot(context: Context, removedCount: Int) {
+        if (removedCount == 0) return
+        post(context) {
+            ResultNotificationFactory(context).alertNotification(
+                title = context.getString(R.string.wiped_forgot_title),
+                text = context.getString(R.string.wiped_forgot_text, removedCount),
+                priority = NotificationCompat.PRIORITY_DEFAULT,
+                channel = AppNotificationChannel.MODEL_REPAIR,
+                contentIntent = modelsTabIntent(context),
+            )
+        }
+    }
+
     /** TASK-973: the Remove outcome, on the same id. A no-op removal
      *  (stale second tap) posts nothing: a "Removed 0" confirmation would
      *  claim work that did not happen. */
+    /** TASK-1023: retire the actionable notice WITHOUT an outcome post:
+     *  the in-app banner's forget is acknowledged on screen (the banner
+     *  disappears), so the shade notice just goes away instead of gaining
+     *  a system notification for a tap the user watched happen. */
+    fun cancelActionable(context: Context) = runCatching {
+        context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+    }
+
     fun postRemoved(context: Context, removedCount: Int) {
         if (removedCount == 0) return
         post(context) {
@@ -205,8 +294,10 @@ object WipedImportRepairNotifications {
     }
 
     /** The wiped notice as a buildable notification (separate from the
-     *  post so the Robolectric pin can assert the Recover action's
-     *  PendingIntent). */
+     *  post so the Robolectric pin can assert the actions' PendingIntents).
+     *  TASK-1023: BOTH closures ride as quick actions, Recover re-downloads
+     *  and Forget removes the dangling records in one tap (the friction
+     *  rationale lives on the repairer's forgetWipedImports). */
     fun wipedNotification(context: Context, candidates: List<ExternalModelRecord>): Notification {
         val names = candidates.map { it.displayName }
         val namesLine = if (names.size > VISIBLE_NAME_LIMIT) {
@@ -228,8 +319,26 @@ object WipedImportRepairNotifications {
                 context.getString(R.string.wiped_imports_recover_action),
                 recover
             )
+            .addAction(
+                android.R.drawable.ic_menu_delete,
+                context.getString(R.string.wiped_imports_remove_action),
+                receiverBroadcast(
+                    context, RC_FORGET,
+                    WipedImportRepairReceiver.ACTION_FORGET_WIPED_IMPORTS)
+            )
             .build()
     }
+
+    /** One construction for the family's receiver-targeted broadcast
+     *  actions (the receiver is not exported, so every PendingIntent
+     *  names it explicitly; distinct request codes stay load-bearing -
+     *  RC_FORGET's TASK-1023 Forget must never collide with RC_REMOVE_DEAD). */
+    private fun receiverBroadcast(context: Context, requestCode: Int, action: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context, requestCode,
+            Intent(context, WipedImportRepairReceiver::class.java).apply { this.action = action },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
 
     /** The wiped notice's base: unlike the outcome alerts this state is
      *  actionable and BigText, so it keeps its own builder (the factory's
@@ -286,15 +395,7 @@ object WipedImportRepairNotifications {
         // pattern; the receiver's broadcast arm only serves stale notices).
         PendingIntent.getForegroundService(
             context, RC_RECOVER,
-            Intent(context, com.antivocale.app.service.WipedImportRepairService::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-    private fun removePendingIntent(context: Context): PendingIntent =
-        PendingIntent.getBroadcast(
-            context, RC_REMOVE_DEAD,
-            Intent(context, WipedImportRepairReceiver::class.java).apply {
-                action = WipedImportRepairReceiver.ACTION_REMOVE_DEAD_WIPED_IMPORTS
-            },
+            com.antivocale.app.service.WipedImportRepairService.repairIntent(context),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     private fun post(context: Context, build: () -> Notification) = runCatching {
